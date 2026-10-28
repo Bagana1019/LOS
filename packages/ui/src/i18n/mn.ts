@@ -1,2 +1,4 @@
 import mnJson from './mn.json';
-export const mn = mnJson;
+import mnCustomer from './mn.customer.json';
+// Модуль бүр өөрийн `mn.<module>.json`-той (зэрэгцээ салбарын мерж зөрчилгүй байлгахын тулд); энд нэгтгэнэ.
+export const mn = { ...mnJson, ...mnCustomer };

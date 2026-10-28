@@ -77,3 +77,9 @@ export const CustomerContactRelation = ['SPOUSE','PARENT','CHILD','SIBLING','REL
 export type CustomerContactRelation = typeof CustomerContactRelation[number];
 export const DocumentRelatedEntity = ['BORROWER','COLLATERAL','APPLICATION'] as const;
 export type DocumentRelatedEntity = typeof DocumentRelatedEntity[number];
+
+// ── Module 1 (FR-2.3): docs/03-д enum-ийн жагсаалт өгөөгүй баганууд — утгыг DECISIONS.md-д бүртгэсэн ──
+export const Gender = ['MALE','FEMALE'] as const;
+export type Gender = typeof Gender[number];
+export const MaritalStatus = ['SINGLE','MARRIED','DIVORCED','WIDOWED'] as const;
+export type MaritalStatus = typeof MaritalStatus[number];
