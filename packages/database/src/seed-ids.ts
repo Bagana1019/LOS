@@ -12,4 +12,9 @@ export const SEED = {
     approver: { id: '00000000-0000-4000-8000-000000000204', username: 'approver', fullName: 'Батлагч', roles: ['APPROVER'] as const, branch: 'head' as const },
     admin: { id: '00000000-0000-4000-8000-000000000205', username: 'admin', fullName: 'Админ', roles: ['ADMIN'] as const, branch: null },
   },
+  products: {
+    consumer: '00000000-0000-4000-8000-000000000301',
+    business: '00000000-0000-4000-8000-000000000302',
+    vehicle: '00000000-0000-4000-8000-000000000303',
+  },
 } as const;
