@@ -1,6 +1,7 @@
 // NFR-4, FR-13.5: төлөв, батлах, засвар бүр — хэн, хэзээ, өмнөх/шинэ. Сервисийн `audit_log` хүснэгтэд бизнес транзакцтай хамт бичнэ.
+/** Prisma interactive transaction (`prisma.$transaction(async (tx) => ...)`) — сервис бүрийн `audit_log` загвартай (OutboxTx-тэй адил `any`: Prisma-ийн Json төрөлтэй тааруулна). */
 export interface AuditTx {
-  auditLog: { create(args: { data: AuditData }): Promise<unknown> };
+  auditLog: { create(args: { data: any }): Promise<unknown> }; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 export interface AuditData {
   orgId: string; entity: string; entityId: string; action: string; actorId: string | null;

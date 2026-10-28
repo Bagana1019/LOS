@@ -11,3 +11,4 @@ export * from './common.module';
 export * from './bootstrap';
 export * from './internal/internal-http';
 export * from './internal/settings-client';
+export * from './events/events.module';

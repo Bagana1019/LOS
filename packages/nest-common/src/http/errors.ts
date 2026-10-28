@@ -2,6 +2,9 @@ import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, HttpSta
 import { ZodError } from 'zod';
 import { getRequestContext } from '../context/request-context';
 
+/** vitest/ESM ба CJS-ийн хоёр zod хуулбар зэрэг ачаалагдаж `instanceof` бүтэлгүйтэх тул нэрээр мөн таниулна. */
+const isZodError = (e: unknown): e is ZodError => e instanceof ZodError || (e instanceof Error && e.name === 'ZodError' && Array.isArray((e as { issues?: unknown }).issues));
+
 /** Бизнесийн алдаа: тогтвортой `code` (UI/тест үүгээр таних) + монгол `message`. */
 export class DomainError extends HttpException {
   constructor(readonly code: string, message: string, status: number = HttpStatus.BAD_REQUEST, readonly details?: unknown) {
@@ -29,7 +32,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   private toResponse(e: unknown): { status: number; body: ErrorBody } {
     const correlationId = getRequestContext()?.correlationId ?? null;
-    if (e instanceof ZodError) return { status: 400, body: { code: 'VALIDATION_FAILED', message: 'Оруулсан өгөгдөл буруу', details: e.issues.map((i) => ({ path: i.path.join('.'), message: i.message })), correlationId } };
+    if (isZodError(e)) return { status: 400, body: { code: 'VALIDATION_FAILED', message: 'Оруулсан өгөгдөл буруу', details: e.issues.map((i) => ({ path: i.path.join('.'), message: i.message })), correlationId } };
     if (e instanceof HttpException) {
       const status = e.getStatus();
       const raw = e.getResponse();
