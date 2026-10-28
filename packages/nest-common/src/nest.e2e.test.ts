@@ -91,7 +91,7 @@ describe('CommonModule (guard, filter, context)', () => {
     expect(h.body).toMatchObject({ service: 'test', ok: true });
     const r = await request(app.getHttpServer()).get('/api/health/ready');
     expect(r.status).toBe(503);
-    expect(r.body.checks).toEqual({ db: 'up', redis: 'down' });
+    expect(r.body.details.checks).toEqual({ db: 'up', redis: 'down' });
   });
   it('INTERNAL_AUTH_SECRET blocks calls that bypass the gateway', async () => {
     process.env.INTERNAL_AUTH_SECRET = 'topsecret';

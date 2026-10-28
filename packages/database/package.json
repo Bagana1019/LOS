@@ -19,6 +19,8 @@
     "@los/config": "workspace:*",
     "prisma": "^5.20.0",
     "vitest": "^2.1.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "pg": "^8.13.0",
+    "@types/pg": "^8.11.0"
   }
 }

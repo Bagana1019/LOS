@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { type CanActivate, type ExecutionContext, ForbiddenException, Injectable, SetMetadata, UnauthorizedException } from '@nestjs/common';
+import { type CanActivate, type ExecutionContext, ForbiddenException, Inject, Injectable, SetMetadata, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CTX_HEADERS, permissionsFor, type Permission } from '@los/contracts';
 import { contextOf } from '../context/request-context';
@@ -27,7 +27,8 @@ function safeEqual(a: string, b: string): boolean {
  */
 @Injectable()
 export class ContextAuthGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  // vitest (esbuild) нь decorator metadata гаргадаггүй тул @Inject-ийг тодорхой бичнэ
+  constructor(@Inject(Reflector) private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
     if (context.getType() !== 'http') return true;

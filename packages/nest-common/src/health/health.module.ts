@@ -1,5 +1,6 @@
-import { Controller, Get, Inject, Module, ServiceUnavailableException, type DynamicModule } from '@nestjs/common';
+import { Controller, Get, Inject, Module, type DynamicModule } from '@nestjs/common';
 import { Public } from '../auth/guards';
+import { DomainError } from '../http/errors';
 
 export type HealthCheck = () => Promise<unknown>;
 export interface HealthOptions { service: string; checks: Record<string, HealthCheck> }
@@ -26,7 +27,7 @@ class HealthController {
     }));
     const ok = Object.values(checks).every((c) => c === 'up');
     const body = { service: this.opts.service, ok, checks };
-    if (!ok) throw new ServiceUnavailableException(body);
+    if (!ok) throw new DomainError('NOT_READY', 'Үйлчилгээ бэлэн биш', 503, body);
     return body;
   }
 }
