@@ -5,7 +5,8 @@
     "REDIS_URL",
     "MINIO_ENDPOINT",
     "JWT_SECRET",
-    "INTEGRATION_MODE"
+    "INTEGRATION_MODE",
+    "NEXT_PUBLIC_GATEWAY_URL"
   ],
   "globalPassThroughEnv": [
     "TEST_DATABASE_URL",
@@ -22,7 +23,15 @@
     "MINIO_*",
     "DATA_*",
     "INTERNAL_AUTH_SECRET",
-    "SEED_PASSWORD"
+    "SEED_PASSWORD",
+    "DMS_*",
+    "ESIGN_*",
+    "MOCK_ESIGN_*",
+    "TRIDUM_*",
+    "MONPASS_*",
+    "TRUST_PROXY",
+    "CORS_ORIGINS",
+    "NEXT_PUBLIC_ESIGN_*"
   ],
   "tasks": {
     "build": {
@@ -46,7 +55,8 @@
     },
     "test": {
       "dependsOn": [
-        "^build"
+        "^build",
+        "db:generate"
       ],
       "outputs": [
         "coverage/**"
@@ -54,7 +64,8 @@
     },
     "lint": {
       "dependsOn": [
-        "^build"
+        "^build",
+        "db:generate"
       ]
     },
     "db:generate": {
