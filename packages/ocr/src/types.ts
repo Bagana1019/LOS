@@ -70,6 +70,11 @@ export interface OcrResult {
   /** 0..1 */
   meanConfidence: number;
   durationMs: number;
+  /**
+   * Дутуу боловсруулсан гэх мэт анхааруулга (жишээ: PDF хуудасны хязгаараас хэтэрсэн тул эхний N хуудсыг л уншсан).
+   * Баримтын текст ОРОХГҮЙ (PII). Нэмэлт талбар — хуучин хэрэглэгчдэд нөлөөлөхгүй.
+   */
+  warnings?: string[];
 }
 
 export interface OcrProvider {
