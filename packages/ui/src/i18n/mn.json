@@ -1,0 +1,21 @@
+{
+  "app.title": "LOS Radix",
+  "nav.customer": "Харилцагч",
+  "nav.application": "Хүсэлт",
+  "nav.loan": "Зээл",
+  "nav.report": "Тайлан",
+  "nav.settings": "Тохиргоо",
+  "status.DRAFT": "Шинэ",
+  "status.SUBMITTED": "Илгээсэн",
+  "status.IN_APPROVAL": "Батлах явцад",
+  "status.APPROVED": "Батлагдсан",
+  "status.RETURNED": "Буцаасан",
+  "status.DISBURSING": "Олгох",
+  "status.ACTIVE": "Идэвхтэй",
+  "status.CLOSED": "Хаасан",
+  "status.MIGRATED": "Эхний үлдэгдэлтэй",
+  "action.approve": "Батлах",
+  "action.return": "Буцаах",
+  "action.submit": "Илгээх",
+  "action.add": "Нэмэх"
+}

@@ -1,0 +1,6 @@
+{
+  "extends": "@los/config/tsconfig/next.json",
+  "include": [
+    "src"
+  ]
+}

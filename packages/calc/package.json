@@ -1,0 +1,21 @@
+{
+  "name": "@los/calc",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --coverage",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@los/contracts": "workspace:*",
+    "decimal.js": "^10.4.0"
+  },
+  "devDependencies": {
+    "@los/config": "workspace:*",
+    "vitest": "^2.1.0",
+    "@vitest/coverage-v8": "^2.1.0"
+  }
+}

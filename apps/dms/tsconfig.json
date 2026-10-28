@@ -1,0 +1,3 @@
+{
+  "extends": "@los/config/tsconfig/nest.json"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "@los/database",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@los/config": "workspace:*",
+    "prisma": "^5.20.0"
+  }
+}

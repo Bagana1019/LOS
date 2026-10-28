@@ -1,0 +1,12 @@
+// Schema-per-service: зөвхөн `dms` schema. Өөр schema-ийн хүснэгт рүү FK хориотой — ID-г string-ээр хадгална.
+generator client { provider = "prisma-client-js"; output = "../node_modules/.prisma/client-dms" }
+datasource db { provider = "postgresql"; url = env("DATABASE_URL"); schemas = ["dms"] }
+// TODO(M00): docs/03-data-model.md-ийн энэ сервист хамаарах хүснэгтүүдийг энд нэм. @@schema("dms") заавал.
+model Outbox {
+  id          String   @id @default(uuid())
+  type        String
+  payload     Json
+  createdAt   DateTime @default(now()) @map("created_at")
+  publishedAt DateTime? @map("published_at")
+  @@map("outbox") @@schema("dms")
+}

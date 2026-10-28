@@ -1,0 +1,8 @@
+# Build: docker build -f packages/config/Dockerfile.nest --build-arg APP=origination .
+FROM node:22-alpine AS base
+RUN corepack enable
+WORKDIR /repo
+COPY . .
+ARG APP
+RUN pnpm install --frozen-lockfile && pnpm turbo run build --filter=@los/${APP}...
+CMD ["sh", "-c", "node apps/${APP}/dist/main.js"]
