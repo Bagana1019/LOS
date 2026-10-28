@@ -15,7 +15,8 @@ export const maxFileBytes = (env: NodeJS.ProcessEnv = process.env) => Number(env
 /** Нэр: зам, удирдлагын тэмдэгт, `..`-гүй; multer UTF-8 нэрийг latin1 гэж задалдаг тул буцаан засна (монгол нэр). */
 export function cleanFileName(original: string): string {
   const utf8 = Buffer.from(original, 'latin1').toString('utf8');
-  const name = (utf8.includes('�') ? original : utf8).split(/[\\/]/).pop()!.replace(/[\u0000-\u001f\u007f"<>|:*?]/g, '_').replace(/^\.+/, '').trim().slice(0, 200);
+  const base = (utf8.includes('\uFFFD') ? original : utf8).split(/[\\/]/).pop()!.replace(/["<>|:*?]/g, '_').replace(/^\.+/, '').trim().slice(0, 200);
+  const name = [...base].map((ch) => (ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f ? '_' : ch)).join('');
   return name || 'file';
 }
 

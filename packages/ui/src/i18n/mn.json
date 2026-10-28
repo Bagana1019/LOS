@@ -1,6 +1,7 @@
 {
   "app.title": "LOS Radix",
   "nav.customer": "Харилцагч",
+  "nav.blacklist": "Хар жагсаалт",
   "nav.application": "Хүсэлт",
   "nav.loan": "Зээл",
   "nav.report": "Тайлан",
