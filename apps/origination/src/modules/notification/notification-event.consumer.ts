@@ -3,7 +3,7 @@ import type { DomainEvent } from '@los/contracts';
 import { consumeOnce, type EventBus } from '@los/database';
 import { EVENT_BUS } from '@los/nest-common';
 import { PrismaService, type Tx } from '../../prisma.service';
-import { NotificationService, type NotifyPayload } from './notification.service';
+import { NotificationService, type CustomerNotifyContext, type NotifyPayload } from './notification.service';
 
 type Handled = Extract<DomainEvent, { type: 'ApplicationApproved' | 'ApplicationReturned' | 'DisbursementApproved' | 'PaymentReceived' }>;
 const HANDLED = ['ApplicationApproved', 'ApplicationReturned', 'DisbursementApproved', 'PaymentReceived'] as const;
@@ -28,19 +28,21 @@ export class NotificationEventConsumer implements OnModuleInit {
   async handle(event: DomainEvent): Promise<void> {
     if (!(HANDLED as readonly string[]).includes(event.type)) return;
     let deliveryIds: string[] = [];
-    const ran = await consumeOnce(this.db, 'notification', event, async (tx) => { deliveryIds = await this.apply(tx, event as Handled); });
+    // Тохиргоо/загварыг транзакцийн ГАДНА ачаална: транзакц дотроос pool-д хандвал зэрэг ирсэн event-үүд pool дүүрч гацна.
+    const prepared = event.type === 'ApplicationReturned' ? null : await this.notifications.prepareCustomerNotify(event.orgId);
+    const ran = await consumeOnce(this.db, 'notification', event, async (tx) => { deliveryIds = await this.apply(tx, event as Handled, prepared); });
     if (ran) await this.notifications.dispatch(deliveryIds);
   }
 
   /** @returns commit-ийн дараа queue-д оруулах delivery ID-ууд */
-  private async apply(tx: Tx, event: Handled): Promise<string[]> {
+  private async apply(tx: Tx, event: Handled, prepared: CustomerNotifyContext | null): Promise<string[]> {
     const app = await tx.loanApplication.findFirst({ where: { id: event.applicationId, orgId: event.orgId } });
     if (!app) { this.logger.warn(`${event.type} ${event.eventId}: хүсэлт ${event.applicationId} олдсонгүй — алгасав`); return []; }
     const borrowers = await tx.loanApplicationBorrower.findMany({ where: { applicationId: app.id, role: { in: ['PRIMARY', 'CO_BORROWER'] } }, orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }], select: { customerId: true } });
     const customerIds = borrowers.map((b) => b.customerId);
     const base: NotifyPayload = { applicationNo: app.appNo, currency: app.currency };
     const toCustomers = (type: 'APPROVED' | 'DISBURSEMENT_APPROVED' | 'PAYMENT_RECEIVED', payload: NotifyPayload) =>
-      this.notifications.notifyCustomers({ orgId: event.orgId, customerIds, type, applicationId: app.id, payload, dedupeBase: `event:${event.eventId}` }, tx);
+      this.notifications.notifyCustomers({ orgId: event.orgId, customerIds, type, applicationId: app.id, payload, dedupeBase: `event:${event.eventId}`, channels: prepared?.channels, templates: prepared?.templates }, tx);
     const toOfficer = (type: 'APPROVED' | 'RETURNED' | 'DISBURSEMENT_APPROVED', payload: NotifyPayload) =>
       this.notifications.notifyUsers({ orgId: event.orgId, userIds: [app.officerId], type, applicationId: app.id, payload }, tx); // officerId=null → "Систем" (BR-12): мэдэгдэх хүнгүй
 

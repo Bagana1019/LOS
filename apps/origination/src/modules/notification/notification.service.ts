@@ -34,8 +34,11 @@ export interface NotifyCustomersInput {
   dryRun?: boolean;
   /** Олон дуудлагад давтан ачаалахгүйн тулд (ReminderService): урьдчилан ачаалсан загвар, хүсэлтийн салбар. */
   templates?: TemplateResolver;
+  /** `prepareCustomerNotify()`-ийн үр дүн: транзакц доторх дуудлага pool-оос дахин холболт авахгүйн тулд транзакцийн ӨМНӨ ачаална. */
+  channels?: readonly NotificationChannel[];
   branchId?: string | null;
 }
+export interface CustomerNotifyContext { channels: readonly NotificationChannel[]; templates: TemplateResolver }
 export interface NotifyCustomersResult {
   /** QUEUED болгон шинээр үүссэн (илгээгдэх) хүргэлт */
   queued: number;
@@ -126,6 +129,22 @@ export class NotificationService {
 
   // ── Зээлдэгчид (SMS / Email / Push) ──────────────────────────────────────────────
 
+  /** `notification.channels_customer` тохиргооноос зөвшөөрөгдсөн сувгууд. */
+  async customerChannels(orgId: string): Promise<readonly NotificationChannel[]> {
+    const setting = await this.settings.get(orgId, 'notification.channels_customer');
+    const configured = Array.isArray(setting) ? setting : SETTING_REGISTRY['notification.channels_customer'].default as string[]; // эвдэрсэн тохиргоо → анхдагч
+    return CUSTOMER_CHANNELS.filter((c) => configured.includes(c));
+  }
+
+  /**
+   * Транзакц дотор `notifyCustomers`-ийг дуудахын өмнө (тохиргоо, загварыг транзакцийн гаднаас) ачаална: interactive транзакц нэг холболт
+   * барьдаг тул дотроос `settings`/`templates`-ээр pool-д хандвал зэрэг ажиллаж буй транзакцуудын тоо pool-той тэнцэхэд бүгд хоорондоо хүлээж гацна.
+   */
+  async prepareCustomerNotify(orgId: string): Promise<CustomerNotifyContext> {
+    const [channels, templates] = await Promise.all([this.customerChannels(orgId), this.templates.resolver(orgId)]);
+    return { channels, templates };
+  }
+
   /**
    * Зээлдэгч бүр × идэвхтэй суваг бүрт `NotificationDelivery` (QUEUED). Суваг = `notification.channels_customer` ∩ (opt-out-гүй) ∩ холбоо барих мэдээлэлтэй
    * (утас→SMS, имэйл→EMAIL, идэвхтэй PushDevice→PUSH). Утас/имэйл буруу бол SKIPPED + lastError='INVALID_ADDRESS' (алдаа шидэхгүй).
@@ -137,9 +156,7 @@ export class NotificationService {
     const empty: NotifyCustomersResult = { queued: 0, skipped: 0, duplicates: 0, deliveryIds: [] };
     if (!customerIds.length) return empty;
 
-    const setting = await this.settings.get(input.orgId, 'notification.channels_customer');
-    const configured = Array.isArray(setting) ? setting : SETTING_REGISTRY['notification.channels_customer'].default as string[]; // эвдэрсэн тохиргоо → анхдагч
-    const channels = CUSTOMER_CHANNELS.filter((c) => configured.includes(c));
+    const channels = input.channels ?? await this.customerChannels(input.orgId);
     if (!channels.length) return empty;
 
     const now = this.clock.now();

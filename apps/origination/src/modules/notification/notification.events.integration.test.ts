@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DomainEvents } from '../../shared/domain-events';
+import { OrgSettings } from '../../shared/org-settings';
+import { TemplateService } from './template.service';
 import { OutboxRelayService } from '../../test-utils/test-app';
 import { parseRequestContext } from '@los/nest-common';
 import { actors, createApplication, createBorrower, createCustomer, hasTestDb } from '../../test-utils/factories';
@@ -64,6 +66,27 @@ describe.skipIf(!hasTestDb)('notification: NotificationEventConsumer (bus → м
       expect(await env.t.prisma.notification.count()).toBe(1);
       expect(env.sms.outbox).toHaveLength(1);
       expect(env.email.outbox).toHaveLength(1);
+    });
+
+    it('тохиргоо, загварыг транзакцийн ГАДНА ачаална (дотроос pool-д хандвал зэрэг ирсэн event-үүд pool дүүрч гацна)', async () => {
+      const { app } = await seed();
+      const prisma = env.t.prisma;
+      const settings = env.t.app.get(OrgSettings);
+      const templates = env.t.app.get(TemplateService);
+      let open = 0;
+      const insideTx: string[] = [];
+      const realTx = prisma.$transaction.bind(prisma) as (...a: unknown[]) => Promise<unknown>;
+      vi.spyOn(prisma, '$transaction').mockImplementation(((fn: unknown, ...rest: unknown[]) => typeof fn !== 'function' ? realTx(fn, ...rest)
+        : realTx(async (tx: unknown) => { open++; try { return await (fn as (t: unknown) => Promise<unknown>)(tx); } finally { open--; } }, ...rest)) as never);
+      const realGet = settings.get.bind(settings);
+      vi.spyOn(settings, 'get').mockImplementation(((...a: Parameters<typeof realGet>) => { if (open > 0) insideTx.push(`settings:${a[1]}`); return realGet(...a); }) as never);
+      const realResolver = templates.resolver.bind(templates);
+      vi.spyOn(templates, 'resolver').mockImplementation(((orgId: string) => { if (open > 0) insideTx.push('templates'); return realResolver(orgId); }) as never);
+      try {
+        await publish(env, { type: 'ApplicationApproved', applicationId: app.id, contractNo: 'BZ-2026-0001' });
+        expect(env.sms.outbox).toHaveLength(1);
+        expect(insideTx).toEqual([]);
+      } finally { vi.restoreAllMocks(); }
     });
 
     it('officerId=null (Систем) бол хонх үүсэхгүй, зээлдэгчид явна', async () => {
