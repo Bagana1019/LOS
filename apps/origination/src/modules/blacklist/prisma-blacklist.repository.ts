@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { AmlSubjectType } from '@los/contracts';
+import { enqueueOutbox } from '@los/database';
 import { BLACKLIST_PRISMA } from './blacklist.prisma';
 import {
   DuplicateBlacklistEntryError, StaleBlacklistEntryError,
@@ -76,8 +77,8 @@ export class PrismaBlacklistRepository implements BlacklistRepository {
           const { count } = await tx.blacklist.updateMany({ where: { id, orgId, updatedAt: expectedUpdatedAt }, data });
           if (count !== 1) throw new StaleBlacklistEntryError();
         }
-        // enqueueOutbox(@los/database) M00 хүртэл TODO тул outbox мөрийг энд шууд бичнэ (id = eventId → relay idempotent).
-        await tx.outbox.create({ data: { id: event.eventId, type: event.type, payload: event } });
+        // id = eventId → relay idempotent; enqueueOutbox нь event-ийг DomainEvent схемээр шалгана.
+        await enqueueOutbox(tx, event);
       });
     } catch (e) {
       if (isBlacklistUniqueViolation(e)) throw new DuplicateBlacklistEntryError();

@@ -1,7 +1,8 @@
 // AmlRepository-ийн Prisma хэрэгжүүлэлт (schema `kyc`). In-memory хувилбартай ижил төрхтэйг aml-repository.contract.ts шалгана.
-// @los/database-ийн enqueueOutbox нь TODO(M00) тул outbox мөрийг транзакц дотор шууд бичнэ (CLAUDE.md §3.2.4).
+// Event-ийг enqueueOutbox(@los/database)-ээр схемээр шалгаж, бизнес мөртэй нэг транзакцид outbox руу бичнэ (CLAUDE.md §3.2.4).
 import { Inject, Injectable } from '@nestjs/common';
 import type { AmlHit, AmlRiskFactor, DomainEvent } from '@los/contracts';
+import { enqueueOutbox } from '@los/database';
 import type { Prisma, PrismaClient } from '.prisma/client-kyc';
 import { AML_PRISMA } from '../aml.prisma';
 import {
@@ -86,8 +87,6 @@ function hitCreate(hit: AmlHit, position: number): Prisma.AmlHitCreateWithoutScr
   };
 }
 
-const outboxRow = (event: DomainEvent): Prisma.OutboxCreateInput => ({ id: event.eventId, type: event.type, payload: json(event) });
-
 /**
  * (org, customer) тутамд транзакцуудыг цувуулна: транзакц дуустал (commit / rollback) барих advisory түгжээ. Түгжээний дараалал хаа сайгүй
  * ИЖИЛ — "харилцагчийн түгжээ → screening мөрийн FOR UPDATE" (saveScreening, applyHitReview). Түгжээ авсны дараах statement бүр (READ COMMITTED)
@@ -140,7 +139,7 @@ export class PrismaAmlRepository implements AmlRepository {
           hits: { create: s.hits.map(hitCreate) },
         },
       });
-      await tx.outbox.create({ data: outboxRow(event) });
+      await enqueueOutbox(tx, event);
     });
   }
 
@@ -226,7 +225,7 @@ export class PrismaAmlRepository implements AmlRepository {
         data: { status: derived.status, blocking: derived.blocking, riskScore: derived.riskScore, riskLevel: derived.riskLevel, riskFactorsJson: json(derived.riskFactors) },
         include: WITH_HITS,
       });
-      await tx.outbox.create({ data: outboxRow(derived.event) });
+      await enqueueOutbox(tx, derived.event);
       return { outcome: 'applied', screening: screeningOf(updated) };
     });
   }
