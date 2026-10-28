@@ -13,6 +13,8 @@ export interface BootstrapOptions {
   cors?: { origin: string[]; credentials?: boolean };
   /** Gateway: `false` — proxy-д body stream хэвээр дамжуулахын тулд парсерыг өөрөө route тус бүрт тавина. */
   bodyParser?: boolean;
+  /** `req.rawBody` (JSON/urlencoded-ийн илгээсэн байт) — provider webhook-ийн гарын үсгийг байтаар шалгахад (dms e-sign). */
+  rawBody?: boolean;
   configure?: (app: INestApplication) => void | Promise<void>;
 }
 
@@ -20,7 +22,7 @@ export interface BootstrapOptions {
 export async function bootstrapService(opts: BootstrapOptions): Promise<INestApplication> {
   loadEnvFiles();
   const logger = new JsonLogger(opts.service);
-  const app = await NestFactory.create(opts.module, { bufferLogs: true, bodyParser: opts.bodyParser ?? true });
+  const app = await NestFactory.create(opts.module, { bufferLogs: true, bodyParser: opts.bodyParser ?? true, rawBody: opts.rawBody });
   app.useLogger(logger);
   app.setGlobalPrefix('api');
   app.enableShutdownHooks();
