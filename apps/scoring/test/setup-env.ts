@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { useTestDatabaseUrl } from '@los/config/vitest/test-db.mjs';
 
 useTestDatabaseUrl('scoring');

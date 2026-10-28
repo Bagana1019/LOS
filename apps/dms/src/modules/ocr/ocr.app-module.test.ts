@@ -4,6 +4,9 @@ import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../../app.module';
 
+// Gateway-ийн дамжуулсан identity (CommonModule-ийн глобал guard нэвтрээгүй хүсэлтийг 401 болгоно)
+const identity = { 'x-user-id': 'u-officer', 'x-roles': 'OFFICER', 'x-org-id': 'org-1' };
+
 describe('AppModule + OcrModule', () => {
   let close: (() => Promise<void>) | undefined;
   afterEach(async () => {
@@ -19,10 +22,11 @@ describe('AppModule + OcrModule', () => {
     close = () => app.close();
     const server = app.getHttpServer();
 
-    expect((await request(server).get('/api/ocr/doc-types')).status).toBe(200);
-    const health = await request(server).get('/api/ocr/health');
+    expect((await request(server).get('/api/ocr/doc-types')).status).toBe(401); // нэвтрээгүй
+    expect((await request(server).get('/api/ocr/doc-types').set(identity)).status).toBe(200);
+    const health = await request(server).get('/api/ocr/health').set(identity);
     expect(health.status).toBe(200);
     expect(health.body.provider).toBe('mock');
-    expect((await request(server).get('/api/health')).body).toEqual({ service: 'dms', ok: true });
+    expect((await request(server).get('/api/health')).body).toMatchObject({ service: 'dms', ok: true });
   });
 });
