@@ -46,6 +46,7 @@ describe('KycXypLookup (origination → kyc)', () => {
 
   it('rejects a reply that does not match the contract', async () => {
     const fetchFn = (async () => json(200, { registerNo: 'УБ90010112' })) as unknown as typeof fetch;
-    await expect(lookup(fetchFn).fetchCitizen(ctx, 'УБ90010112')).rejects.toThrow();
+    // ЗЭЗ-д «маягтын алдаа» (400) биш, дотоод сервисийн алдаа (502) харагдана
+    await expect(lookup(fetchFn).fetchCitizen(ctx, 'УБ90010112')).rejects.toMatchObject({ code: 'UPSTREAM_ERROR', status: 502 });
   });
 });

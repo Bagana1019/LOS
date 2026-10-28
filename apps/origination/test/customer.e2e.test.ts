@@ -251,6 +251,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
         expect((await http().get('/api/blacklist/check').query({ registerNo: REGISTER }).set(as(who))).status, who).toBe(200);
       }
       expect((await http().get('/api/blacklist/check').query({ registerNo: 'x' }).set(as('officerA'))).body.code).toBe('INVALID_REGISTER_NO');
+      // давхар/задгай query параметр 500 биш 400 (zod)
+      for (const q of ['registerNo=a&registerNo=b', 'registerNo[x]=1', 'registerNo[]=a', '']) {
+        const res = await http().get(`/api/blacklist/check?${q}`).set(as('officerA'));
+        expect(res.status, q).toBe(400);
+        expect(res.body.code, q).toBe('VALIDATION_FAILED');
+      }
     });
   });
 
@@ -280,6 +286,46 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       const home = { ...ADDRESS, khoroo: '9-р хороо' };
       const b = await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ residenceAddress: home });
       expect(b.body).toMatchObject({ officialAddress: moved, residenceAddress: home, residenceSameAsOfficial: false });
+    });
+
+    it('unticking "same address" without giving a residence is refused; the audit trail shows the effective residence', async () => {
+      const made = (await create(full())).body;
+      const res = await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ residenceSameAsOfficial: false });
+      expect(res.status).toBe(400);
+      expect((res.body.details as { path: string }[]).map((d) => d.path)).toEqual(['residenceAddress']);
+      const home = { ...ADDRESS, khoroo: '9-р хороо' };
+      await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ residenceAddress: home });
+      const audit = await db.auditLog.findFirstOrThrow({ where: { entity: 'CUSTOMER', entityId: made.id, action: 'CUSTOMER_UPDATED' } });
+      expect(audit.beforeJson).toEqual({ residenceAddress: ADDRESS });
+      expect(audit.afterJson).toEqual({ residenceAddress: home });
+    });
+
+    it('a blank value on PUT means "clear": refused for required fields, clears optional ones, omitted fields stay', async () => {
+      const made = (await create(full())).body;
+      for (const f of ['phone', 'email', 'lastName', 'segment']) {
+        const res = await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ [f]: '  ' });
+        expect(res.status, f).toBe(400);
+        expect((res.body.details as { path: string }[]).map((d) => d.path), f).toEqual([f]);
+      }
+      expect((await http().get(`/api/customers/${made.id}`).set(as('officerA'))).body).toMatchObject({ phone: '99112233', email: 'bat@example.mn', lastName: 'Болд' });
+
+      const company = (await create({ registerNo: '5012345', firstName: 'Тэнгэр ХХК', lastName: 'Хуучин', phone: '77001122', email: 'info@tenger.mn', activitySector: 'Барилга', segment: 'ЖДБ', officialAddress: ADDRESS, residenceSameAsOfficial: true })).body;
+      const cleared = await http().put(`/api/customers/${company.id}`).set(as('officerA')).send({ lastName: '', education: '' });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body).toMatchObject({ lastName: null, education: null, phone: '77001122' });
+    });
+
+    it('concurrent edits of one customer are serialized: no lost update, no duplicated contacts', async () => {
+      const made = (await create(full())).body;
+      const put = (b: object) => http().put(`/api/customers/${made.id}`).set(as('officerA')).send(b);
+      const rs = await Promise.all([put({ phone: '88001122' }), put({ email: 'new@example.mn' }), put({ isPep: true }), put({ familySize: 6 })]);
+      expect(rs.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+      expect((await http().get(`/api/customers/${made.id}`).set(as('officerA'))).body).toMatchObject({ phone: '88001122', email: 'new@example.mn', isPep: true, familySize: 6 });
+
+      const contacts = [{ relation: 'PARENT', firstName: 'Эх', phone: '88112233' }];
+      const again = await Promise.all([put({ contacts }), put({ contacts }), put({ contacts })]);
+      expect(again.map((r) => r.status)).toEqual([200, 200, 200]);
+      expect(await db.customerContact.count({ where: { customerId: made.id } })).toBe(1);
     });
 
     it('emergency contacts are replaced as a whole list', async () => {

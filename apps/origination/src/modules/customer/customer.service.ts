@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   CustomerInput, customerTypeOfRegister, normalizeRegisterNo,
   type CreateCustomerRequest, type CustomerApplicationRef, type CustomerCard, type CustomerLookup, type CustomerPage, type CustomerView, type RequestContext,
-  type UpdateCustomerRequest, type XypFetchResult,
+  UpdateCustomerRequest, type XypFetchResult,
 } from '@los/contracts';
 import { auditDiff, blindIndex, encryptedField, recordAudit } from '@los/database';
 import { DomainError, conflict, notFound, scopeWhere } from '@los/nest-common';
@@ -132,17 +132,23 @@ export class CustomerService {
   }
 
   // ── Засах: өгсөн талбарыг л солино; нийт үр дүн дахин FR-2.3-аар шалгагдана ──
-  async update(ctx: RequestContext, id: string, patch: UpdateCustomerRequest): Promise<CustomerView> {
-    const row = await this.load(ctx, id);
-    const before = toRawInput(toView(row, []));
-    const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
-    const merged: Record<string, unknown> = { ...before, ...changes };
-    // Оршин суугаа хаягийг тусад нь өгвөл "ижил" чекбокс автоматаар арилна
-    if (patch.residenceAddress && patch.residenceSameAsOfficial === undefined) merged.residenceSameAsOfficial = false;
-    const input = CustomerInput.parse(merged);
-    const beforeInput = CustomerInput.parse(before);
-
+  /** @param cleared PUT-д хоосон мөр (`""`) илгээсэн талбарууд = «арилгах»: заавал талбар бол 400, заавал биш бол null болно. */
+  async update(ctx: RequestContext, id: string, patch: UpdateCustomerRequest, cleared: readonly string[] = []): Promise<CustomerView> {
     const saved = await this.db.$transaction(async (tx) => {
+      // Нэг харилцагчийн зэрэг засварыг дараалуулна: уншаад-нэгтгээд-бичих нь түгжээгүй бол хоёр ЗЭЗ-ийн өөрчлөлт бие биеийг дарна, холбоо барих хүн давхарлана.
+      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM origination.customer WHERE id = ${id} AND org_id = ${ctx.orgId} FOR UPDATE`;
+      if (!locked.length) throw notFound('Харилцагч', id);
+      const row = await tx.customer.findUniqueOrThrow({ where: { id }, include: WITH_CONTACTS });
+      const before = toRawInput(toView(row, []));
+      const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+      const merged: Record<string, unknown> = { ...before, ...changes };
+      for (const k of cleared) if (k in UpdateCustomerRequest.shape) delete merged[k];
+      // Оршин суугаа хаягийг тусад нь өгвөл «ижил» чекбокс арилна; чекбоксыг авч хаяг өгөөгүй бол хаягийг заавал шаардана (одоогийн хуулбарыг дахин ашиглахгүй)
+      if (patch.residenceAddress && patch.residenceSameAsOfficial === undefined) merged.residenceSameAsOfficial = false;
+      if (patch.residenceSameAsOfficial === false && !patch.residenceAddress) delete merged.residenceAddress;
+      const input = CustomerInput.parse(merged);
+      const beforeInput = CustomerInput.parse(before);
+
       if (patch.contacts) await tx.customerContact.deleteMany({ where: { customerId: id, orgId: ctx.orgId } });
       const updated = await tx.customer.update({
         where: { id },

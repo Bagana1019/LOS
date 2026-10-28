@@ -56,6 +56,7 @@ export function toRawInput(v: CustomerView): CustomerInputRaw {
 
 /** Аудитад: хувьсах бүх талбар (регистр/зураг `recordAudit`-д автоматаар [redacted]). */
 export function auditSnapshot(i: CustomerInput): Record<string, unknown> {
-  const { contacts, ...rest } = i;
-  return { ...rest, contacts: contacts.map((c) => ({ relation: c.relation, firstName: c.firstName, lastName: c.lastName, phone: c.phone })) };
+  const { contacts, residenceSameAsOfficial, residenceAddress, ...rest } = i;
+  // Хадгалагдах бодит хаяг (чекбокс «ижил» бол албан ёсныг хуулна) — түүхий оролтыг биш
+  return { ...rest, residenceAddress: residenceSameAsOfficial ? i.officialAddress : residenceAddress, contacts: contacts.map((c) => ({ relation: c.relation, firstName: c.firstName, lastName: c.lastName, phone: c.phone })) };
 }

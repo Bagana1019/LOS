@@ -33,8 +33,11 @@ export class CustomerController {
   @Permissions('customer:read') @Get(':id')
   card(@Ctx() ctx: RequestContext, @Param('id', ParseUUIDPipe) id: string) { return this.customers.card(ctx, id); }
 
+  /** `""` (хоосон мөр) = талбарыг арилгах: заавал талбар бол 400 «Заавал бөглөнө», заавал биш бол цэвэрлэгдэнэ. Талбарыг огт өгөхгүй бол өөрчлөгдөхгүй. */
   @Permissions('customer:write') @Put(':id')
-  update(@Ctx() ctx: RequestContext, @Param('id', ParseUUIDPipe) id: string, @Body(new ZodValidationPipe(UpdateCustomerRequest)) body: UpdateCustomerRequest) {
-    return this.customers.update(ctx, id, body);
+  update(@Ctx() ctx: RequestContext, @Param('id', ParseUUIDPipe) id: string, @Body() raw: unknown) {
+    const patch = UpdateCustomerRequest.parse(raw);
+    const cleared = Object.entries((raw ?? {}) as Record<string, unknown>).filter(([, v]) => typeof v === 'string' && v.trim() === '').map(([k]) => k);
+    return this.customers.update(ctx, id, patch, cleared);
   }
 }
