@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MakerCheckerEvents } from './maker-checker';
 // Event каталог — CLAUDE.md §4. Нэр: <Aggregate><PastTenseVerb>, version заавал.
 const base = z.object({
   eventId: z.string().uuid(), occurredAt: z.string().datetime(), version: z.literal(1),
@@ -16,6 +17,6 @@ export const ValuationCompleted = base.extend({ type: z.literal('ValuationComple
 export const DocumentUploaded = base.extend({ type: z.literal('DocumentUploaded'), documentId: z.string(), applicationId: z.string().nullable(), kind: z.string() });
 // CLAUDE.md §3.2.8: нийтлэг тохиргоо өөрчлөгдөхөд бусад сервис projection-аа шинэчилнэ
 export const SettingsChanged = base.extend({ type: z.literal('SettingsChanged'), key: z.string(), productId: z.string().nullable() });
-export const DomainEvent = z.discriminatedUnion('type', [ApplicationSubmitted, ApplicationApproved, ApplicationReturned, ApplicationStatusChanged, DisbursementApproved, KycCompleted, StatementImported, ScoringCompleted, ValuationCompleted, DocumentUploaded, SettingsChanged]);
+export const DomainEvent = z.discriminatedUnion('type', [ApplicationSubmitted, ApplicationApproved, ApplicationReturned, ApplicationStatusChanged, DisbursementApproved, KycCompleted, StatementImported, ScoringCompleted, ValuationCompleted, DocumentUploaded, SettingsChanged, ...MakerCheckerEvents]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export const EVENT_STREAM = 'los:events';
