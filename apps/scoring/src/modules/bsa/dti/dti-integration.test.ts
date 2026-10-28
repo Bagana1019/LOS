@@ -87,11 +87,16 @@ describe('classification → aggregation → computeBsaDti', () => {
     expect(dti.categories.find((c) => c.code === 'OWN_TRANSFER_IN')).toMatchObject({ totalAmount: 0, txnCount: 0 });
   });
 
-  it('income reliability is consistent with calc applied to the same aggregation', () => {
-    const direct = incomeReliability(analysis.categoryMonthly, params, dti.monthKeys);
-    expect(dti.incomeReliability).toBe(direct);
-    expect(dti.incomeReliability).toBeGreaterThan(0);
-    expect(dti.incomeReliability).toBeLessThan(100); // 2026-09 сард баталгаажсан орлого байхгүй
+  it('income reliability is assessed on full calendar months only (BSA-BR-4) and matches calc applied to the same aggregation', () => {
+    // Хугацаа 2026-03-10..2026-09-10: эхний (3-р сар) болон сүүлийн (9-р сар) сар хэсэгчилсэн → 4–8-р сар
+    const fullMonths = dti.monthKeys.slice(1, -1);
+    expect(fullMonths).toEqual(['2026-04', '2026-05', '2026-06', '2026-07', '2026-08']);
+    expect(dti.incomeReliability).toBe(incomeReliability(analysis.categoryMonthly, params, fullMonths));
+    expect(dti.incomeReliability).toBe(100);
+    // 9-р сард баталгаажсан орлого байхгүй (хэсэгчилсэн сар) — бүх сарыг оруулбал оноо буурна
+    const allMonths = incomeReliability(analysis.categoryMonthly, params, dti.monthKeys);
+    expect(allMonths).toBeGreaterThan(0);
+    expect(allMonths).toBeLessThan(dti.incomeReliability);
   });
 
   it('"Бусад" report: no unclassified amounts in this scenario, so not exceeded', () => {

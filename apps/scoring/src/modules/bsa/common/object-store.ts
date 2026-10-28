@@ -213,7 +213,11 @@ export function parseMinioConnection(env: EnvLike): MinioConnection {
   const secretKey = envString(env, 'MINIO_SECRET_KEY') ?? envString(env, 'MINIO_ROOT_PASSWORD');
   if (accessKey === undefined) throw new EnvConfigError('MINIO_ACCESS_KEY', 'is not set (MINIO_ROOT_USER is also empty)');
   if (secretKey === undefined) throw new EnvConfigError('MINIO_SECRET_KEY', 'is not set (MINIO_ROOT_PASSWORD is also empty)');
-  return { endPoint: host, port, useSSL: explicitSsl ?? https ?? false, accessKey, secretKey, region: envString(env, 'MINIO_REGION') };
+  // Модуль 0-ийн .env.example: MINIO_ENDPOINT=<host> + MINIO_PORT=9000 (тусдаа). Зөвхөн `host` хэлбэрт (URL биш, порт байхгүй) MINIO_PORT хэрэглэнэ;
+  // URL-д порт хоосон = схемийн анхдагч (80/443) тул MINIO_PORT түүнийг дарахгүй. Хоёулаа байхгүй бол minio клиентийн анхдагч.
+  const isUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw);
+  const resolvedPort = port ?? (isUrl ? undefined : envInteger(env, 'MINIO_PORT', { min: 1, max: 65535 }));
+  return { endPoint: host, port: resolvedPort, useSSL: explicitSsl ?? https ?? false, accessKey, secretKey, region: envString(env, 'MINIO_REGION') };
 }
 
 // URL-ийн анхдагч порт (http:80 / https:443) `new URL().port`-д хоосон болдог; minio клиент ижил анхдагчийг сонгодог тул undefined үлдээнэ.
@@ -350,7 +354,7 @@ export class EncryptingObjectStore implements ObjectStore {
 
 export interface CreateObjectStoreOptions {
   /**
-   * Файл шифрлэгч. Өгөөгүй бол PII_ENCRYPTION_KEY-ээс үүсгэнэ (түлхүүр байхгүй бол шифрлэлтгүй — ЗӨВХӨН үйлдвэрлэлийн бус орчинд).
+   * Файл шифрлэгч. Өгөөгүй бол DATA_ENCRYPTION_KEY[S]-ээс (foundation) үүсгэнэ (түлхүүр байхгүй бол шифрлэлтгүй — ЗӨВХӨН үйлдвэрлэлийн бус орчинд).
    * `null` = шифрлэлтийг санаатайгаар унтраана (тест).
    */
   cipher?: ByteCipher | null;
@@ -373,11 +377,11 @@ export function createObjectStore(env: EnvLike = process.env, options: CreateObj
   if (endpoint === undefined && production) {
     throw new EnvConfigError('MINIO_ENDPOINT', 'is required when NODE_ENV=production (the in-memory store loses uploaded statements)');
   }
-  const hasKey = envString(env, 'PII_ENCRYPTION_KEY') !== undefined;
+  const hasKey = envString(env, 'DATA_ENCRYPTION_KEY') !== undefined || envString(env, 'DATA_ENCRYPTION_KEYS') !== undefined;
   const cipher = options.cipher !== undefined ? options.cipher : hasKey ? createPiiCipher(env) : null;
   if (cipher === null && production) {
     const why = 'is required when NODE_ENV=production: statement files are PII and must be encrypted (NFR-3)';
-    throw new EnvConfigError('PII_ENCRYPTION_KEY', why);
+    throw new EnvConfigError('DATA_ENCRYPTION_KEY', why);
   }
 
   let base: ObjectStore;

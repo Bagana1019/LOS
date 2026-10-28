@@ -282,7 +282,7 @@ describe('BSA REST API e2e: uploads', () => {
     expectError(xlsx, 415, 'XLSX_UNSUPPORTED');
     const empty = await e.api.upload(id, [{ content: Buffer.alloc(0), fileName: 'empty.pdf', mimeType: 'application/pdf' }]);
     expect([400, 415]).toContain(empty.status);
-    expect((empty.body as { errorCode: string }).errorCode).toBe('FILE_EMPTY');
+    expect((empty.body as { code: string }).code).toBe('FILE_EMPTY');
     expect((await e.api.get(`/bsa/analyses/${id}/imports`)).body.total).toBe(0);
   });
 

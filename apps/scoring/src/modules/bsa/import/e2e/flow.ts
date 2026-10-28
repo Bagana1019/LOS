@@ -48,11 +48,11 @@ const WAIT = { timeout: 30_000, interval: 50 };
 const CYRILLIC = /[Ѐ-ӿ]/;
 
 /** Алдааны хариу: BsaApiError хэлбэр, монгол мессеж, correlationId, оруулсан утга/PII-гүй */
-export function expectError(res: Res, status: number, errorCode: string): BsaApiError {
+export function expectError(res: Res, status: number, code: string): BsaApiError {
   expect(res.status, JSON.stringify(res.body)).toBe(status);
   const body = BsaApiError.parse(res.body);
   expect(body.statusCode).toBe(status);
-  expect(body.errorCode).toBe(errorCode);
+  expect(body.code).toBe(code);
   expect(body.message).toMatch(CYRILLIC);
   expect(typeof body.correlationId).toBe('string');
   expectNoPii(JSON.stringify(res.body));

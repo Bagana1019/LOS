@@ -1,13 +1,18 @@
-// AesGcmPiiCipher / createPiiCipher (NFR-3). Бүх түлхүүр, регистр, нэр НЭЭЛТТЭЙ ХЭЛБЭРТЭЙ ХУУРМАГ (synthetic) утга.
-import { createHmac, hkdfSync } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
-import { AesGcmPiiCipher, createPiiCipher, PiiCipherError, type PiiCipherErrorCode } from './pii-cipher';
+// FieldCryptoPiiCipher / createPiiCipher (NFR-3) — foundation-ий `@los/database` crypto дээрх adapter. Бүх түлхүүр, регистр, нэр НЭЭЛТТЭЙ ХЭЛБЭРТЭЙ ХУУРМАГ (synthetic) утга.
+import { blindIndex, createFieldCrypto, resetFieldCrypto, type FieldCryptoConfig } from '@los/database';
+import { afterEach, describe, expect, it } from 'vitest';
+import { createPiiCipher, FieldCryptoPiiCipher, PII_FIELD_AAD, PiiCipherError, type PiiCipherErrorCode } from './pii-cipher';
 
-const keyOf = (seed: number): string => Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 7 + seed) & 0xff)).toString('base64');
-const KEY_A = keyOf(1);
-const KEY_B = keyOf(2);
-const KEY_C = keyOf(3);
-const cipherA = new AesGcmPiiCipher({ key: KEY_A });
+const keyBuf = (seed: number): Buffer => Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 7 + seed) & 0xff));
+const b64 = (seed: number): string => keyBuf(seed).toString('base64');
+const INDEX = keyBuf(9);
+const configOf = (current: string, ...ids: Array<[string, number]>): FieldCryptoConfig => ({
+  keys: Object.fromEntries(ids.map(([id, seed]) => [id, keyBuf(seed)])),
+  currentKeyId: current,
+  indexKey: INDEX,
+});
+const configA = configOf('k1', ['k1', 1]);
+const cipherA = new FieldCryptoPiiCipher(configA);
 
 const codeOf = (fn: () => unknown): PiiCipherErrorCode | undefined => {
   try {
@@ -18,14 +23,8 @@ const codeOf = (fn: () => unknown): PiiCipherErrorCode | undefined => {
   }
   return undefined;
 };
-/** base64url мөрийн `index` дахь тэмдэгтийн нэг битийг эргүүлнэ (байт түвшний өөрчлөлт) */
-function flipByte(cipherText: string, byteIndex: number): string {
-  const raw = Buffer.from(cipherText.slice(3), 'base64url');
-  raw[byteIndex] ^= 0x01;
-  return `v1:${raw.toString('base64url')}`;
-}
 
-describe('AesGcmPiiCipher: encrypt / decrypt', () => {
+describe('FieldCryptoPiiCipher: encrypt / decrypt', () => {
   it.each([
     ['ascii', 'UA12345678'],
     ['mongolian cyrillic with Ө/Ү', 'Өлзийбат Үүрэнтуяа, УА12345678'],
@@ -36,294 +35,186 @@ describe('AesGcmPiiCipher: encrypt / decrypt', () => {
     expect(cipherA.decrypt(cipherA.encrypt(plain))).toBe(plain);
   });
 
-  it("emits 'v1:' + base64url(nonce12 | ciphertext | tag16) and hides the plaintext", () => {
+  it('emits the foundation field format v1.<keyId>.<iv>.<tag>.<ct> and hides the plaintext; fresh nonce per call', () => {
     const plain = 'MN12345678901234567890';
-    const out = cipherA.encrypt(plain);
-    expect(out).toMatch(/^v1:[A-Za-z0-9_-]+$/);
-    const raw = Buffer.from(out.slice(3), 'base64url');
-    expect(raw.length).toBe(12 + Buffer.byteLength(plain) + 16);
-    expect(out).not.toContain(plain);
-    expect(raw.toString('utf8')).not.toContain(plain);
+    const c1 = cipherA.encrypt(plain);
+    expect(c1).toMatch(/^v1\.k1\.[\w-]+\.[\w-]+\.[\w-]*$/);
+    expect(c1).not.toContain(plain);
+    expect(cipherA.encrypt(plain)).not.toBe(c1);
   });
 
-  it('uses a fresh random nonce per call (same plaintext -> different output)', () => {
-    const outs = new Set(Array.from({ length: 50 }, () => cipherA.encrypt('same')));
-    expect(outs.size).toBe(50);
+  it('is bound to the BSA field (AAD): a value sealed for another field does not decrypt here', () => {
+    const other = createFieldCrypto(configA).encrypt('УА12345678', 'customer.register_no');
+    expect(codeOf(() => cipherA.decrypt(other))).toBe('AUTH_FAILED');
+    expect(createFieldCrypto(configA).decrypt(cipherA.encrypt('УА12345678'), PII_FIELD_AAD)).toBe('УА12345678');
   });
 
-  it('puts the injected nonce at the front and rejects a nonce source of the wrong size', () => {
-    const nonce = Buffer.from(Array.from({ length: 12 }, (_, i) => 0xa0 + i));
-    const fixed = new AesGcmPiiCipher({ key: KEY_A, randomBytes: () => nonce });
-    expect(Buffer.from(fixed.encrypt('x').slice(3), 'base64url').subarray(0, 12)).toEqual(nonce);
-    const bad = new AesGcmPiiCipher({ key: KEY_A, randomBytes: () => Buffer.alloc(8) });
-    expect(() => bad.encrypt('x')).toThrow(/nonce/);
-  });
-
-  it('is compatible with the pinned format vector (guards HKDF salt/info, AAD and layout against accidental change)', () => {
-    // Үүсгэсэн: key = bytes 1..32, nonce = 0xa0..0xab. Python `cryptography` (AESGCM + HKDF)-ээр бие даан баталгаажсан.
-    const key = Buffer.from(Array.from({ length: 32 }, (_, i) => i + 1)).toString('base64');
-    const c = new AesGcmPiiCipher({ key });
-    expect(c.decrypt('v1:oKGio6SlpqeoqaqrLcyo9DJNDkhP3g0D7NVRNmuBWSkLQ18hUwSVLw')).toBe('УА12345678');
-    expect(c.hash('УА12345678')).toBe('bcb6e8ac5fe2b23a4343c9ecbc044a8e095f32549ecb3084317fbedbe258ac73');
-    expect(c.decryptBytes(Buffer.from('AaChoqOkpaanqKmqqzyu8ZLRL7lywKr58ee4YBhVhny3+7YmnffIoofa1Q==', 'base64'), 'bsa/a/b.pdf').toString()).toBe(
-      '%PDF-synthetic',
-    );
-  });
-
-  it('rejects non-string input with TypeError', () => {
+  it('rejects non-string input', () => {
     expect(() => cipherA.encrypt(123 as unknown as string)).toThrow(TypeError);
     expect(codeOf(() => cipherA.decrypt(undefined as unknown as string))).toBe('INVALID_FORMAT');
   });
-});
 
-describe('AesGcmPiiCipher: tampering and malformed input (typed errors)', () => {
-  const good = cipherA.encrypt('secret value');
-  const total = Buffer.from(good.slice(3), 'base64url').length;
-
-  it.each([
-    ['nonce', 0],
-    ['ciphertext body', 12],
-    ['auth tag', total - 1],
-  ])('rejects a flipped bit in the %s with AUTH_FAILED', (_n, idx) => {
-    expect(codeOf(() => cipherA.decrypt(flipByte(good, idx)))).toBe('AUTH_FAILED');
-  });
-
-  it('rejects a ciphertext from another key with AUTH_FAILED', () => {
-    expect(codeOf(() => new AesGcmPiiCipher({ key: KEY_B }).decrypt(good))).toBe('AUTH_FAILED');
-  });
-
-  it('rejects truncated input (shorter than nonce + tag) with INVALID_FORMAT', () => {
-    expect(codeOf(() => cipherA.decrypt(`v1:${Buffer.alloc(27).toString('base64url')}`))).toBe('INVALID_FORMAT');
-    expect(codeOf(() => cipherA.decrypt('v1:'))).toBe('INVALID_FORMAT');
-  });
-
-  it('rejects a payload cut in the middle: AUTH_FAILED (still long enough) — never returns garbage', () => {
-    const cut = `v1:${Buffer.from(good.slice(3), 'base64url').subarray(0, total - 3).toString('base64url')}`;
-    expect(codeOf(() => cipherA.decrypt(cut))).toBe('AUTH_FAILED');
-  });
-
-  it('rejects unknown versions with UNKNOWN_VERSION', () => {
-    expect(codeOf(() => cipherA.decrypt(good.replace('v1:', 'v2:')))).toBe('UNKNOWN_VERSION');
-    expect(codeOf(() => cipherA.decrypt(good.replace('v1:', 'v0:')))).toBe('UNKNOWN_VERSION');
-  });
-
-  it.each([
-    ['plaintext leaked into storage', 'UA12345678'],
-    ['empty string', ''],
-    ['wrong prefix', 'x1:AAAA'],
-    ['test cipher prefix', 't1:AAAA'],
-    ['non base64url characters', 'v1:abc+/='],
-    ['whitespace inside', 'v1:abc def'],
-  ])('rejects %s with INVALID_FORMAT', (_n, value) => {
-    expect(codeOf(() => cipherA.decrypt(value))).toBe('INVALID_FORMAT');
-  });
-
-  it('rejects non-canonical base64url (malleable trailing bits)', () => {
-    // Сүүлийн тэмдэгтийн ашиглагдаагүй бит өөрчлөгдсөн ч ижил байт болох хувилбар
-    const last = good.slice(-1);
-    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-    const variant = [...alphabet].find((ch) => ch !== last && Buffer.from(good.slice(3, -1) + ch, 'base64url').equals(Buffer.from(good.slice(3), 'base64url')));
-    expect(variant).toBeDefined();
-    expect(codeOf(() => cipherA.decrypt(good.slice(0, -1) + variant))).toBe('INVALID_FORMAT');
+  it('rejects malformed values with INVALID_FORMAT and tampered / foreign-key values with AUTH_FAILED — never garbage', () => {
+    expect(codeOf(() => cipherA.decrypt('plain text'))).toBe('INVALID_FORMAT');
+    expect(codeOf(() => cipherA.decrypt('v2.k1.a.b.c'))).toBe('INVALID_FORMAT');
+    expect(codeOf(() => cipherA.decrypt('v1:legacy'))).toBe('INVALID_FORMAT');
+    const sealed = cipherA.encrypt('Бат-Эрдэнэ');
+    const parts = sealed.split('.');
+    const tampered = [...parts.slice(0, 4), Buffer.from(Buffer.from(parts[4], 'base64url').map((b) => b ^ 1)).toString('base64url')].join('.');
+    expect(codeOf(() => cipherA.decrypt(tampered))).toBe('AUTH_FAILED');
+    expect(codeOf(() => cipherA.decrypt(sealed.replace('.k1.', '.k9.')))).toBe('AUTH_FAILED'); // үл мэдэгдэх keyId
+    expect(codeOf(() => new FieldCryptoPiiCipher(configOf('k1', ['k1', 2])).decrypt(sealed))).toBe('AUTH_FAILED'); // өөр түлхүүр
   });
 
   it('never puts plaintext, ciphertext or key material into error messages', () => {
-    const msgs: string[] = [];
-    for (const bad of [flipByte(good, 13), good.replace('v1:', 'v9:'), 'secret value']) {
+    const plain = 'СЕКРЕТ-УА12345678';
+    const sealed = cipherA.encrypt(plain);
+    const messages: string[] = [];
+    for (const fn of [() => cipherA.decrypt(sealed.slice(0, -2)), () => cipherA.decrypt(sealed.replace('.k1.', '.zz.')), () => cipherA.hash('  ')]) {
       try {
-        cipherA.decrypt(bad);
+        fn();
       } catch (e) {
-        msgs.push((e as Error).message);
+        messages.push((e as Error).message);
       }
     }
-    expect(msgs).toHaveLength(3);
-    for (const m of msgs) {
-      expect(m).not.toContain('secret value');
-      expect(m).not.toContain(good.slice(3, 20));
-      expect(m).not.toContain(KEY_A);
+    expect(messages).toHaveLength(3);
+    for (const m of messages) {
+      expect(m).not.toContain(plain);
+      expect(m).not.toContain(sealed);
+      expect(m).not.toContain(keyBuf(1).toString('base64'));
     }
   });
 });
 
-describe('AesGcmPiiCipher: key validation', () => {
-  const code = (key: string, prev?: string[]) => codeOf(() => new AesGcmPiiCipher({ key, previousKeys: prev }));
-  it('accepts exactly 32 base64 bytes (surrounding whitespace trimmed)', () => {
-    expect(code(KEY_A)).toBeUndefined();
-    expect(code(`  ${KEY_A}\n`)).toBeUndefined();
+describe('FieldCryptoPiiCipher: key rotation (foundation keyring)', () => {
+  const oldCipher = new FieldCryptoPiiCipher(configOf('k1', ['k1', 1]));
+  const rotated = new FieldCryptoPiiCipher(configOf('k2', ['k1', 1], ['k2', 2]));
+
+  it('decrypts values written under a previous key and flags them for rotation; encrypts with the active key only', () => {
+    const old = oldCipher.encrypt('УА12345678');
+    expect(rotated.decrypt(old)).toBe('УА12345678');
+    expect(rotated.needsRotation(old)).toBe(true);
+    expect(rotated.encrypt('x')).toMatch(/^v1\.k2\./);
+    expect(rotated.needsRotation(rotated.encrypt('x'))).toBe(false);
   });
-  it.each([
-    ['16 bytes', Buffer.alloc(16, 1).toString('base64')],
-    ['31 bytes', Buffer.alloc(31, 1).toString('base64')],
-    ['33 bytes', Buffer.alloc(33, 1).toString('base64')],
-    ['64 bytes', Buffer.alloc(64, 1).toString('base64')],
-    ['hex string of 32 bytes', Buffer.alloc(32, 1).toString('hex')],
-    ['base64url alphabet (-/_)', Buffer.from(Array.from({ length: 32 }, () => 0xfb)).toString('base64url') + '='],
-    ['missing padding', KEY_A.replace(/=+$/, '')],
-    ['not base64', '!!!not-base64!!!'],
-    ['empty', ''],
-    ['whitespace only', '   '],
-  ])('rejects %s with KEY_INVALID', (_n, key) => {
-    expect(code(key)).toBe('KEY_INVALID');
+
+  it('rotate() re-encrypts under the active key (readable without the previous key) and is a no-op for current values', () => {
+    const fresh = rotated.rotate(oldCipher.encrypt('УА12345678'));
+    expect(fresh).toMatch(/^v1\.k2\./);
+    expect(new FieldCryptoPiiCipher(configOf('k2', ['k2', 2])).decrypt(fresh)).toBe('УА12345678');
+    const current = rotated.encrypt('y');
+    expect(rotated.rotate(current)).toBe(current);
   });
-  it('reports which previous key is bad without echoing its value', () => {
-    let msg = '';
-    try {
-      new AesGcmPiiCipher({ key: KEY_A, previousKeys: [KEY_B, 'c2hvcnQ='] });
-    } catch (e) {
-      msg = (e as Error).message;
-    }
-    expect(msg).toContain('PII_ENCRYPTION_KEY_PREVIOUS[1]');
-    expect(msg).not.toContain('c2hvcnQ=');
+
+  it('still rejects values from a key that is not in the keyring', () => {
+    expect(codeOf(() => rotated.decrypt(new FieldCryptoPiiCipher(configOf('k3', ['k3', 3])).encrypt('z')))).toBe('AUTH_FAILED');
   });
 });
 
-describe('AesGcmPiiCipher: key rotation', () => {
-  const oldCipher = new AesGcmPiiCipher({ key: KEY_B });
-  const rotating = new AesGcmPiiCipher({ key: KEY_A, previousKeys: [KEY_B, KEY_C] });
-
-  it('decrypts values written under a previous key and flags them for rotation', () => {
-    const legacy = oldCipher.encrypt('legacy secret');
-    expect(rotating.decrypt(legacy)).toBe('legacy secret');
-    expect(rotating.needsRotation(legacy)).toBe(true);
-    expect(rotating.needsRotation(rotating.encrypt('x'))).toBe(false);
-    expect(rotating.previousKeyCount).toBe(2);
-  });
-
-  it('rotate() re-encrypts under the active key (readable without previous keys) and is a no-op for current values', () => {
-    const legacy = oldCipher.encrypt('legacy secret');
-    const rotated = rotating.rotate(legacy);
-    expect(rotated).not.toBe(legacy);
-    expect(cipherA.decrypt(rotated)).toBe('legacy secret');
-    expect(rotating.needsRotation(rotated)).toBe(false);
-    const current = rotating.encrypt('fresh');
-    expect(rotating.rotate(current)).toBe(current);
-  });
-
-  it('always encrypts with the active key only', () => {
-    expect(codeOf(() => oldCipher.decrypt(rotating.encrypt('new')))).toBe('AUTH_FAILED');
-  });
-
-  it('still rejects values from an unlisted key', () => {
-    const foreign = new AesGcmPiiCipher({ key: keyOf(9) }).encrypt('foreign');
-    expect(codeOf(() => rotating.decrypt(foreign))).toBe('AUTH_FAILED');
-    expect(codeOf(() => rotating.needsRotation(foreign))).toBe('AUTH_FAILED');
-  });
-
-  it('ignores a previous key that equals the active key or repeats', () => {
-    expect(new AesGcmPiiCipher({ key: KEY_A, previousKeys: [KEY_A, KEY_B, KEY_B] }).previousKeyCount).toBe(1);
-  });
-
-  it('hashCandidates() lists the active hash first, then one per previous key, so old rows stay findable', () => {
-    const cands = rotating.hashCandidates(' уа12345678 ');
-    expect(cands).toHaveLength(3);
-    expect(cands[0]).toBe(rotating.hash('УА12345678'));
-    expect(cands[1]).toBe(oldCipher.hash('УА12345678'));
-    expect(new Set(cands).size).toBe(3);
-  });
-
-  it('bytes encrypted under a previous key remain readable', () => {
-    const blob = oldCipher.encryptBytes(Buffer.from('file'), 'k1');
-    expect(rotating.decryptBytes(blob, 'k1').toString()).toBe('file');
-  });
-});
-
-describe('AesGcmPiiCipher: hash', () => {
-  it('is deterministic 64-char hex', () => {
+describe('FieldCryptoPiiCipher: hash', () => {
+  it('is deterministic 64-char hex and equals the foundation blindIndex (origination register_no_hash)', () => {
     const h = cipherA.hash('УА12345678');
     expect(h).toMatch(/^[0-9a-f]{64}$/);
     expect(cipherA.hash('УА12345678')).toBe(h);
+    expect(h).toBe(createFieldCrypto(configA).blindIndex('УА12345678'));
   });
 
-  it('normalises: trim + uppercase (Cyrillic Ө/Ү included) + NFC', () => {
-    const h = cipherA.hash('ӨҮ12345678');
-    expect(cipherA.hash('  өү12345678\t')).toBe(h);
-    expect(cipherA.hash('ӨҮ12345678')).toBe(h);
-    // й = и + U+0306 (NFD) ↔ й (NFC)
-    expect(cipherA.hash('ЙИ12345678')).toBe(cipherA.hash('йИ12345678'));
-  });
-
-  it('differs for different values and different keys', () => {
+  it('normalises case (Cyrillic Ө/Ү included) and whitespace; differs for different values and index keys', () => {
+    expect(cipherA.hash('уа 12345678')).toBe(cipherA.hash('УА12345678'));
+    expect(cipherA.hash('өү12345678')).toBe(cipherA.hash('ӨҮ12345678'));
     expect(cipherA.hash('УА12345678')).not.toBe(cipherA.hash('УА12345679'));
-    expect(cipherA.hash('УА12345678')).not.toBe(new AesGcmPiiCipher({ key: KEY_B }).hash('УА12345678'));
+    expect(new FieldCryptoPiiCipher({ ...configA, indexKey: keyBuf(8) }).hash('УА12345678')).not.toBe(cipherA.hash('УА12345678'));
   });
 
-  it('is a keyed HMAC over the HKDF "hash" subkey - not the raw key and not the encryption subkey', () => {
-    const ikm = Buffer.from(KEY_A, 'base64');
-    const sub = (info: string) => Buffer.from(hkdfSync('sha256', ikm, Buffer.from('los-radix/bsa/pii-cipher/v1'), info, 32));
-    const hmac = (k: Buffer) => createHmac('sha256', k).update('УА12345678').digest('hex');
-    expect(cipherA.hash('УА12345678')).toBe(hmac(sub('los/pii/hash/v1')));
-    expect(cipherA.hash('УА12345678')).not.toBe(hmac(ikm));
-    expect(cipherA.hash('УА12345678')).not.toBe(hmac(sub('los/pii/enc/v1')));
-  });
-
-  it('refuses empty / whitespace-only input (would collapse all blanks into one dedupe key)', () => {
+  it('refuses empty / whitespace-only input (would collapse all blanks into one dedupe key) and non-strings', () => {
     expect(codeOf(() => cipherA.hash(''))).toBe('EMPTY_INPUT');
     expect(codeOf(() => cipherA.hash(' \t\n'))).toBe('EMPTY_INPUT');
-    expect(() => cipherA.hash(null as unknown as string)).toThrow(TypeError);
+    expect(() => cipherA.hash(1 as unknown as string)).toThrow(TypeError);
   });
 });
 
-describe('AesGcmPiiCipher: bytes', () => {
-  const bytes = Buffer.from(Array.from({ length: 4096 }, (_, i) => i & 0xff));
-
-  it('round-trips binary data incl. empty, and is not the identity', () => {
-    const blob = cipherA.encryptBytes(bytes, 'bsa/org/a.pdf');
-    expect(blob.length).toBe(1 + 12 + bytes.length + 16);
-    expect(blob.includes(bytes.subarray(0, 64))).toBe(false);
-    expect(cipherA.decryptBytes(blob, 'bsa/org/a.pdf').equals(bytes)).toBe(true);
+describe('FieldCryptoPiiCipher: bytes (statement files)', () => {
+  it('round-trips binary data incl. empty, is not the identity, and uses a per-call random nonce', () => {
+    const plain = Buffer.from([0, 1, 2, 255, 254, 37, 80, 68, 70]);
+    const blob = cipherA.encryptBytes(plain, 'bsa/a/b.pdf');
+    expect(blob.equals(plain)).toBe(false);
+    expect(cipherA.decryptBytes(blob, 'bsa/a/b.pdf').equals(plain)).toBe(true);
     expect(cipherA.decryptBytes(cipherA.encryptBytes(Buffer.alloc(0), 'k'), 'k')).toHaveLength(0);
+    expect(cipherA.encryptBytes(plain, 'k').equals(cipherA.encryptBytes(plain, 'k'))).toBe(false);
   });
 
-  it('uses a per-object random nonce', () => {
-    expect(cipherA.encryptBytes(bytes, 'k').equals(cipherA.encryptBytes(bytes, 'k'))).toBe(false);
+  it('rejects a nonce source of the wrong size', () => {
+    const bad = new FieldCryptoPiiCipher(configA, { randomBytes: () => Buffer.alloc(8) });
+    expect(() => bad.encryptBytes(Buffer.from('x'), 'k')).toThrow(/nonce/);
   });
 
   it('binds the blob to its object key (AAD): moving it under another key fails', () => {
-    const blob = cipherA.encryptBytes(bytes, 'bsa/a');
-    expect(codeOf(() => cipherA.decryptBytes(blob, 'bsa/b'))).toBe('AUTH_FAILED');
+    const blob = cipherA.encryptBytes(Buffer.from('%PDF-synthetic'), 'bsa/org/1.pdf');
+    expect(codeOf(() => cipherA.decryptBytes(blob, 'bsa/org/2.pdf'))).toBe('AUTH_FAILED');
   });
 
-  it.each([
-    ['header byte', 0, 'UNKNOWN_VERSION'],
-    ['nonce', 1, 'AUTH_FAILED'],
-    ['body', 20, 'AUTH_FAILED'],
-    ['tag', -1, 'AUTH_FAILED'],
-  ] as const)('detects a flipped bit in the %s', (_n, idx, expected) => {
-    const blob = Buffer.from(cipherA.encryptBytes(bytes, 'k'));
-    blob[idx < 0 ? blob.length + idx : idx] ^= 0x01;
-    expect(codeOf(() => cipherA.decryptBytes(blob, 'k'))).toBe(expected);
+  it('detects tampering, truncation, wrong format byte, unknown key id and non-buffers', () => {
+    const blob = cipherA.encryptBytes(Buffer.from('%PDF-synthetic'), 'k');
+    const flipped = Buffer.from(blob);
+    flipped[flipped.length - 20] ^= 1;
+    expect(codeOf(() => cipherA.decryptBytes(flipped, 'k'))).toBe('AUTH_FAILED');
+    expect(codeOf(() => cipherA.decryptBytes(blob.subarray(0, 10), 'k'))).toBe('INVALID_FORMAT');
+    expect(codeOf(() => cipherA.decryptBytes(Buffer.from([1]), 'k'))).toBe('INVALID_FORMAT');
+    expect(codeOf(() => cipherA.decryptBytes('x' as unknown as Buffer, 'k'))).toBe('INVALID_FORMAT');
+    const wrongFormat = Buffer.from(blob);
+    wrongFormat[0] = 0x01;
+    expect(codeOf(() => cipherA.decryptBytes(wrongFormat, 'k'))).toBe('UNKNOWN_VERSION');
+    expect(codeOf(() => new FieldCryptoPiiCipher(configOf('k2', ['k2', 2])).decryptBytes(blob, 'k'))).toBe('AUTH_FAILED');
+    expect(() => cipherA.encryptBytes('x' as unknown as Buffer, 'k')).toThrow(TypeError);
   });
 
-  it('rejects truncated blobs and non-buffers', () => {
-    const blob = cipherA.encryptBytes(bytes, 'k');
-    expect(codeOf(() => cipherA.decryptBytes(blob.subarray(0, 20), 'k'))).toBe('INVALID_FORMAT');
-    expect(codeOf(() => cipherA.decryptBytes(blob.subarray(0, blob.length - 1), 'k'))).toBe('AUTH_FAILED');
-    expect(codeOf(() => cipherA.decryptBytes('nope' as unknown as Buffer, 'k'))).toBe('INVALID_FORMAT');
-    expect(() => cipherA.encryptBytes('nope' as unknown as Buffer, 'k')).toThrow(TypeError);
+  it('files encrypted under a previous key stay readable after rotation', () => {
+    const blob = new FieldCryptoPiiCipher(configOf('k1', ['k1', 1])).encryptBytes(Buffer.from('old file'), 'k');
+    const rotated = new FieldCryptoPiiCipher(configOf('k2', ['k1', 1], ['k2', 2]));
+    expect(rotated.decryptBytes(blob, 'k').toString()).toBe('old file');
+    expect(rotated.encryptBytes(Buffer.from('new'), 'k').subarray(2, 4).toString()).toBe('k2');
   });
 });
 
 describe('createPiiCipher(env)', () => {
-  it('builds a cipher from PII_ENCRYPTION_KEY', () => {
-    const c = createPiiCipher({ PII_ENCRYPTION_KEY: KEY_A });
-    expect(cipherA.decrypt(c.encrypt('x'))).toBe('x');
-    expect(c.previousKeyCount).toBe(0);
-  });
+  afterEach(() => resetFieldCrypto());
 
-  it('reads PII_ENCRYPTION_KEY_PREVIOUS as a comma list (spaces and empty members ignored)', () => {
-    const c = createPiiCipher({ PII_ENCRYPTION_KEY: KEY_A, PII_ENCRYPTION_KEY_PREVIOUS: ` ${KEY_B} , ,${KEY_C},` });
-    expect(c.previousKeyCount).toBe(2);
-    expect(c.decrypt(new AesGcmPiiCipher({ key: KEY_C }).encrypt('old'))).toBe('old');
-  });
-
-  it.each([[undefined], [''], ['   ']])('throws KEY_MISSING when PII_ENCRYPTION_KEY is %j (in every environment)', (value) => {
-    for (const NODE_ENV of ['production', 'development', undefined]) {
-      expect(codeOf(() => createPiiCipher({ PII_ENCRYPTION_KEY: value, NODE_ENV }))).toBe('KEY_MISSING');
+  it('builds a cipher from DATA_ENCRYPTION_KEY + DATA_INDEX_KEY and matches the foundation blindIndex for the same env', () => {
+    const env = { DATA_ENCRYPTION_KEY: b64(1), DATA_INDEX_KEY: b64(9) };
+    const c = createPiiCipher(env);
+    expect(c.decrypt(c.encrypt('УА12345678'))).toBe('УА12345678');
+    Object.assign(process.env, env);
+    resetFieldCrypto();
+    try {
+      expect(c.hash('УА12345678')).toBe(blindIndex('УА12345678'));
+    } finally {
+      delete process.env.DATA_ENCRYPTION_KEY;
+      delete process.env.DATA_INDEX_KEY;
     }
   });
 
-  it('throws KEY_INVALID for a wrong-length key and for a bad previous key', () => {
-    expect(codeOf(() => createPiiCipher({ PII_ENCRYPTION_KEY: Buffer.alloc(16, 1).toString('base64') }))).toBe('KEY_INVALID');
-    expect(codeOf(() => createPiiCipher({ PII_ENCRYPTION_KEY: KEY_A, PII_ENCRYPTION_KEY_PREVIOUS: `${KEY_B},garbage` }))).toBe('KEY_INVALID');
+  it('reads the keyring DATA_ENCRYPTION_KEYS with DATA_ENCRYPTION_KEY_ID', () => {
+    const env = { DATA_ENCRYPTION_KEYS: `k1:${b64(1)},k2:${b64(2)}`, DATA_ENCRYPTION_KEY_ID: 'k2', DATA_INDEX_KEY: b64(9) };
+    expect(createPiiCipher(env).encrypt('x')).toMatch(/^v1\.k2\./);
+  });
+
+  it('falls back to the foundation test key only when NODE_ENV=test', () => {
+    expect(createPiiCipher({ NODE_ENV: 'test' }).encrypt('x')).toMatch(/^v1\.t1\./);
+    expect(codeOf(() => createPiiCipher({ NODE_ENV: 'production' }))).toBe('KEY_MISSING');
+    expect(codeOf(() => createPiiCipher({}))).toBe('KEY_MISSING');
+  });
+
+  it('throws KEY_INVALID for a wrong-length key, a bad index key or an unknown current key id — without echoing the value', () => {
+    const short = Buffer.alloc(16, 5).toString('base64');
+    let message = '';
+    try {
+      createPiiCipher({ DATA_ENCRYPTION_KEY: short, DATA_INDEX_KEY: b64(9) });
+    } catch (e) {
+      expect((e as PiiCipherError).code).toBe('KEY_INVALID');
+      message = (e as Error).message;
+    }
+    expect(message).not.toContain(short);
+    expect(codeOf(() => createPiiCipher({ DATA_ENCRYPTION_KEY: b64(1), DATA_INDEX_KEY: short }))).toBe('KEY_INVALID');
+    expect(codeOf(() => createPiiCipher({ DATA_ENCRYPTION_KEY: b64(1), DATA_ENCRYPTION_KEY_ID: 'zz', DATA_INDEX_KEY: b64(9) }))).toBe('KEY_INVALID');
   });
 });

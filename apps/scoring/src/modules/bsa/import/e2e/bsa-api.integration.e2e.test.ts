@@ -1,15 +1,15 @@
-// BSA REST — E2E БОДИТ PostgreSQL + Redis (BullMQ) дээр: PrismaBsaRepository + BullmqImportQueue + PrismaEventPublisher (outbox) + жинхэнэ AES-GCM
+// BSA REST — E2E БОДИТ PostgreSQL + Redis (BullMQ) дээр: PrismaBsaRepository + BullmqImportQueue + PrismaEventPublisher (outbox) + жинхэнэ foundation-ий AES-GCM
 // PiiCipher; зөвхөн файлын хадгалалт (object store) in-memory. Хоёр хувьсагч хоёулаа тохируулаагүй бол алгасна:
 //   TEST_DATABASE_URL  - нэрэнд "test" агуулсан DB (BSA хүснэгт + scoring.outbox TRUNCATE хийгдэнэ!); 00-schemas.sql + prisma/migrations/*/migration.sql хэрэглэсэн
 //   REDIS_URL_TEST     - зөвхөн энэ тестийн BullMQ prefix-ийн түлхүүрүүдийг устгана
-//   PII_ENCRYPTION_KEY - (заавал биш) байхгүй бол синтетик түлхүүр ашиглана
+//   DATA_ENCRYPTION_KEY / DATA_INDEX_KEY - (заавал биш) байхгүй бол NODE_ENV=test-ийн foundation тестийн түлхүүр
 // Ажиллуулах: `TEST_DATABASE_URL=… REDIS_URL_TEST=… npx vitest run --no-file-parallelism src/modules/bsa/import/e2e/bsa-api.integration.e2e.test.ts`
 // (--no-file-parallelism: бусад integration тест нэг DB-г TRUNCATE хийдэг). Бүх өгөгдөл SYNTHETIC; парсерууд бодит хуулгаар баталгаажаагүй.
 import { Redis } from 'ioredis';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_BSA_CATEGORIES, DEFAULT_BSA_RULES } from '../../classify';
 import { BullmqImportQueue } from '../../common/import-queue';
-import { AesGcmPiiCipher, createPiiCipher } from '../../common/pii-cipher';
+import { createPiiCipher } from '../../common/pii-cipher';
 import { PrismaClient } from '../../common/persistence/prisma.service';
 import { ORG } from '../testing/harness';
 import { ACCOUNT_A, ACCOUNT_B, HOLDER, OPENING_B, accountBTxns, happyFiles, toLatin } from '../testing/scenario';
@@ -20,8 +20,6 @@ import { allTransactions, createAnalysis, expectError, expectReadScopes, runFull
 
 const DB_URL = process.env.TEST_DATABASE_URL;
 const REDIS_URL = process.env.REDIS_URL_TEST;
-/** Синтетик, нууц биш түлхүүр (32 байт, base64) — PII_ENCRYPTION_KEY тохируулаагүй орчинд */
-const SYNTHETIC_KEY = Buffer.from('synthetic-e2e-key-0123456789abcd', 'utf8').toString('base64');
 const TABLES = ['bsa_analysis_event', 'bsa_transaction', 'bsa_import_job', 'bsa_analysis', 'bsa_category', 'bsa_rule', 'outbox'] as const;
 const logger = { warn: () => undefined, error: () => undefined };
 
@@ -51,7 +49,7 @@ describe.skipIf(!DB_URL || !REDIS_URL)('BSA REST API e2e on real PostgreSQL + Re
     prefixes.push(prefix);
     const queue = new BullmqImportQueue({ redisUrl: REDIS_URL!, prefix, attempts: 3, backoffDelayMs: 20, concurrency: 1, logger });
     queues.push(queue);
-    const cipher = process.env.PII_ENCRYPTION_KEY ? createPiiCipher(process.env) : new AesGcmPiiCipher({ key: SYNTHETIC_KEY });
+    const cipher = createPiiCipher({ ...process.env, NODE_ENV: process.env.DATA_ENCRYPTION_KEY ? process.env.NODE_ENV : 'test' });
     const app = await createE2eApp({ mode: 'real', queue, cipher });
     apps.push(app);
     return app;
@@ -122,11 +120,11 @@ describe.skipIf(!DB_URL || !REDIS_URL)('BSA REST API e2e on real PostgreSQL + Re
       ['StatementImported', 'COMPLETED', 9],
     ]);
 
-    // PII шифрлэгдсэн: ил текст олдохгүй (түлхүүртэй hash баганаас бусад бүх багана), шифр баганууд `v1:` дугтуйтай
+    // PII шифрлэгдсэн: ил текст олдохгүй (түлхүүртэй hash баганаас бусад бүх багана), шифр баганууд foundation-ий `v1.<keyId>.<iv>.<tag>.<ct>` дугтуйтай
     for (const table of ['bsa_analysis', 'bsa_import_job', 'bsa_transaction', 'bsa_analysis_event', 'outbox'] as const) {
       const text = (await rawRows(table)).join('\n');
       expect(text.length, table).toBeGreaterThan(2);
-      if (table === 'bsa_analysis' || table === 'bsa_import_job' || table === 'bsa_transaction') expect(text, `${table} must hold ciphertext`).toContain('"v1:');
+      if (table === 'bsa_analysis' || table === 'bsa_import_job' || table === 'bsa_transaction') expect(text, `${table} must hold ciphertext`).toContain('"v1.');
       for (const secret of PLAINTEXT_SECRETS) expect(text, `${table} stores plaintext "${secret}"`).not.toContain(secret);
     }
     const encrypted = await prisma.$queryRawUnsafe<Array<Record<string, string | null>>>(
@@ -136,7 +134,7 @@ describe.skipIf(!DB_URL || !REDIS_URL)('BSA REST API e2e on real PostgreSQL + Re
        JOIN "scoring"."bsa_analysis" a ON a.id = t.analysis_id`,
     );
     expect(encrypted).toHaveLength(27);
-    for (const row of encrypted) for (const value of Object.values(row)) expect(value, 'encrypted column').toMatch(/^v1:[A-Za-z0-9_-]+$/);
+    for (const row of encrypted) for (const value of Object.values(row)) expect(value, 'encrypted column').toMatch(/^v1\.[A-Za-z0-9_-]+(\.[A-Za-z0-9_-]+){3}$/);
     // Дансны дугаар hash-аар (statement_key) хадгалагдсан, ил биш
     const keys = await prisma.$queryRawUnsafe<Array<{ statement_key: string }>>('SELECT DISTINCT statement_key FROM "scoring"."bsa_transaction"');
     expect(keys).toHaveLength(2);

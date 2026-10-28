@@ -1,6 +1,6 @@
 // detectChannel: QPAY | POS | ATM | TRANSFER | OTHER (BSA-FR-3.1). Бүх текст синтетик.
 import { describe, expect, it } from 'vitest';
-import type { TxnChannel } from '@los/contracts';
+import type { BsaChannel } from '@los/contracts';
 import { CHANNEL_KEYWORDS, detectChannel } from './channel';
 
 const d = (description: string, counterpartyAccount: string | null = null, counterpartyName: string | null = null) => ({
@@ -8,7 +8,7 @@ const d = (description: string, counterpartyAccount: string | null = null, count
 });
 
 describe('detectChannel', () => {
-  const table: Array<[string, ReturnType<typeof d>, TxnChannel]> = [
+  const table: Array<[string, ReturnType<typeof d>, BsaChannel]> = [
     ['QPay latin', d('QPay payment 123456'), 'QPAY'],
     ['QPAY upper', d('QPAY-ЭЭР ТӨЛСӨН'), 'QPAY'],
     ['Кюпэй cyrillic', d('Кюпэй төлбөр'), 'QPAY'],

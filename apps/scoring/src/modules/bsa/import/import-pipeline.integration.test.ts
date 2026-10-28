@@ -1,5 +1,5 @@
 // Import pipeline — БОДИТ PostgreSQL дээр (PrismaBsaRepository + PrismaEventPublisher/outbox). TEST_DATABASE_URL тохируулаагүй бол алгасна.
-// Урьдчилсан нөхцөл: тест DB-д `packages/database/init/00-schemas.sql`, дараа нь prisma/migrations/*/migration.sql (apps/scoring/prisma/README.md).
+// Урьдчилсан нөхцөл: `scoring` schema migrate хийгдсэн (vitest globalSetup — apps/scoring/prisma/README.md).
 // АНХААР: BSA хүснэгт болон scoring.outbox-ийг TRUNCATE хийнэ ⇒ DB-ийн нэрэнд "test" агуулагдах ёстой. Файл (object store) ба queue нь in-memory.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClassifierService, DEFAULT_BSA_CATEGORIES, DEFAULT_BSA_RULES } from '../classify';

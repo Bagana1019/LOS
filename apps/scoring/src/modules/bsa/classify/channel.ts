@@ -1,12 +1,12 @@
 // BSA-FR-3.1 / docs/02 §2: гүйлгээний суваг таних (QPay / POS / ATM / шилжүүлэг). Түлхүүр үгийг НЭГ удаа кирилл хэлбэрээр бичнэ —
 // латин/холимог бичлэгийг toMatchKey нэг түлхүүр болгоно (NFR-9).
-import type { TxnChannel } from '@los/contracts';
+import type { BsaChannel } from '@los/contracts';
 import { MATCHING_DEFAULTS } from './classify.defaults';
 import type { ClassifiableTxn } from './classify.types';
 import { FIELD_SEPARATOR, matchKey } from './normalize';
 import { lastWordLength, matchPhrase } from './text-match';
 
-type KeywordChannel = Exclude<TxnChannel, 'OTHER'>;
+type KeywordChannel = Exclude<BsaChannel, 'OTHER'>;
 
 /**
  * Сувгийн түлхүүр үгс. Шалгах дараалал нь CHANNEL_ORDER (ATM → QPAY → POS → TRANSFER): тодорхой түлхүүр үгтэй суваг
@@ -48,7 +48,7 @@ export function channelOfHaystack(
   haystack: string,
   hasCounterpartyAccount: boolean,
   compiled: CompiledChannelKeywords = DEFAULT_COMPILED,
-): TxnChannel {
+): BsaChannel {
   for (const { channel, phrases } of compiled) {
     if (channel === 'TRANSFER' && hasCounterpartyAccount) return 'TRANSFER'; // харьцсан данс байвал шилжүүлэг (түлхүүр үг хүлээхгүй)
     for (const { phrase, prefixAllowed } of phrases) if (matchPhrase(haystack, phrase, prefixAllowed)) return channel;
@@ -62,7 +62,7 @@ export type ChannelInput = Pick<ClassifiableTxn, 'description' | 'counterpartyAc
  * Суваг таних: ATM → QPAY → POS → TRANSFER (харьцсан данс байгаа эсвэл 'шилжүүлэг' гэх мэт үг) → OTHER.
  * `keywords`-оор өөр жагсаалт өгч болно (тест/admin); анхдагч нь CHANNEL_KEYWORDS.
  */
-export function detectChannel(txn: ChannelInput, keywords?: Readonly<Record<KeywordChannel, readonly string[]>>): TxnChannel {
+export function detectChannel(txn: ChannelInput, keywords?: Readonly<Record<KeywordChannel, readonly string[]>>): BsaChannel {
   const haystack = `${matchKey(txn.description)}${FIELD_SEPARATOR}${matchKey(txn.counterpartyName)}`;
   const hasAccount = typeof txn.counterpartyAccount === 'string' && txn.counterpartyAccount.trim() !== '';
   return channelOfHaystack(haystack, hasAccount, keywords ? compileChannelKeywords(keywords) : DEFAULT_COMPILED);

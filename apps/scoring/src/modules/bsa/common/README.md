@@ -4,7 +4,7 @@
 
 | Файл | Port / үүрэг | Хэрэгжүүлэлт |
 | --- | --- | --- |
-| `pii-cipher.ts` | `PiiCipher` (NFR-3) | `AesGcmPiiCipher` (AES-256-GCM + HMAC-SHA256), `createPiiCipher(env)` |
+| `pii-cipher.ts` | `PiiCipher` (NFR-3) | `FieldCryptoPiiCipher` (foundation crypto: AES-256-GCM, blind index; файл bytes), `createPiiCipher(env)` |
 | `object-store.ts` | `ObjectStore` (хуулгын эх файл) | `MinioObjectStore`, `InMemoryObjectStore`, `EncryptingObjectStore` (decorator), `createObjectStore(env)` |
 | `event-publisher.ts` | `DomainEventPublisher` (CLAUDE.md §3.2(4)) | `PrismaEventPublisher` (outbox), `InMemoryEventPublisher` (тест), `buildStatementImportedEvent` |
 | `import-queue.ts` | `ImportQueue` (BullMQ) | `BullmqImportQueue`, `InlineImportQueue`, `createImportQueue(env)` |
@@ -13,33 +13,38 @@
 | `bsa-common.module.ts` | Нийлүүлэлт | `BsaCommonModule` (global) |
 | `env.ts` | env уншигч туслахууд | `EnvConfigError`, `envString`, … |
 
-## Түр шийдэл: `PiiCipher` ба `encryptedField` (M00)
+## Шифрлэлт: `PiiCipher` нь Модуль 0-ийн `@los/database` crypto дээр
 
-CLAUDE.md §6.5 нь PII-г `@los/database`-ийн `encryptedField`-ээр шифрлэхийг заасан боловч тэр нь M00-д хэрэгжээгүй (`TODO(M00)`). BSA-г түгжихгүйн тулд `AesGcmPiiCipher` нь **өөрийн AES-256-GCM** хэрэгжүүлэлттэй. M00 бэлэн болмогц `createPiiCipher`-ийг `encryptedField`-ээр солих нэг цэг (`bsa-common.module.ts` дахь `PII_CIPHER` provider). Ингэхэд хадгалагдсан өгөгдөл `v1:` угтвараар ялгагдах тул шилжүүлэх (rotate) боломжтой.
+CLAUDE.md §6.5: PII-г foundation-ийн `encryptedField`-ийн түлхүүрийн цуглуулгаар шифрлэнэ. `FieldCryptoPiiCipher` нь `createFieldCrypto(configFromEnv())`-г ашиглана — өөрийн түлхүүр, формат зохиохгүй:
+тэмдэгт мөр = `v1.<keyId>.<iv>.<tag>.<ct>` (AAD `scoring.bsa`), `hash()` = foundation-ийн `blindIndex` (origination-ий `register_no_hash`-тай ижил). Foundation-д binary байхгүй тул **файлын bytes**-ийг энд AES-256-GCM-ээр
+шифрлэнэ (түлхүүр = идэвхтэй түлхүүрээс HKDF-ээр гаргасан файлын дэд түлхүүр; формат `0x02 | idLen | keyId | nonce | ct | tag`; AAD = объектын түлхүүр).
 
 ## Env хувьсагчид
 
 `NODE_ENV` = `production` үед (мөн бүх орчинд буруу утгатай бол) тохиргоо **app асахад шууд унана** — in-memory/inline орлуулалт зөвхөн үйлдвэрлэлийн бус орчинд. Хоосон утга = тохируулаагүй.
 
-### Нууцлал (`pii-cipher.ts`)
+### Нууцлал (`pii-cipher.ts`) — foundation-ий env (`.env.example`)
 | Хувьсагч | Заавал | Тайлбар |
 | --- | --- | --- |
-| `PII_ENCRYPTION_KEY` | Тийм (бүх орчинд) | base64, **яг 32 байт**: `openssl rand -base64 32`. Буруу урттай/base64 биш бол `KEY_INVALID`. Түлхүүрээс HKDF-SHA256-оор тусдаа дэд түлхүүр (шифр / hash / файл) гарна |
-| `PII_ENCRYPTION_KEY_PREVIOUS` | Үгүй | Таслалаар тусгаарласан хуучин түлхүүрүүд — зөвхөн **тайлахад** |
+| `DATA_ENCRYPTION_KEY` | Тийм (эсвэл `DATA_ENCRYPTION_KEYS`) | base64, **яг 32 байт**: `openssl rand -base64 32`. Буруу бол `KEY_INVALID`, байхгүй бол `KEY_MISSING`. `NODE_ENV=test` үед foundation-ий тестийн түлхүүр |
+| `DATA_ENCRYPTION_KEYS` | Үгүй | Түлхүүрийн цуглуулга `k1:<b64>,k2:<b64>` (rotation) |
+| `DATA_ENCRYPTION_KEY_ID` | Үгүй | Шифрлэх идэвхтэй түлхүүр (анхдагч: эхний) |
+| `DATA_INDEX_KEY` | Тийм | `hash()`/blind index-ийн HMAC түлхүүр (base64, 32 байт) |
 
-Түлхүүр солих (rotation): (1) шинэ түлхүүр үүсгэ; (2) хуучныг `PII_ENCRYPTION_KEY_PREVIOUS`-д, шинийг `PII_ENCRYPTION_KEY`-д тавь; (3) мөр бүрт `cipher.needsRotation(v)` → `cipher.rotate(v)`-ээр дахин шифрлэ; hash-аар хайх үед `cipher.hashCandidates(регистр)` (идэвхтэй + хуучин түлхүүрийн hash) ашигла; (4) бүх өгөгдөл шилжсэний дараа хуучин түлхүүрийг хас. **Түлхүүрийг алдвал өгөгдөл сэргээгдэхгүй** — нөөцлөлт нь түлхүүр удирдлагын (secret store) үүрэг.
+Түлхүүр солих (rotation): (1) шинэ түлхүүрийг `DATA_ENCRYPTION_KEYS`-д нэмж `DATA_ENCRYPTION_KEY_ID`-г шилжүүл (хуучин нь тайлахад үлдэнэ); (2) мөр бүрт `cipher.needsRotation(v)` → `cipher.rotate(v)`-ээр дахин шифрлэ; файлууд хуучин түлхүүрээр уншигдсаар байна; (3) бүгд шилжсэний дараа хуучин түлхүүрийг хас. `DATA_INDEX_KEY`-г солих нь бүх hash-ийг өөрчилнө (foundation-д rotation байхгүй) — **түлхүүрийг алдвал өгөгдөл сэргээгдэхгүй**, нөөцлөлт нь secret store-ийн үүрэг.
 
 ### Файлын сан (`object-store.ts`)
 | Хувьсагч | Заавал | Анхдагч | Тайлбар |
 | --- | --- | --- | --- |
 | `MINIO_ENDPOINT` | Үйлдвэрлэлд тийм | — | `host:port` (docker-compose: `localhost:9000`) эсвэл `http(s)://host[:port]`. Байхгүй бол **in-memory** store + нэг удаагийн анхааруулга (зөвхөн dev/тест); `NODE_ENV=production` үед алдаа |
+| `MINIO_PORT` | Үгүй | — | Модуль 0-ийн `.env.example`-ийн `MINIO_ENDPOINT=<host>` + `MINIO_PORT=9000` хэлбэр. Зөвхөн порт байхгүй `host` хэлбэрт хэрэглэнэ (`host:port`, URL-д нөлөөлөхгүй) |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | Endpoint-тэй бол тийм | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | docker-compose-ийн root хэрэглэгчийг fallback болгоно |
 | `MINIO_USE_SSL` | Үгүй | URL-ийн scheme, эс бөгөөс `false` | `true/false/1/0`. URL-ийн scheme-тэй зөрвөл алдаа |
 | `MINIO_REGION` | Үгүй | — | Bucket үүсгэх бүс |
 | `BSA_BUCKET` | Үгүй | `bsa-statements` | S3 нэршлийн дүрэм (жижиг үсэг, тоо, `-`, `.`; 3–63). Анхны хэрэглээнд автоматаар үүснэ |
 | `BSA_OBJECT_MAX_BYTES` | Үгүй | 67108864 (64 MiB) | Нэг объектын дээд хэмжээ (upload-ын бодит хязгаар нь `BSA_MAX_UPLOAD_BYTES`) |
 
-Файл бүр **хадгалахын өмнө шифрлэгдэнэ** (NFR-3): объект бүр санамсаргүй nonce-той AES-256-GCM, объектын түлхүүр AAD-д холбогдсон (blob-ыг өөр түлхүүр рүү зөөвөл `INTEGRITY` алдаа); store-д зөвхөн `application/octet-stream` ciphertext очно. `NODE_ENV=production` үед `PII_ENCRYPTION_KEY`-гүй бол алдаа. Объектын түлхүүр: зөвхөн `[A-Za-z0-9/_.-]`, `..`-гүй, ≤512 тэмдэгт (path traversal хамгаалалт) — **түлхүүрт PII (нэр, регистр) бүү оруул**, `bsa/<org>/<analysisId>/<jobId>` шиг id ашигла.
+Файл бүр **хадгалахын өмнө шифрлэгдэнэ** (NFR-3): объект бүр санамсаргүй nonce-той AES-256-GCM, объектын түлхүүр AAD-д холбогдсон (blob-ыг өөр түлхүүр рүү зөөвөл `INTEGRITY` алдаа); store-д зөвхөн `application/octet-stream` ciphertext очно. `NODE_ENV=production` үед `DATA_ENCRYPTION_KEY[S]`-гүй бол алдаа. Объектын түлхүүр: зөвхөн `[A-Za-z0-9/_.-]`, `..`-гүй, ≤512 тэмдэгт (path traversal хамгаалалт) — **түлхүүрт PII (нэр, регистр) бүү оруул**, `bsa/<org>/<analysisId>/<jobId>` шиг id ашигла.
 
 ### Дараалал (`import-queue.ts`)
 | Хувьсагч | Заавал | Анхдагч | Тайлбар |

@@ -12,44 +12,44 @@ const CYRILLIC = /[Ѐ-ӿ]/;
 describe('toErrorBody', () => {
   it('maps a validation failure to 400 VALIDATION_FAILED with issues', () => {
     const body = toErrorBody(new BsaValidationException([{ path: 'a.0', code: 'invalid_type' }]));
-    expect(body).toEqual({ statusCode: 400, errorCode: 'VALIDATION_FAILED', message: BSA_ERROR_MESSAGES.VALIDATION_FAILED, issues: [{ path: 'a.0', code: 'invalid_type' }] });
+    expect(body).toEqual({ statusCode: 400, code: 'VALIDATION_FAILED', message: BSA_ERROR_MESSAGES.VALIDATION_FAILED, issues: [{ path: 'a.0', code: 'invalid_type' }] });
   });
 
   it('keeps the status, code, Mongolian message and details of domain errors', () => {
     const body = toErrorBody(conflict('JOBS_IN_PROGRESS', { pending: 2, processing: 0 }));
-    expect(body).toEqual({ statusCode: 409, errorCode: 'JOBS_IN_PROGRESS', message: BSA_ERROR_MESSAGES.JOBS_IN_PROGRESS, details: { pending: 2, processing: 0 } });
+    expect(body).toEqual({ statusCode: 409, code: 'JOBS_IN_PROGRESS', message: BSA_ERROR_MESSAGES.JOBS_IN_PROGRESS, details: { pending: 2, processing: 0 } });
     expect(toErrorBody(new BsaException(HttpStatus.UNPROCESSABLE_ENTITY, 'NO_TRANSACTIONS'))).not.toHaveProperty('details');
   });
 
   it('replaces framework (English) messages with the status default but keeps our own Mongolian message', () => {
     expect(toErrorBody(new NotFoundException('Cannot GET /api/zxq-secret'))).toEqual({ statusCode: 404, ...STATUS_DEFAULTS[404] });
-    expect(toErrorBody(new BadRequestException('Unexpected token z in JSON at position 3'))).toMatchObject({ statusCode: 400, errorCode: 'BAD_REQUEST' });
-    expect(toErrorBody(new UnauthorizedException('missing'))).toMatchObject({ statusCode: 401, errorCode: 'UNAUTHENTICATED' });
+    expect(toErrorBody(new BadRequestException('Unexpected token z in JSON at position 3'))).toMatchObject({ statusCode: 400, code: 'BAD_REQUEST' });
+    expect(toErrorBody(new UnauthorizedException('missing'))).toMatchObject({ statusCode: 401, code: 'UNAUTHENTICATED' });
     expect(toErrorBody(new ForbiddenException('Энэ шинжилгээнд хандах эрхгүй байна.'))).toEqual({
-      statusCode: 403, errorCode: 'FORBIDDEN', message: 'Энэ шинжилгээнд хандах эрхгүй байна.',
+      statusCode: 403, code: 'FORBIDDEN', message: 'Энэ шинжилгээнд хандах эрхгүй байна.',
     });
     expect(toErrorBody(new BadRequestException({ message: ['a must be a string', 'b'] })).message).toBe(STATUS_DEFAULTS[400].message);
   });
 
   it('maps queue and repository failures to safe responses', () => {
     expect(toErrorBody(new ImportQueueError('REDIS_UNAVAILABLE', 'redis://user:secret@host'))).toEqual({
-      statusCode: 503, errorCode: 'QUEUE_UNAVAILABLE', message: BSA_ERROR_MESSAGES.QUEUE_UNAVAILABLE,
+      statusCode: 503, code: 'QUEUE_UNAVAILABLE', message: BSA_ERROR_MESSAGES.QUEUE_UNAVAILABLE,
     });
-    expect(toErrorBody(new BsaNotFoundError('analysis', 'x'))).toMatchObject({ statusCode: 404, errorCode: 'NOT_FOUND' });
-    expect(toErrorBody(new BsaRepositoryError('DUPLICATE', 'zxq-secret'))).toMatchObject({ statusCode: 409, errorCode: 'CONFLICT' });
-    expect(toErrorBody(new BsaRepositoryError('INVALID', 'zxq-secret'))).toMatchObject({ statusCode: 400, errorCode: 'BAD_REQUEST' });
+    expect(toErrorBody(new BsaNotFoundError('analysis', 'x'))).toMatchObject({ statusCode: 404, code: 'NOT_FOUND' });
+    expect(toErrorBody(new BsaRepositoryError('DUPLICATE', 'zxq-secret'))).toMatchObject({ statusCode: 409, code: 'CONFLICT' });
+    expect(toErrorBody(new BsaRepositoryError('INVALID', 'zxq-secret'))).toMatchObject({ statusCode: 400, code: 'BAD_REQUEST' });
   });
 
   it('maps body-parser / http-errors objects by status without their message', () => {
     expect(toErrorBody({ status: 413, type: 'entity.too.large', message: 'request entity too large' })).toEqual({ statusCode: 413, ...STATUS_DEFAULTS[413] });
     expect(toErrorBody({ statusCode: 400, type: 'entity.parse.failed', message: 'Unexpected token z zxq-secret' })).toEqual({ statusCode: 400, ...STATUS_DEFAULTS[400] });
-    expect(toErrorBody({ status: 418, message: 'teapot' })).toMatchObject({ statusCode: 418, errorCode: 'BAD_REQUEST' }); // статус хадгална, код нь нийтлэг
+    expect(toErrorBody({ status: 418, message: 'teapot' })).toMatchObject({ statusCode: 418, code: 'BAD_REQUEST' }); // статус хадгална, код нь нийтлэг
   });
 
   it('turns anything else into 500 INTERNAL_ERROR without leaking the cause', () => {
     for (const cause of [new Error('zxq-secret УБ90010203 boom'), 'string', null, undefined, { status: 200 }, { status: 99999 }]) {
       const body = toErrorBody(cause);
-      expect(body).toMatchObject({ statusCode: 500, errorCode: 'INTERNAL_ERROR' });
+      expect(body).toMatchObject({ statusCode: 500, code: 'INTERNAL_ERROR' });
       expect(JSON.stringify(body)).not.toMatch(/zxq|boom|УБ9/);
     }
   });
@@ -57,7 +57,7 @@ describe('toErrorBody', () => {
   it('every status default is a Mongolian message', () => {
     for (const [status, d] of Object.entries(STATUS_DEFAULTS)) {
       expect(d.message, status).toMatch(CYRILLIC);
-      expect(d.errorCode, status).toMatch(/^[A-Z_]+$/);
+      expect(d.code, status).toMatch(/^[A-Z_]+$/);
     }
   });
 });
@@ -101,7 +101,7 @@ describe('BsaExceptionFilter.catch', () => {
     const { host, res } = fakeHost({ headers: { 'x-user-id': 'u1', 'x-roles': 'ADMIN', 'x-correlation-id': 'corr-1' } });
     new BsaExceptionFilter().catch(new NotFoundException('x'), host);
     expect(res.statusCode).toBe(404);
-    expect(res.body).toMatchObject({ statusCode: 404, errorCode: 'NOT_FOUND', correlationId: 'corr-1' });
+    expect(res.body).toMatchObject({ statusCode: 404, code: 'NOT_FOUND', correlationId: 'corr-1' });
     expect(res.headers['X-Correlation-Id']).toBe('corr-1');
   });
 

@@ -12,12 +12,13 @@ import {
   type BsaSettingsProvider, type DomainEventPublisher, type ImportQueue, type ObjectStore, type PiiCipher,
 } from './infra.ports';
 import { EncryptingObjectStore, InMemoryObjectStore } from './object-store';
-import { AesGcmPiiCipher, PiiCipherError } from './pii-cipher';
+import { createPiiCipher, FieldCryptoPiiCipher, PiiCipherError } from './pii-cipher';
 import { DEFAULT_BSA_SETTINGS } from './settings';
 
 const KEY = Buffer.from(Array.from({ length: 32 }, (_, i) => i * 5 + 3)).toString('base64');
+const INDEX_KEY = Buffer.from(Array.from({ length: 32 }, (_, i) => i * 3 + 1)).toString('base64');
 const MANAGED_ENV = [
-  'NODE_ENV', 'PII_ENCRYPTION_KEY', 'PII_ENCRYPTION_KEY_PREVIOUS', 'MINIO_ENDPOINT', 'MINIO_ACCESS_KEY', 'MINIO_SECRET_KEY', 'MINIO_ROOT_USER',
+  'NODE_ENV', 'DATA_ENCRYPTION_KEY', 'DATA_ENCRYPTION_KEYS', 'DATA_ENCRYPTION_KEY_ID', 'DATA_INDEX_KEY', 'MINIO_ENDPOINT', 'MINIO_ACCESS_KEY', 'MINIO_SECRET_KEY', 'MINIO_ROOT_USER',
   'MINIO_ROOT_PASSWORD', 'MINIO_USE_SSL', 'BSA_BUCKET', 'REDIS_URL', 'BSA_MAX_DTI', 'BSA_IMPORT_ATTEMPTS', 'BSA_SETTINGS_CACHE_TTL_MS',
 ] as const;
 
@@ -50,7 +51,8 @@ describe('BsaCommonModule', () => {
       saved[k] = process.env[k];
       delete process.env[k];
     }
-    process.env.PII_ENCRYPTION_KEY = KEY;
+    process.env.DATA_ENCRYPTION_KEY = KEY;
+    process.env.DATA_INDEX_KEY = INDEX_KEY;
   });
   afterEach(() => {
     for (const k of MANAGED_ENV) {
@@ -63,11 +65,11 @@ describe('BsaCommonModule', () => {
     const moduleRef = await Test.createTestingModule({ imports: [BsaCommonModule, ConsumerModule] }).compile();
     const c = moduleRef.get(Consumer, { strict: false });
 
-    expect(c.cipher).toBeInstanceOf(AesGcmPiiCipher);
+    expect(c.cipher).toBeInstanceOf(FieldCryptoPiiCipher);
     expect(c.cipher.decrypt(c.cipher.encrypt('Бат-Эрдэнэ'))).toBe('Бат-Эрдэнэ');
     expect(c.cipher.hash(' уа00000000 ')).toBe(c.cipher.hash('УА00000000'));
 
-    expect(c.store).toBeInstanceOf(EncryptingObjectStore); // PII түлхүүртэй → файл шифрлэгдэнэ
+    expect(c.store).toBeInstanceOf(EncryptingObjectStore); // шифрлэлтийн түлхүүртэй → файл шифрлэгдэнэ
     await c.store.put('bsa/org/a1/f1.pdf', Buffer.from('%PDF-synthetic'), 'application/pdf');
     expect((await c.store.get('bsa/org/a1/f1.pdf')).toString()).toBe('%PDF-synthetic');
 
@@ -80,11 +82,11 @@ describe('BsaCommonModule', () => {
   it('the object store and the PII cipher share the key (cipher from PII_CIPHER encrypts the files)', async () => {
     const inner = new InMemoryObjectStore();
     // Ижил түлхүүртэй cipher-ээр гаднаас шифрлэсэн blob-ыг модулийн store уншиж чадах ёстой → store нь PII_CIPHER-ийн түлхүүрийг ашиглаж байна
-    const external = new EncryptingObjectStore(inner, new AesGcmPiiCipher({ key: KEY }));
+    const external = new EncryptingObjectStore(inner, createPiiCipher(process.env));
     await external.put('k/a.pdf', Buffer.from('shared'), 'application/pdf');
     const moduleRef = await Test.createTestingModule({ imports: [BsaCommonModule] })
       .overrideProvider(OBJECT_STORE)
-      .useFactory({ factory: (cipher: PiiCipher) => new EncryptingObjectStore(inner, cipher as AesGcmPiiCipher), inject: [PII_CIPHER] })
+      .useFactory({ factory: (cipher: PiiCipher) => new EncryptingObjectStore(inner, cipher as FieldCryptoPiiCipher), inject: [PII_CIPHER] })
       .compile();
     expect((await moduleRef.get<ObjectStore>(OBJECT_STORE).get('k/a.pdf')).toString()).toBe('shared');
     await moduleRef.close();
@@ -99,8 +101,8 @@ describe('BsaCommonModule', () => {
     await moduleRef.close();
   });
 
-  it('without MINIO_ENDPOINT or PII key outside production: in-memory, unencrypted store still works when the cipher is a test double', async () => {
-    delete process.env.PII_ENCRYPTION_KEY;
+  it('without MINIO_ENDPOINT or an encryption key outside production: in-memory, unencrypted store still works when the cipher is a test double', async () => {
+    delete process.env.DATA_ENCRYPTION_KEY;
     const fake: PiiCipher = { encrypt: (p) => p, decrypt: (c) => c, hash: (p) => p };
     const moduleRef = await Test.createTestingModule({ imports: [BsaCommonModule] }).overrideProvider(PII_CIPHER).useValue(fake).compile();
     const store = moduleRef.get<ObjectStore>(OBJECT_STORE);
@@ -109,8 +111,9 @@ describe('BsaCommonModule', () => {
   });
 
   it.each([
-    ['missing PII_ENCRYPTION_KEY', () => delete process.env.PII_ENCRYPTION_KEY, /PII_ENCRYPTION_KEY/],
-    ['16-byte PII_ENCRYPTION_KEY', () => (process.env.PII_ENCRYPTION_KEY = Buffer.alloc(16, 1).toString('base64')), /32 bytes/],
+    ['missing DATA_ENCRYPTION_KEY', () => delete process.env.DATA_ENCRYPTION_KEY, /DATA_ENCRYPTION_KEY/],
+    ['missing DATA_INDEX_KEY', () => delete process.env.DATA_INDEX_KEY, /DATA_INDEX_KEY/],
+    ['16-byte DATA_ENCRYPTION_KEY', () => (process.env.DATA_ENCRYPTION_KEY = Buffer.alloc(16, 1).toString('base64')), /32 bytes/],
     ['invalid BSA_MAX_DTI', () => (process.env.BSA_MAX_DTI = 'lots'), /BSA_MAX_DTI/],
     ['invalid BSA_IMPORT_ATTEMPTS', () => (process.env.BSA_IMPORT_ATTEMPTS = '0'), /BSA_IMPORT_ATTEMPTS/],
     ['malformed MINIO_ENDPOINT', () => setEnv({ MINIO_ENDPOINT: 'http://h/path', MINIO_ACCESS_KEY: 'a', MINIO_SECRET_KEY: 's' }), /MINIO_ENDPOINT/],
@@ -128,7 +131,7 @@ describe('BsaCommonModule', () => {
   });
 
   it('a missing key is reported with the typed cipher error', async () => {
-    delete process.env.PII_ENCRYPTION_KEY;
+    delete process.env.DATA_ENCRYPTION_KEY;
     await expect(Test.createTestingModule({ imports: [BsaCommonModule] }).compile()).rejects.toBeInstanceOf(PiiCipherError);
   });
 
@@ -163,7 +166,7 @@ describe('README documents every environment variable the adapters read', () => 
   }
 
   it('finds the variables (guards the scan itself)', () => {
-    const expectedNames = ['PII_ENCRYPTION_KEY', 'PII_ENCRYPTION_KEY_PREVIOUS', 'MINIO_ENDPOINT', 'MINIO_USE_SSL', 'REDIS_URL', 'BSA_MAX_DTI'];
+    const expectedNames = ['DATA_ENCRYPTION_KEY', 'DATA_ENCRYPTION_KEYS', 'MINIO_ENDPOINT', 'MINIO_USE_SSL', 'REDIS_URL', 'BSA_MAX_DTI'];
     for (const expected of [...expectedNames, 'DEFAULT_ORG_ID', 'NODE_ENV']) {
       expect(names.has(expected), expected).toBe(true);
     }

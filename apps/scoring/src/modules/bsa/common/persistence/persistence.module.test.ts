@@ -7,6 +7,7 @@ import { PII_CIPHER } from '../infra.ports';
 import { BSA_REPOSITORY } from './bsa.repository';
 import { PrismaBsaRepository } from './prisma-bsa.repository';
 import { BsaPersistenceModule } from './persistence.module';
+import { PrismaModule } from '../../../../prisma.service';
 import { PrismaService } from './prisma.service';
 import { TestPiiCipher } from './testing/test-pii-cipher';
 
@@ -19,7 +20,7 @@ class GlobalCipherModule {}
 
 describe('BsaPersistenceModule', () => {
   it('wires PrismaBsaRepository behind BSA_REPOSITORY using an imported PII_CIPHER (no DB connection until init)', async () => {
-    const mod = await Test.createTestingModule({ imports: [BsaPersistenceModule.register({ imports: [FakeCipherModule] })] }).compile();
+    const mod = await Test.createTestingModule({ imports: [PrismaModule, BsaPersistenceModule.register({ imports: [FakeCipherModule] })] }).compile();
     const repo = mod.get(BSA_REPOSITORY);
     expect(repo).toBeInstanceOf(PrismaBsaRepository);
     expect(mod.get(PrismaBsaRepository)).toBe(repo);
@@ -29,11 +30,11 @@ describe('BsaPersistenceModule', () => {
   });
 
   it('resolves PII_CIPHER from a @Global() module as well', async () => {
-    const mod = await Test.createTestingModule({ imports: [GlobalCipherModule, BsaPersistenceModule.register()] }).compile();
+    const mod = await Test.createTestingModule({ imports: [PrismaModule, GlobalCipherModule, BsaPersistenceModule.register()] }).compile();
     expect(mod.get(BSA_REPOSITORY)).toBeInstanceOf(PrismaBsaRepository);
   });
 
   it('fails fast when no PII_CIPHER is available (PII must never be stored unencrypted)', async () => {
-    await expect(Test.createTestingModule({ imports: [BsaPersistenceModule.register()] }).compile()).rejects.toThrow(/PII_CIPHER|Nest can't resolve/);
+    await expect(Test.createTestingModule({ imports: [PrismaModule, BsaPersistenceModule.register()] }).compile()).rejects.toThrow(/PII_CIPHER|Nest can't resolve/);
   });
 });

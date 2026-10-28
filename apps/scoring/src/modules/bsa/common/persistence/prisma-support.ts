@@ -1,6 +1,6 @@
 // PrismaBsaRepository-ийн нийтлэг туслахууд: транзакцийн контекст, мөр ↔ domain record хөрвүүлэлт (шифрлэлт/тайлалт энд), enum-ийн
 // унших шалгалт, алдааны хөрвүүлэлт. PII-г зөвхөн ЭНЭ ФАЙЛЫН mapper-ууд `cipher`-ээр шифрлэнэ/тайлна.
-import { BsaDtiRole, BsaRuleMatchType, BsaRuleSource, BsaStatus, ImportStatus, TxnChannel, TxnDirection, type BsaSummary } from '@los/contracts';
+import { BsaDtiRole, BsaRuleMatchType, BsaRuleSource, BsaStatus, ImportStatus, BsaChannel, TxnDirection, type BsaSummary } from '@los/contracts';
 import type { BsaCategoryDef, BsaRuleDef } from '../../classify/classify.types';
 import type { PiiCipher } from '../infra.ports';
 import {
@@ -123,7 +123,7 @@ export function toTxn(ctx: Ctx, r: BsaTransactionRow): BsaTransactionRecord {
     id: r.id, analysisId: r.analysisId, importJobId: r.importJobId, seq: r.seq, txnDate: fromDbDate(r.txnDate), txnTime: r.txnTime,
     direction: readEnum(TxnDirection, r.direction, 'bsa_transaction.direction'), amount: dec(r.amount), balanceAfter: decOrNull(r.balanceAfter),
     description: ctx.cipher.decrypt(r.descriptionEncrypted), counterpartyAccount: decr(ctx, r.counterpartyAccountEncrypted),
-    counterpartyName: decr(ctx, r.counterpartyNameEncrypted), channel: readEnum(TxnChannel, r.channel, 'bsa_transaction.channel'),
+    counterpartyName: decr(ctx, r.counterpartyNameEncrypted), channel: readEnum(BsaChannel, r.channel, 'bsa_transaction.channel'),
     categoryCode: r.categoryCode, categoryGroup: r.categoryGroup, confidence: dec(r.confidence), isOwnTransfer: r.isOwnTransfer,
     manualOverride: r.manualOverride, overrideBy: r.overrideBy, statementKey: r.statementKey, dedupeKey: r.dedupeKey,
   };

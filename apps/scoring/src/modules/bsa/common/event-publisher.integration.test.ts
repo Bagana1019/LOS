@@ -1,5 +1,5 @@
 // PrismaEventPublisher — БОДИТ PostgreSQL + Prisma транзакцийн клиент дээр. TEST_DATABASE_URL тохируулаагүй бол алгасна.
-// Урьдчилсан нөхцөл: тест DB-д packages/database/init/00-schemas.sql хэрэглэсэн (scoring.outbox). АНХААР: scoring.outbox-ийг TRUNCATE хийнэ →
+// Урьдчилсан нөхцөл: `scoring` schema migrate хийгдсэн (vitest globalSetup; scoring.outbox). АНХААР: scoring.outbox-ийг TRUNCATE хийнэ →
 // DB-ийн нэрэнд "test" агуулагдах ёстой (persistence тестийн дүрэмтэй ижил).
 import { PrismaClient, type Prisma } from '../../../../node_modules/.prisma/client-scoring';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';

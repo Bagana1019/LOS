@@ -2,7 +2,7 @@
 // тохиргоо ирэхэд тохирно) — тиймээс Nest-ийн `FilesInterceptor`-ыг хүсэлт бүрт тухайн хязгаартайгаар үүсгэнэ (multer instance хямд).
 //  - Санах ойн storage (multer-ийн анхдагч): файл диск дээр үлдэхгүй; хамгийн их санах ой ≈ maxUploadBytes × maxFilesPerUpload (README).
 //  - Guard (контекст + үүрэг) interceptor-оос ӨМНӨ ажиллана ⇒ эрхгүй хэрэглэгчийн том биеийг уншихгүй.
-//  - multer-ийн англи алдааг монгол errorCode-той BsaException болгоно (413 FILE_TOO_LARGE, 400 TOO_MANY_FILES, 400 UNEXPECTED_FILE_FIELD, 400 INVALID_MULTIPART).
+//  - multer-ийн англи алдааг монгол code-той BsaException болгоно (413 FILE_TOO_LARGE, 400 TOO_MANY_FILES, 400 UNEXPECTED_FILE_FIELD, 400 INVALID_MULTIPART).
 import {
   BadRequestException, type CallHandler, type ExecutionContext, HttpException, HttpStatus, Inject, Injectable, Logger, type NestInterceptor,
   PayloadTooLargeException,

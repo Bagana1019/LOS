@@ -1,5 +1,5 @@
 // PrismaBsaRepository: гэрээний тест (TEST_DATABASE_URL өгөгдсөн үед) + PostgreSQL-д онцгой шалгалт.
-// Урьдчилсан нөхцөл: тест DB-д `packages/database/init/00-schemas.sql`, дараа нь prisma/migrations/*/migration.sql хэрэглэсэн байх (prisma/README.md).
+// Урьдчилсан нөхцөл: `scoring` schema migrate хийгдсэн (vitest globalSetup — test/global-setup.ts — TEST_DATABASE_URL-д baseline + BSA migration + seed хэрэглэнэ; prisma/README.md).
 // АНХААР: reset() нь BSA хүснэгт болон scoring.outbox-ийг TRUNCATE хийнэ → DB-ийн нэрэнд "test" агуулагдах ёстой.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { PrismaBsaRepository } from './prisma-bsa.repository';
@@ -106,7 +106,7 @@ describe.skipIf(!URL_)('PrismaBsaRepository (PostgreSQL)', () => {
     });
 
     it('writes the outbox atomically with business rows via the tx handed to the callback (CLAUDE.md §3.2.4)', async () => {
-      // scoring.outbox-ийг 00-schemas.sql үүсгэдэг (uuid id) тул raw SQL-ээр бичнэ — DomainEventPublisher.enqueue(tx, …) мөн ингэж тx дотор бичих ёстой
+      // scoring.outbox (Модуль 0 baseline) — raw SQL-ээр транзакц дотор бичнэ; DomainEventPublisher.enqueue(tx, …) мөн ингэж tx дотор бичих ёстой
       const enqueue = (tx: unknown) =>
         (tx as Prisma.TransactionClient).$executeRaw`INSERT INTO "scoring"."outbox" (id, type, payload) VALUES (gen_random_uuid(), 'StatementImported', '{"n":1}'::jsonb)`;
       const counts = async () => ({

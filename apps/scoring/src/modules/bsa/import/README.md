@@ -78,7 +78,7 @@ APPROVER зөвхөн уншина. Өөр байгууллага 404, өөр с
   (давхардал 409 `RULE_DUPLICATE`, аюултай regex 400 `RULE_INVALID`).
 - **Summary**: импорт болгоны дараа хураангуй `DRAFT`-аар хадгалагдах тул `GET :id/summary` import-ын дараа 200; импортгүй шинжилгээнд 404 `SUMMARY_NOT_AVAILABLE`.
   `summaryStale` нь хадгалсан ба шинэ хураангуйг `canonicalJson`-оор (түлхүүр эрэмбэлсэн) харьцуулна.
-- **Алдааны хэлбэр**: `{statusCode, errorCode, message (монгол), details?, issues?[{path, code}], correlationId}`; `correlationId` үргэлж, `X-Correlation-Id` хариу толгойд.
+- **Алдааны хэлбэр**: `{statusCode, code, message (монгол), details?, issues?[{path, code}], correlationId}`; `correlationId` үргэлж, `X-Correlation-Id` хариу толгойд.
   Framework-ийн англи текст, оруулсан утга, PII хариунд орохгүй.
 
 ## Pipeline (нэг ажил)
@@ -180,10 +180,10 @@ cd apps/scoring && npx eslint src
 | --- | --- | --- |
 | `import-pipeline.integration.test.ts` | `TEST_DATABASE_URL` | `PrismaBsaRepository` + outbox: DTI, PII шифр, давхцал, атомчлал, зэрэгцээ upload, retention cascade, 2 x 1250 мөр |
 | `import-worker.integration.test.ts` | `REDIS_URL_TEST` | BullMQ: end-to-end, түр алдааны дахин оролдлого, `UnrecoverableError`, `retryJob` |
-| `e2e/bsa-api.integration.e2e.test.ts` | `TEST_DATABASE_URL` + `REDIS_URL_TEST` (+ заавал биш `PII_ENCRYPTION_KEY`) | HTTP e2e бодит Prisma + BullMQ + AES-GCM: бүтэн урсгал, мөрийн тоо, outbox, DB-ийн түүхий мөрөнд PII ил байхгүй, давхардал/tamper/retry/cascade |
+| `e2e/bsa-api.integration.e2e.test.ts` | `TEST_DATABASE_URL` + `REDIS_URL_TEST` (+ заавал биш `DATA_ENCRYPTION_KEY`/`DATA_INDEX_KEY`) | HTTP e2e бодит Prisma + BullMQ + AES-GCM: бүтэн урсгал, мөрийн тоо, outbox, DB-ийн түүхий мөрөнд PII ил байхгүй, давхардал/tamper/retry/cascade |
 
-Бэлтгэл: `apps/scoring/prisma/README.md` (`00-schemas.sql` ба BSA migration). DB-ийн нэрэнд `test` агуулагдах ёстой (TRUNCATE хийнэ).
-**Бодит DB-тэй тестүүдийг файл зэрэгцээгүй ажиллуул**: `npx vitest run src/modules/bsa --no-file-parallelism`. Persistence гэрээний тест,
+Бэлтгэл: vitest globalSetup (`test/global-setup.ts`) `scoring` schema-г baseline + BSA migration-оор шинээр үүсгэнэ (`apps/scoring/prisma/README.md`). DB-ийн нэр `test`-ээр төгснө (TRUNCATE хийнэ).
+**Бодит DB-тэй тестүүд файлаар дарааллаж ажиллана** (`@los/config` nest preset `fileParallelism: false` — тэдгээр нэг DB-г TRUNCATE хийдэг): `pnpm exec vitest run src/modules/bsa`. Persistence гэрээний тест,
 event-publisher integration тест, энэ unit-ийн тест нэг DB-г TRUNCATE хийдэг тул зэрэгцээ ажиллахад бие биенийхээ өгөгдлийг устгана.
 
 ## Мэдэгдэж буй хязгаар

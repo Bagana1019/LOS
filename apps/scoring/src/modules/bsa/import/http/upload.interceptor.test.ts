@@ -1,4 +1,4 @@
-// Multipart хязгаар (BsaSettings-ээс) ба multer-ийн алдааг монгол errorCode-той домэйн алдаа болгох.
+// Multipart хязгаар (BsaSettings-ээс) ба multer-ийн алдааг монгол code-той домэйн алдаа болгох.
 import { BadRequestException, ForbiddenException, HttpException, PayloadTooLargeException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { BsaException } from '../import.errors';

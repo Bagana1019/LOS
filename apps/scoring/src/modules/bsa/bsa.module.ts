@@ -6,6 +6,7 @@
 // Хаахдаа: IMPORT_QUEUE өөрийн onModuleDestroy-д явж буй ажлыг дуусгана. BsaCommonModule нь BsaPersistenceModule-ээс «гүн» (register({imports}))
 // тул Nest-ийн destroy дараалалд queue ӨМНӨ хаагдаж, Prisma дараа салгагдана (ажил дундаа DB-гүй үлдэхгүй).
 import { Module, type DynamicModule, type ModuleMetadata, type Type } from '@nestjs/common';
+import { PrismaModule } from '../../prisma.service';
 import { BsaCommonModule } from './common/bsa-common.module';
 import { BsaPersistenceModule } from './common/persistence/persistence.module';
 import { ClassifyModule } from './classify/classify.module';
@@ -46,6 +47,7 @@ export interface BsaModuleOptions {
 
 @Module({
   imports: [
+    PrismaModule, // нэг PrismaClient — app-ын глобал модуль (тест override хийхэд энэ provider-ийг солино)
     BsaCommonModule,
     BsaPersistenceModule.register({ imports: [BsaCommonModule] }),
     ParsersModule,

@@ -2,7 +2,7 @@
 // бөөрөнхийлөлт, enum шалгалт, алдааны код хоёр хэрэгжүүлэлтэд ижил (нэг гэрээ). Enum-ийн эх сурвалж @los/contracts (zod enum).
 // АНХААР (PII): алдааны мессежид зөвхөн талбарын зам + zod кодыг оруулна — оролтын утгыг ХЭЗЭЭ Ч оруулахгүй.
 import { z } from 'zod';
-import { BsaDtiRole, BsaRuleMatchType, BsaRuleSource, BsaStatus, BsaSummary, ImportStatus, TxnChannel, TxnDirection } from '@los/contracts';
+import { BsaDtiRole, BsaRuleMatchType, BsaRuleSource, BsaStatus, BsaSummary, ImportStatus, BsaChannel, TxnDirection } from '@los/contracts';
 import { BsaInvalidError, DEFAULT_PAGE_SIZE, ImportFormat, MAX_PAGE_SIZE, type IsoDate, type PageRequest } from './bsa.repository';
 
 /** numeric(18,2) тутамд багтах, цент нь Number.MAX_SAFE_INTEGER-ээс бага байх дээд хязгаар (90 их наяд) */
@@ -176,7 +176,7 @@ export const newTxnSchema = z.object({
   description: z.string(),
   counterpartyAccount: z.string().nullish().transform((v) => v ?? null),
   counterpartyName: z.string().nullish().transform((v) => v ?? null),
-  channel: z.enum(TxnChannel).default('OTHER'),
+  channel: z.enum(BsaChannel).default('OTHER'),
   categoryCode: nullableId(64),
   categoryGroup: nullableId(16),
   confidence: confidence.default(0),
@@ -191,7 +191,7 @@ export const classificationUpdateSchema = z.object({
   categoryCode: id(64),
   categoryGroup: id(16),
   confidence,
-  channel: z.enum(TxnChannel),
+  channel: z.enum(BsaChannel),
   isOwnTransfer: z.boolean(),
 });
 
@@ -203,7 +203,7 @@ export const txnFilterSchema = z
     dateTo: isoDate.optional(),
     direction: z.enum(TxnDirection).optional(),
     categoryCodes: z.array(id(64)).max(200).optional(),
-    channel: z.union([z.enum(TxnChannel), z.array(z.enum(TxnChannel)).max(5)]).optional(),
+    channel: z.union([z.enum(BsaChannel), z.array(z.enum(BsaChannel)).max(5)]).optional(),
     ownTransfer: z.boolean().optional(),
     manualOverride: z.boolean().optional(),
     amountMin: money.optional(),

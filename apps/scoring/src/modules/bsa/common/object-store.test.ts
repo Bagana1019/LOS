@@ -15,10 +15,15 @@ import {
   type MinioClientLike,
   type ObjectStoreErrorCode,
 } from './object-store';
-import { AesGcmPiiCipher } from './pii-cipher';
+import { FieldCryptoPiiCipher } from './pii-cipher';
 
-const KEY_A = Buffer.from(Array.from({ length: 32 }, (_, i) => i + 11)).toString('base64');
-const KEY_B = Buffer.from(Array.from({ length: 32 }, (_, i) => i + 77)).toString('base64');
+const keyBuf = (offset: number): Buffer => Buffer.from(Array.from({ length: 32 }, (_, i) => i + offset));
+const KEY_A = keyBuf(11).toString('base64');
+const INDEX_KEY = keyBuf(5).toString('base64');
+/** Foundation-ий түлхүүрийн env (DATA_ENCRYPTION_KEY + DATA_INDEX_KEY) */
+const keyEnv = { DATA_ENCRYPTION_KEY: KEY_A, DATA_INDEX_KEY: INDEX_KEY };
+const cipherOf = (current: string, ...ids: Array<[string, number]>): FieldCryptoPiiCipher =>
+  new FieldCryptoPiiCipher({ keys: Object.fromEntries(ids.map(([id, off]) => [id, keyBuf(off)])), currentKeyId: current, indexKey: keyBuf(5) });
 const PDF = Buffer.from('%PDF-1.4 SYNTHETIC statement bytes\u0000ÿ', 'latin1');
 
 class S3Err extends Error {
@@ -270,6 +275,13 @@ describe('parseMinioConnection (env)', () => {
     expect(parseMinioConnection({ ...base, MINIO_ENDPOINT: 'minio', MINIO_USE_SSL: 'TRUE' })).toMatchObject({ endPoint: 'minio', port: undefined, useSSL: true });
     expect(parseMinioConnection({ ...base, MINIO_ENDPOINT: '[::1]:9000' })).toMatchObject({ endPoint: '::1', port: 9000 });
   });
+  it('uses MINIO_PORT (foundation .env.example: MINIO_ENDPOINT=<host>) only for a bare host; an explicit port or a URL wins', () => {
+    const split = { ...base, MINIO_ENDPOINT: 'localhost', MINIO_PORT: '9000' };
+    expect(parseMinioConnection(split)).toMatchObject({ endPoint: 'localhost', port: 9000, useSSL: false });
+    expect(parseMinioConnection({ ...split, MINIO_ENDPOINT: 'minio:9100' })).toMatchObject({ port: 9100 });
+    expect(parseMinioConnection({ ...split, MINIO_ENDPOINT: 'https://minio.example.test' })).toMatchObject({ port: undefined, useSSL: true });
+    expect(() => parseMinioConnection({ ...split, MINIO_PORT: '70000' })).toThrow(/MINIO_PORT/);
+  });
   it('falls back to MINIO_ROOT_USER / MINIO_ROOT_PASSWORD; MINIO_ACCESS_KEY wins', () => {
     const root = { MINIO_ENDPOINT: 'localhost:9000', MINIO_ROOT_USER: 'minio', MINIO_ROOT_PASSWORD: 'minio12345' };
     expect(parseMinioConnection(root)).toMatchObject({ accessKey: 'minio', secretKey: 'minio12345' });
@@ -342,7 +354,7 @@ describe('InMemoryObjectStore', () => {
 });
 
 describe('EncryptingObjectStore', () => {
-  const cipher = new AesGcmPiiCipher({ key: KEY_A });
+  const cipher = cipherOf('k1', ['k1', 11]);
   let inner: InMemoryObjectStore;
   let store: EncryptingObjectStore;
   beforeEach(() => {
@@ -353,7 +365,7 @@ describe('EncryptingObjectStore', () => {
   it('round-trips and stores only ciphertext with an opaque content type', async () => {
     await store.put('bsa/o/a1.pdf', PDF, 'application/pdf');
     const raw = inner.rawGet('bsa/o/a1.pdf')!;
-    expect(raw.length).toBe(1 + 12 + PDF.length + 16);
+    expect(raw.length).toBe(2 + 'k1'.length + 12 + PDF.length + 16); // 0x02 | idLen | keyId | nonce | ct | tag
     expect(raw.includes(PDF.subarray(0, 8))).toBe(false);
     expect(inner.contentTypeOf('bsa/o/a1.pdf')).toBe('application/octet-stream');
     expect((await store.get('bsa/o/a1.pdf')).equals(PDF)).toBe(true);
@@ -392,13 +404,13 @@ describe('EncryptingObjectStore', () => {
 
   it('cannot be read with a different encryption key', async () => {
     await store.put('k', PDF, 'application/pdf');
-    const other = new EncryptingObjectStore(inner, new AesGcmPiiCipher({ key: KEY_B }));
+    const other = new EncryptingObjectStore(inner, cipherOf('k2', ['k2', 77]));
     expect(await codeOfAsync(() => other.get('k'))).toBe('INTEGRITY');
   });
 
   it('can read objects encrypted under a previous key after rotation', async () => {
     await store.put('k', PDF, 'application/pdf');
-    const rotated = new EncryptingObjectStore(inner, new AesGcmPiiCipher({ key: KEY_B, previousKeys: [KEY_A] }));
+    const rotated = new EncryptingObjectStore(inner, cipherOf('k2', ['k1', 11], ['k2', 77]));
     expect((await rotated.get('k')).equals(PDF)).toBe(true);
   });
 
@@ -436,34 +448,34 @@ describe('createObjectStore(env)', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it('wraps the store with file encryption when PII_ENCRYPTION_KEY is present, and the wrapped store works', async () => {
-    const store = createObjectStore({ PII_ENCRYPTION_KEY: KEY_A }, { warn: () => undefined });
+  it('wraps the store with file encryption when DATA_ENCRYPTION_KEY is present, and the wrapped store works', async () => {
+    const store = createObjectStore(keyEnv, { warn: () => undefined });
     expect(store).toBeInstanceOf(EncryptingObjectStore);
     await store.put('k', PDF, 'application/pdf');
     expect((await store.get('k')).equals(PDF)).toBe(true);
-    expect(createObjectStore({ ...minioEnv, PII_ENCRYPTION_KEY: KEY_A })).toBeInstanceOf(EncryptingObjectStore);
+    expect(createObjectStore({ ...minioEnv, ...keyEnv })).toBeInstanceOf(EncryptingObjectStore);
   });
 
   it('uses an explicit cipher (shared with PII_CIPHER) and lets tests opt out with null', () => {
-    expect(createObjectStore(minioEnv, { cipher: new AesGcmPiiCipher({ key: KEY_B }) })).toBeInstanceOf(EncryptingObjectStore);
-    expect(createObjectStore({ ...minioEnv, PII_ENCRYPTION_KEY: KEY_A }, { cipher: null })).toBeInstanceOf(MinioObjectStore);
+    expect(createObjectStore(minioEnv, { cipher: cipherOf('k2', ['k2', 77]) })).toBeInstanceOf(EncryptingObjectStore);
+    expect(createObjectStore({ ...minioEnv, ...keyEnv }, { cipher: null })).toBeInstanceOf(MinioObjectStore);
   });
 
   it('NODE_ENV=production without MINIO_ENDPOINT throws (never silently in-memory)', () => {
-    expect(() => createObjectStore({ NODE_ENV: 'production', PII_ENCRYPTION_KEY: KEY_A })).toThrow(/MINIO_ENDPOINT/);
+    expect(() => createObjectStore({ NODE_ENV: 'production', ...keyEnv })).toThrow(/MINIO_ENDPOINT/);
   });
 
   it('NODE_ENV=production without an encryption key throws (files are PII)', () => {
-    expect(() => createObjectStore({ ...minioEnv, NODE_ENV: 'production' })).toThrow(/PII_ENCRYPTION_KEY/);
-    expect(() => createObjectStore({ ...minioEnv, NODE_ENV: 'production' }, { cipher: null })).toThrow(/PII_ENCRYPTION_KEY/);
+    expect(() => createObjectStore({ ...minioEnv, NODE_ENV: 'production' })).toThrow(/DATA_ENCRYPTION_KEY/);
+    expect(() => createObjectStore({ ...minioEnv, NODE_ENV: 'production' }, { cipher: null })).toThrow(/DATA_ENCRYPTION_KEY/);
   });
 
   it('NODE_ENV=production with endpoint + key succeeds', () => {
-    expect(createObjectStore({ ...minioEnv, NODE_ENV: 'production', PII_ENCRYPTION_KEY: KEY_A })).toBeInstanceOf(EncryptingObjectStore);
+    expect(createObjectStore({ ...minioEnv, NODE_ENV: 'production', ...keyEnv })).toBeInstanceOf(EncryptingObjectStore);
   });
 
   it('propagates precise config errors (credentials, bad key)', () => {
     expect(() => createObjectStore({ MINIO_ENDPOINT: 'localhost:9000' })).toThrow(/MINIO_ACCESS_KEY/);
-    expect(() => createObjectStore({ ...minioEnv, PII_ENCRYPTION_KEY: 'short' })).toThrow(/PII_ENCRYPTION_KEY/);
+    expect(() => createObjectStore({ ...minioEnv, DATA_ENCRYPTION_KEY: 'short', DATA_INDEX_KEY: INDEX_KEY })).toThrow(/DATA_ENCRYPTION_KEY/);
   });
 });

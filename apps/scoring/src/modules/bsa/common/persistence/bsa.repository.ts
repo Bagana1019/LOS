@@ -9,7 +9,7 @@
 //  - Алдаа: BsaNotFoundError / BsaDuplicateError / BsaInvalidError (доор). Алдааны мессежид PII орохгүй.
 //  - `runInTransaction`: callback шидвэл бүх бичилт буцна; `tx` нь DomainEventPublisher.enqueue(tx, event)-д өгөх объект
 //    (CLAUDE.md §3.2(4): event-ийг бизнес бичилттэй НЭГ транзакцид outbox-д бичнэ).
-import type { BsaStatus, BsaSummary, ImportFormat, ImportStatus, TxnChannel, TxnDirection } from '@los/contracts';
+import type { BsaStatus, BsaSummary, ImportFormat, ImportStatus, BsaChannel, TxnDirection } from '@los/contracts';
 import type { BsaCategoryDef, BsaRuleDef } from '../../classify/classify.types';
 
 export const BSA_REPOSITORY = Symbol('BSA_REPOSITORY');
@@ -297,7 +297,7 @@ export interface NewBsaTransaction {
   description: string;
   counterpartyAccount: string | null;
   counterpartyName: string | null;
-  channel?: TxnChannel;
+  channel?: BsaChannel;
   categoryCode?: string | null;
   categoryGroup?: string | null;
   /** 0..100 */
@@ -322,7 +322,7 @@ export interface BsaTransactionRecord {
   description: string;
   counterpartyAccount: string | null;
   counterpartyName: string | null;
-  channel: TxnChannel;
+  channel: BsaChannel;
   categoryCode: string | null;
   categoryGroup: string | null;
   confidence: number;
@@ -344,7 +344,7 @@ export interface BsaTransactionFilter {
   dateTo?: IsoDate;
   direction?: TxnDirection;
   categoryCodes?: string[];
-  channel?: TxnChannel | TxnChannel[];
+  channel?: BsaChannel | BsaChannel[];
   ownTransfer?: boolean;
   manualOverride?: boolean;
   amountMin?: number;
@@ -371,7 +371,7 @@ export interface ClassificationUpdate {
   categoryGroup: string;
   /** 0..100 */
   confidence: number;
-  channel: TxnChannel;
+  channel: BsaChannel;
   isOwnTransfer: boolean;
 }
 

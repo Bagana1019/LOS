@@ -1,5 +1,5 @@
 // BSA ангиллын гэрээ. docs/02 §4 (ангилал, дайчлах хувь), BSA-FR-3, BSA-BR-5/7.
-import type { BsaDtiRole, BsaRuleMatchType, BsaRuleSource, TxnChannel, TxnDirection } from '@los/contracts';
+import type { BsaDtiRole, BsaRuleMatchType, BsaRuleSource, BsaChannel, TxnDirection } from '@los/contracts';
 
 /** docs/03 bsa_category — admin-д тохируулагдана */
 export interface BsaCategoryDef {
@@ -60,7 +60,7 @@ export interface ClassificationResult {
   categoryGroup: string;
   /** 0..100 (docs/02 §5: итгэл %) */
   confidence: number;
-  channel: TxnChannel;
+  channel: BsaChannel;
   isOwnTransfer: boolean;
   /** Тайлбарлах шалтгаан (аудит/UI): таарсан дүрэм, own-transfer шалтгаан гэх мэт */
   reason: string;
