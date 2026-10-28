@@ -4,7 +4,7 @@ import { contextOf } from '@los/nest-common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { AuditInterceptor } from '../audit/audit.interceptor';
 import { PROXIED_SERVICES, ProxyService, type ProxiedService } from './proxy.service';
-import { requiredPermission } from './route-policy';
+import { isInternalOnly, requiredPermission } from './route-policy';
 
 type Req_ = IncomingMessage & { path: string; method: string };
 
@@ -17,7 +17,7 @@ export class ProxyController {
   @All(PROXIED_SERVICES.map((s) => `${s}/*`))
   forward(@Req() req: Req_, @Res() res: ServerResponse): void {
     const service = req.path.split('/')[2] as ProxiedService;
-    if (!PROXIED_SERVICES.includes(service)) throw new NotFoundException();
+    if (!PROXIED_SERVICES.includes(service) || isInternalOnly(req.path)) throw new NotFoundException();
     const need = requiredPermission(req.method, req.path);
     if (need && !hasPermission(contextOf(req as never).roles, need)) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Энэ үйлдэлд эрх хүрэхгүй' });
     this.proxy.forward(service, req, res);
