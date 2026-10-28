@@ -1,0 +1,170 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC TEST DATA - NOT A REAL STATEMENT. assumed layout, oldest first, closing balance and row count printed at the end. Assumed TDB layout (TODO(samples)).",
+  "transactions": [
+    {
+      "seq": 1,
+      "txnDate": "2026-02-26",
+      "txnTime": "08:07:52",
+      "direction": "EXPENSE",
+      "amount": 31200,
+      "balanceAfter": 2968800,
+      "description": "Supermarket purchase",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 2,
+      "txnDate": "2026-02-26",
+      "txnTime": "08:16:53",
+      "direction": "EXPENSE",
+      "amount": 7300,
+      "balanceAfter": 2961500,
+      "description": "Зээлийн төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 3,
+      "txnDate": "2026-02-26",
+      "txnTime": "08:24:58",
+      "direction": "EXPENSE",
+      "amount": 13800,
+      "balanceAfter": 2947700,
+      "description": "Зээлийн төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 4,
+      "txnDate": "2026-02-26",
+      "txnTime": "08:30:04",
+      "direction": "EXPENSE",
+      "amount": 37700,
+      "balanceAfter": 2910000,
+      "description": "Гэр бүлд шилжүүлэг",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 5,
+      "txnDate": "2026-02-26",
+      "txnTime": "08:33:53",
+      "direction": "INCOME",
+      "amount": 250200,
+      "balanceAfter": 3160200,
+      "description": "Цалин",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 6,
+      "txnDate": "2026-02-27",
+      "txnTime": "08:10:07",
+      "direction": "INCOME",
+      "amount": 248900,
+      "balanceAfter": 3409100,
+      "description": "Тэтгэвэр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 7,
+      "txnDate": "2026-02-28",
+      "txnTime": "08:08:19",
+      "direction": "INCOME",
+      "amount": 122600,
+      "balanceAfter": 3531700,
+      "description": "Цалин Salary March",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 8,
+      "txnDate": "2026-03-01",
+      "txnTime": "08:10:11",
+      "direction": "EXPENSE",
+      "amount": 11900,
+      "balanceAfter": 3519800,
+      "description": "Mobicom төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 9,
+      "txnDate": "2026-03-01",
+      "txnTime": "08:16:22",
+      "direction": "INCOME",
+      "amount": 311000,
+      "balanceAfter": 3830800,
+      "description": "Цалин",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 10,
+      "txnDate": "2026-03-01",
+      "txnTime": "08:24:20",
+      "direction": "EXPENSE",
+      "amount": 4800,
+      "balanceAfter": 3826000,
+      "description": "Mobicom төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 11,
+      "txnDate": "2026-03-01",
+      "txnTime": "08:31:10",
+      "direction": "INCOME",
+      "amount": 176700,
+      "balanceAfter": 4002700,
+      "description": "Цалин",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 12,
+      "txnDate": "2026-03-01",
+      "txnTime": "08:40:58",
+      "direction": "EXPENSE",
+      "amount": 33100,
+      "balanceAfter": 3969600,
+      "description": "Supermarket purchase",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 13,
+      "txnDate": "2026-03-02",
+      "txnTime": "08:02:46",
+      "direction": "INCOME",
+      "amount": 256900,
+      "balanceAfter": 4226500,
+      "description": "Худалдааны орлого POS",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 14,
+      "txnDate": "2026-03-02",
+      "txnTime": "08:04:40",
+      "direction": "INCOME",
+      "amount": 380200,
+      "balanceAfter": 4606700,
+      "description": "Цалин Salary March",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    }
+  ],
+  "openingBalance": 3000000,
+  "closingBalance": 4606700,
+  "periodFrom": "2026-02-26",
+  "periodTo": "2026-03-02",
+  "declaredRowCount": 14,
+  "accountNo": "5011223344",
+  "iban": null,
+  "holderName": "Бат-Эрдэнэ Болд",
+  "holderRegisterNo": null,
+  "currency": "MNT"
+}

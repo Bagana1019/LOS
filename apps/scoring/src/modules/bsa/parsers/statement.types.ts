@@ -87,6 +87,8 @@ export interface ParsedStatement {
   accountNo: string | null;
   iban: string | null;
   holderName: string | null;
+  /** Хуулгад хэвлэсэн эзэмшигчийн регистр (каноник 'УБ90010203'); хэвлээгүй/буруу бол null/undefined. ADDITIVE (verifier: REGISTER_MISMATCH) */
+  holderRegisterNo?: string | null;
   currency: string; // 'MNT'
   periodFrom: string | null; // YYYY-MM-DD
   periodTo: string | null;
@@ -96,12 +98,24 @@ export interface ParsedStatement {
   declaredRowCount: number | null;
   transactions: ParsedTransaction[];
   warnings: ParseWarning[];
+  /** Мөр шиг харагдсан ч уншигдаагүй мөрийн НИЙТ тоо (UNPARSED_ROW анхааруулга хязгаарлагдсан ч бүрэн). ADDITIVE (verifier: ROW_COUNT_MISMATCH) */
+  unparsedRowCount?: number;
+}
+
+/** Банкны бодлого — verifier-т хэрэгтэй хэсэг (BankProfile-аас гарна). ADDITIVE */
+export interface BankPolicy {
+  /** false: зураг (JPG/PNG) хүлээн авахгүй (жишээ: Хаан — samples/README.md) → IMAGE_NOT_ACCEPTED */
+  acceptsImages: boolean;
+  /** true: банк стандарт бус IBAN хэвлэдэг → IBAN_INVALID зөвхөн WARNING */
+  printsNonStandardIban: boolean;
 }
 
 /** NFR-5: банк нэмэхэд зөвхөн шинэ parser класс + registry-д бүртгэл. */
 export interface StatementParser {
   readonly bank: BankCode;
   readonly id: string;
+  /** ADDITIVE: банкны бодлого (зураг хүлээн авах, IBAN хэлбэр). Байхгүй бол DEFAULT_BANK_POLICY */
+  readonly policy?: BankPolicy;
   /** Жишээ файлаар баталгаажсан эсэх (ParsedStatement.parserVerified-д дамжина) */
   readonly verified: boolean;
   /** 0..1 — энэ текст миний банкных мөн гэсэн итгэл. Registry хамгийн өндрийг (≥ босго) сонгоно. */
@@ -128,7 +142,8 @@ export type VerificationIssueCode =
   | 'PDF_MODIFIED'
   | 'OCR_LOW_CONFIDENCE'
   | 'QR_NOT_VERIFIED'
-  | 'UNVERIFIED_PARSER';
+  | 'UNVERIFIED_PARSER'
+  | 'IMAGE_NOT_ACCEPTED'; // ADDITIVE: банкны хуулга зургаар хүлээн авдаггүй
 
 export interface VerificationIssue {
   code: VerificationIssueCode;
@@ -140,6 +155,20 @@ export interface VerificationIssue {
   line?: number;
 }
 
+/** PDF metadata-н дүгнэлт (BSA-FR-2.3). ADDITIVE — VerificationResult.authenticity */
+export interface AuthenticityReport {
+  /** PDF metadata байсан эсэх (зураг/CSV-д false) */
+  checked: boolean;
+  producer: string | null;
+  creator: string | null;
+  /** Producer/creator-т таарсан засварлагч/оффис/онлайн хэрэгслийн тэмдэг */
+  suspiciousSignatures: string[];
+  /** modDate − creationDate (секунд); огноо байхгүй бол null */
+  modifiedAfterSeconds: number | null;
+  isEncrypted: boolean;
+  hasSignature: boolean;
+}
+
 export interface VerificationResult {
   /** Parser ямар нэг гүйлгээ уншсан, бүтцийн алдаагүй */
   parserOk: boolean;
@@ -148,4 +177,6 @@ export interface VerificationResult {
   /** true: QR банкны талаас баталгаажсан; false: бүтэлгүйтсэн; null: шалгаагүй (QR байхгүй / TODO) */
   qrVerified: boolean | null;
   issues: VerificationIssue[];
+  /** ADDITIVE: PDF metadata-н мэдээлэл (шифрлэлт, гарын үсэг гэх мэт) — UI/аудитад */
+  authenticity?: AuthenticityReport;
 }
