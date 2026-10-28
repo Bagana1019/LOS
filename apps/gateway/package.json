@@ -6,7 +6,11 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "test": "vitest run --passWithNoTests",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "db:generate": "node ../../scripts/prisma.mjs gateway generate",
+    "db:migrate": "node ../../scripts/prisma.mjs gateway migrate deploy",
+    "db:migrate:dev": "node ../../scripts/prisma.mjs gateway migrate dev",
+    "db:seed": "node ../../scripts/prisma.mjs gateway seed"
   },
   "dependencies": {
     "@los/contracts": "workspace:*",
@@ -17,7 +21,15 @@
     "@nestjs/config": "^3.2.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.0",
-    "zod": "^3.23.0"
+    "zod": "^3.23.0",
+    "@los/nest-common": "workspace:*",
+    "@prisma/client": "^5.20.0",
+    "@nestjs/jwt": "^10.2.0",
+    "@nestjs/throttler": "^6.2.0",
+    "cookie-parser": "^1.4.7",
+    "helmet": "^8.0.0",
+    "http-proxy-middleware": "^3.0.3",
+    "ioredis": "^5.4.0"
   },
   "devDependencies": {
     "@los/config": "workspace:*",
@@ -25,6 +37,8 @@
     "@nestjs/testing": "^10.4.0",
     "vitest": "^2.1.0",
     "supertest": "^7.0.0",
-    "tsx": "^4.19.0"
+    "tsx": "^4.19.0",
+    "prisma": "^5.20.0",
+    "@types/cookie-parser": "^1.4.7"
   }
 }

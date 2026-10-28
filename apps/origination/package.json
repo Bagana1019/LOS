@@ -7,9 +7,10 @@
     "build": "nest build",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:generate": "node ../../scripts/prisma.mjs origination generate",
+    "db:migrate": "node ../../scripts/prisma.mjs origination migrate deploy",
+    "db:migrate:dev": "node ../../scripts/prisma.mjs origination migrate dev",
+    "db:seed": "node ../../scripts/prisma.mjs origination seed"
   },
   "dependencies": {
     "@los/contracts": "workspace:*",
@@ -23,7 +24,8 @@
     "zod": "^3.23.0",
     "@los/calc": "workspace:*",
     "bullmq": "^5.12.0",
-    "@prisma/client": "^5.20.0"
+    "@prisma/client": "^5.20.0",
+    "@los/nest-common": "workspace:*"
   },
   "devDependencies": {
     "@los/config": "workspace:*",

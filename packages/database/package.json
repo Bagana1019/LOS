@@ -6,15 +6,19 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@los/contracts": "workspace:*",
     "@prisma/client": "^5.20.0",
-    "ioredis": "^5.4.0"
+    "ioredis": "^5.4.0",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@los/config": "workspace:*",
-    "prisma": "^5.20.0"
+    "prisma": "^5.20.0",
+    "vitest": "^2.1.0",
+    "@types/node": "^22.0.0"
   }
 }
