@@ -3,3 +3,4 @@ export * from './underwriting';
 export * from './dti';
 export * from './ltv';
 export * from './sosco-score';
+export * from './market-price';
