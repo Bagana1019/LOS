@@ -193,8 +193,9 @@ describe('computeBsaDti — golden: docs/02 §7 жишээ', () => {
     expect(result.meetsLimit).toBe(true);
   });
 
-  it('найдвар: Python-оор тусад нь бодсон 84.7 (давтамж 1, тогтвортой 0.7365, цэвэр 0.7606; жин 0.4/0.4/0.2)', () => {
-    expect(result.incomeReliability).toBe(84.7);
+  it('найдвар 95.2: хэсэгчилсэн эхний/сүүлийн сар (3, 9-р сар) хасагдаж 4–8-р сар үнэлэгдэнэ — давтамж 1, тогтвортой 1, цэвэр 0.7606 (жин 0.4/0.4/0.2)', () => {
+    // 100 × (0.4×1 + 0.4×1 + 0.2×(1 − 6,062,984.53 / (19,257,486.47 + 6,062,984.53))) = 95.2 — гараар тусад нь бодсон
+    expect(result.incomeReliability).toBe(95.2);
   });
 
   it('өөрийн данс (EXCLUDE) орлого/зарлага нийлбэр, share, найдварт огт орохгүй', () => {
@@ -882,7 +883,7 @@ describe('computeBsaDti — methodology', () => {
       dtiPercent: 20.4, lowMaxPercent: 35, mediumMaxPercent: 55, maxDtiPercent: 55, level: 'LOW', meetsLimit: 'true',
     });
     expect(byKey('income_reliability').inputs).toMatchObject({
-      frequencyPercent: 100, consistencyPercent: 73.6, cleanlinessPercent: 76.1, wFrequency: 0.4,
+      frequencyPercent: 100, consistencyPercent: 100, cleanlinessPercent: 76.1, wFrequency: 0.4, monthsAssessed: 5,
     });
   });
 
@@ -903,6 +904,38 @@ describe('computeBsaDti — methodology', () => {
   });
 });
 
+// ───────────── BSA-BR-4: хэсэгчилсэн сарууд найдварт нөлөөлөхгүй ─────────────
+describe('income reliability — partial edge months', () => {
+  const salaryOn25th = (keys: string[]) => inc('SALARY', 1, flat(keys, 1_000_000));
+  const reliabilityOf = (from: string, to: string, cats: BsaCategoryMonthly[]) => computeBsaDti(cats, params({ periodFrom: from, periodTo: to }));
+
+  it('сарын 25-нд цалин авдаг хүн, 2026-03-10..2026-09-10 → 100 (9-р сарын 1–10 цалингүй байх нь «дутуу сар» биш)', () => {
+    const r = reliabilityOf('2026-03-10', '2026-09-10', [salaryOn25th(['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08'])]);
+    expect(r.incomeReliability).toBe(100);
+    expect(r.methodology.find((m) => m.key === 'income_reliability')?.inputs).toMatchObject({ monthsAssessed: 5 });
+  });
+
+  it('хугацаа сарын 1-нд эхэлж сүүлийн өдөр дуусвал бүх сар үнэлэгдэнэ (тасарсан сар найдварыг бууруулна)', () => {
+    const keys = ['2026-03', '2026-04', '2026-05', '2026-06'];
+    const full = reliabilityOf('2026-03-01', '2026-06-30', [inc('SALARY', 1, { '2026-03': 1_000_000, '2026-04': 1_000_000, '2026-06': 1_000_000 })]);
+    expect(full.methodology.find((m) => m.key === 'income_reliability')?.inputs).toMatchObject({ monthsAssessed: keys.length });
+    expect(full.incomeReliability).toBeLessThan(100); // 5-р сар хоосон
+  });
+
+  it('бүтэн сар 2-оос цөөн бол бүх хуанлийн сарыг үнэлнэ (илүү мэдээлэл байхгүй)', () => {
+    const none = reliabilityOf('2026-03-10', '2026-04-20', [inc('SALARY', 1, { '2026-03': 500_000, '2026-04': 500_000 })]);
+    expect(none.methodology.find((m) => m.key === 'income_reliability')?.inputs).toMatchObject({ monthsAssessed: 2 });
+    const one = reliabilityOf('2026-02-20', '2026-04-10', [inc('SALARY', 1, { '2026-02': 1, '2026-03': 1_000_000, '2026-04': 1 })]);
+    expect(one.methodology.find((m) => m.key === 'income_reliability')?.inputs).toMatchObject({ monthsAssessed: 3 });
+  });
+
+  it('хугацаа сарын дундаас эхэлж сарын сүүлийн өдөр дуусвал зөвхөн эхний сар хасагдана', () => {
+    const r = reliabilityOf('2026-03-10', '2026-06-30', [salaryOn25th(['2026-03', '2026-04', '2026-05', '2026-06'])]);
+    expect(r.methodology.find((m) => m.key === 'income_reliability')?.inputs).toMatchObject({ monthsAssessed: 3 });
+    expect(r.incomeReliability).toBe(100);
+  });
+});
+
 // ───────────── toScoringPatch (INT-5) ─────────────
 describe('toScoringPatch', () => {
   const g = computeBsaDti(goldenCategories(), params());
@@ -919,7 +952,7 @@ describe('toScoringPatch', () => {
   it('ScoreRequest болон Sosco оролтын хэсэг рүү зураглана', () => {
     expect(toScoringPatch(input)).toEqual({
       scoreRequest: { businessNcfMonthly: 15_205_822, existingDebtServiceMonthly: 1_000_000, householdExpenseMonthly: 2_000_000 },
-      sosco: { dtiPercent: 6.8, incomeReliability: 84.7, pendingSuspiciousCount: 250 },
+      sosco: { dtiPercent: 6.8, incomeReliability: 95.2, pendingSuspiciousCount: 250 },
     });
   });
 
@@ -933,7 +966,7 @@ describe('toScoringPatch', () => {
 
   it('хязгаарласан DTI 999.9, сөрөг ЦМУ, 0 дохио хэвээр дамжина', () => {
     const patch = toScoringPatch({ ...input, dtiPercent: DTI_PERCENT_CAP, businessNcfMonthly: -500, pendingSuspiciousCount: 0 });
-    expect(patch.sosco).toEqual({ dtiPercent: 999.9, incomeReliability: 84.7, pendingSuspiciousCount: 0 });
+    expect(patch.sosco).toEqual({ dtiPercent: 999.9, incomeReliability: 95.2, pendingSuspiciousCount: 0 });
     expect(patch.scoreRequest.businessNcfMonthly).toBe(-500);
   });
 });

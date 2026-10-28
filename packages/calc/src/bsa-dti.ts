@@ -141,7 +141,7 @@ function assertUnit(name: string, v: number): void {
   if (!Number.isFinite(v) || v < 0 || v > 1) throw new RangeError(`${name} must be a number within 0..1, got ${v}`);
 }
 
-interface ParsedDate { year: number; month: number; dayNumber: number }
+interface ParsedDate { year: number; month: number; day: number; dayNumber: number }
 
 /** Зөвхөн бодит хуанлийн 'YYYY-MM-DD' (UTC; цагийн бүс/DST нөлөөлөхгүй) */
 function parseDate(label: string, iso: string): ParsedDate {
@@ -152,21 +152,25 @@ function parseDate(label: string, iso: string): ParsedDate {
   t.setUTCFullYear(year, month - 1, day);
   // 2026-02-30 шиг байхгүй өдөр дараагийн сар руу гүйдэг → өдөр таарахгүй
   if (t.getUTCDate() !== day) throw new RangeError(`${label} is not a calendar date: "${iso}"`);
-  return { year, month, dayNumber: t.getTime() / MS_PER_DAY };
+  return { year, month, day, dayNumber: t.getTime() / MS_PER_DAY };
 }
 
 const monthKey = (index: number): string =>
   `${String(Math.floor(index / 12)).padStart(4, '0')}-${String((index % 12) + 1).padStart(2, '0')}`;
 
 /** Хугацааны шалгалт + өдөр, дундажлах хуваагч, хуанлийн сарууд (BSA-BR-3) */
-function analyzePeriod(from: string, to: string): { days: number; periodMonths: number; monthKeys: string[] } {
+function analyzePeriod(from: string, to: string): { days: number; periodMonths: number; monthKeys: string[]; reliabilityMonthKeys: string[] } {
   const start = parseDate('period start', from);
   const end = parseDate('period end', to);
   if (start.dayNumber > end.dayNumber) throw new RangeError(`period start ${from} is after period end ${to}`);
   const days = end.dayNumber - start.dayNumber + 1;
   const monthKeys: string[] = [];
   for (let i = start.year * 12 + start.month - 1; i <= end.year * 12 + end.month - 1; i++) monthKeys.push(monthKey(i));
-  return { days, periodMonths: Math.max(1, Math.round(days / DAYS_PER_MONTH)), monthKeys };
+  // BSA-BR-4: хугацаа сарын дундаас эхэлбэл/дуусвал эхний/сүүлийн сар хэсэгчилсэн — тогтмол цалинг «байхгүй сар» гэж
+  // буруу үзэхгүйн тулд найдварыг зөвхөн бүтэн сараар үнэлнэ. Бүтэн сар 2-оос цөөн бол бүх сарыг үнэлнэ (илүү мэдээлэл байхгүй).
+  const lastDay = new Date(Date.UTC(end.year, end.month, 0)).getUTCDate();
+  const full = monthKeys.filter((_, i) => !(i === 0 && start.day > 1) && !(i === monthKeys.length - 1 && end.day < lastDay));
+  return { days, periodMonths: Math.max(1, Math.round(days / DAYS_PER_MONTH)), monthKeys, reliabilityMonthKeys: full.length >= 2 ? full : monthKeys };
 }
 
 function assertLevelThresholds(t: { lowMax: number; mediumMax: number }): void {
@@ -233,7 +237,7 @@ function reliabilityParts(categories: BsaCategoryMonthly[], params: BsaDtiParams
   let irregular = new D(0);
   for (const c of categories) {
     if (c.dtiRole !== 'INCOME') continue;
-    const total = sumOf(Object.values(c.monthly));
+    const total = sumOf(monthKeys.map((k) => c.monthly[k] ?? 0)); // зөвхөн үнэлэгдэх саруудын дүн
     if (irregularCodes.has(c.code)) irregular = irregular.plus(total);
     else if (c.weight > 0) verifiedGross = verifiedGross.plus(total);
     if (c.weight > 0) {
@@ -281,7 +285,8 @@ export function classifyDtiLevel(ratio: number, t: { lowMax: number; mediumMax: 
  *  - consistency = clamp(1 − CV, 0, 1); CV = σ/μ (сар бүрийн жинлэсэн баталгаажсан орлого, 0-тэй сар оролцоно)
  *  - cleanliness = 1 − irregular / (verifiedGross + irregular); irregularIncomeCodes-ын нийт дүн
  * Баталгаажсан орлого байхгүй бол 0.
- * "Хугацааны сарын тоо" = monthKeys.length (хуанлийн сар; хугацаа сарын дундаас эхэлбэл эхний/сүүлийн сар хэсэгчилсэн).
+ * "Хугацааны сарын тоо" = дуудагчийн өгсөн monthKeys.length. computeBsaDti нь хэсэгчилсэн эхний/сүүлийн сарыг хасаж
+ * (бүтэн сар ≥ 2 бол) зөвхөн бүтэн саруудыг дамжуулдаг.
  */
 export function incomeReliability(categories: BsaCategoryMonthly[], params: BsaDtiParams, monthKeys: string[]): number {
   assertMonthKeys(monthKeys);
@@ -301,7 +306,7 @@ export function incomeReliability(categories: BsaCategoryMonthly[], params: BsaD
  * Алдаатай оролт (огноо, жин/ББӨ ∉ 0..1, сөрөг дүн, хугацаанаас гадуурх сар, давхардсан код…) → RangeError.
  */
 export function computeBsaDti(categories: BsaCategoryMonthly[], params: BsaDtiParams): BsaDtiResult {
-  const { days, periodMonths, monthKeys } = analyzePeriod(params.periodFrom, params.periodTo);
+  const { days, periodMonths, monthKeys, reliabilityMonthKeys } = analyzePeriod(params.periodFrom, params.periodTo);
   assertParams(params);
   assertCategories(categories, monthKeys);
 
@@ -341,7 +346,7 @@ export function computeBsaDti(categories: BsaCategoryMonthly[], params: BsaDtiPa
   const dtiPercent = Number.isFinite(dtiRatio) ? Math.min(DTI_PERCENT_CAP, round(new D(dtiRatio).mul(100), 1)) : DTI_PERCENT_CAP;
   const dtiLevel = classifyDtiLevel(dtiRatio, params.levelThresholds);
   const meetsLimit = dtiRatio <= params.maxDti;
-  const reliability = reliabilityParts(categories, params, monthKeys);
+  const reliability = reliabilityParts(categories, params, reliabilityMonthKeys);
 
   // Чиглэл бүрийн нийт дүн (EXCLUDE-ээс бусад, INFO орно) — share-ийн суурь
   const directionTotal = (direction: BsaCategoryMonthly['direction']): Decimal =>
@@ -415,7 +420,7 @@ export function computeBsaDti(categories: BsaCategoryMonthly[], params: BsaDtiPa
     {
       frequencyPercent: reliabilityPct(reliability.frequency), consistencyPercent: reliabilityPct(reliability.consistency),
       cleanlinessPercent: reliabilityPct(reliability.cleanliness), wFrequency: w.frequency, wConsistency: w.consistency,
-      wCleanliness: w.cleanliness,
+      wCleanliness: w.cleanliness, monthsAssessed: reliabilityMonthKeys.length,
     }, reliability.score);
 
   return {

@@ -24,17 +24,28 @@ describe('buildDedupeKeys', () => {
     expect(keys([same, same])).toEqual(a.slice(0, 2));
   });
 
-  it('differs when the account, date, time, direction, amount, balance or description differ', () => {
+  it('differs when the account, date, time, direction, amount or balance differ', () => {
     const base = keys([row()])[0];
-    for (const o of [{ txnDate: '2026-03-11' }, { txnTime: '09:16' }, { direction: 'EXPENSE' as const }, { amount: 100.01 }, { balanceAfter: 1000.01 }, { balanceAfter: null }, { description: 'other' }]) {
+    for (const o of [{ txnDate: '2026-03-11' }, { txnTime: '09:16' }, { direction: 'EXPENSE' as const }, { amount: 100.01 }, { balanceAfter: 1000.01 }, { balanceAfter: null }]) {
       expect(keys([row(o)])[0]).not.toBe(base);
     }
     expect(keys([row()], 'MN00 0000 0002')[0]).not.toBe(base);
   });
 
-  it('ignores cosmetic differences: case, spacing, HH:mm vs HH:mm:ss, float noise, account formatting', () => {
+  it('uses the description only when the statement has no balance column (balanced rows are fully identified without it)', () => {
+    const noBalance = (description: string) => row({ balanceAfter: null, description });
+    expect(keys([noBalance('Coffee')])[0]).not.toBe(keys([noBalance('Tea')])[0]);
+    expect(keys([noBalance('  COFFEE   shop ')])[0]).toBe(keys([noBalance('coffee shop')])[0]);
+  });
+
+  it('matches the same row read from a PDF and from an OCR image even when OCR garbles the description', () => {
+    const pdf = keys([row({ description: 'Salary 2026-03 #100' })]);
+    const ocr = keys([row({ description: 'Sa1ary 2O26-O3 #1OO' })]);
+    expect(ocr).toEqual(pdf);
+  });
+
+  it('ignores cosmetic differences: HH:mm vs HH:mm:ss, float noise, account formatting', () => {
     const base = keys([row()])[0];
-    expect(keys([row({ description: '  SYNTHETIC   payment ' })])[0]).toBe(base);
     expect(keys([row({ txnTime: '09:15:00' })])[0]).toBe(base);
     expect(keys([row({ amount: 100.00000000000001 })])[0]).toBe(base);
     expect(keys([row()], 'mn00 0000 0001')[0]).toBe(base);
