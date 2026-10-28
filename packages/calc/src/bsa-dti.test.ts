@@ -620,8 +620,13 @@ describe('incomeReliability (BSA-BR-4)', () => {
     expect(() => incomeReliability([], PARAMS, ['2026-13'])).toThrow(/YYYY-MM/);
     expect(() => incomeReliability([], PARAMS, ['hello'])).toThrow(RangeError);
     expect(() => incomeReliability([], w(0.5, 0.5, 0.5), keys4)).toThrow(/sum to 1/);
-    expect(() => incomeReliability([inc('X', 1, { '2026-09': 1 })], PARAMS, keys4)).toThrow(/outside the analysis period/);
     expect(() => incomeReliability([inc('X', 1.2, { '2026-01': 1 })], PARAMS, keys4)).toThrow(/within 0..1/);
+  });
+
+  it('үнэлэх саруудаас гадуурх сарын дүнг тооцохгүй (хэсэгчилсэн сар) — алдаа шидэхгүй', () => {
+    const inside = inc('SAL', 1, { '2026-01': 100, '2026-02': 100, '2026-03': 100, '2026-04': 100 });
+    const withPartial = inc('SAL', 1, { '2026-01': 100, '2026-02': 100, '2026-03': 100, '2026-04': 100, '2026-09': 7 });
+    expect(incomeReliability([withPartial], PARAMS, keys4)).toBe(incomeReliability([inside], PARAMS, keys4));
   });
 });
 

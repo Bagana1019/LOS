@@ -202,7 +202,7 @@ function assertMonthKeys(monthKeys: string[]): void {
 }
 
 /** Ангиллын оролтын шалгалт. Алдаатай оролтыг чимээгүй залруулахгүй — RangeError (мөнгөн тооцоонд чимээгүй буруу байж болохгүй). */
-function assertCategories(categories: BsaCategoryMonthly[], monthKeys: string[]): void {
+function assertCategories(categories: BsaCategoryMonthly[], monthKeys: string[], allowOtherMonths = false): void {
   const allowedMonths = new Set(monthKeys);
   const codes = new Set<string>();
   for (const c of categories) {
@@ -218,7 +218,7 @@ function assertCategories(categories: BsaCategoryMonthly[], monthKeys: string[])
     }
     for (const [key, amount] of Object.entries(c.monthly)) {
       // BSA-BR-3: хугацаанаас гадуурх сарын дүн дундажийг бүдгэрүүлнэ → дуудагч өдрөөр шүүх ёстой
-      if (!allowedMonths.has(key)) throw new RangeError(`category ${c.code}: month ${key} is outside the analysis period`);
+      if (!allowOtherMonths && !allowedMonths.has(key)) throw new RangeError(`category ${c.code}: month ${key} is outside the analysis period`);
       assertAmount(`category ${c.code} amount for ${key}`, amount);
     }
   }
@@ -291,7 +291,8 @@ export function classifyDtiLevel(ratio: number, t: { lowMax: number; mediumMax: 
 export function incomeReliability(categories: BsaCategoryMonthly[], params: BsaDtiParams, monthKeys: string[]): number {
   assertMonthKeys(monthKeys);
   assertReliabilityWeights(params.reliabilityWeights);
-  assertCategories(categories, monthKeys);
+  // monthKeys нь ҮНЭЛЭХ саруудын дэд олонлог (бүтэн сар) байж болно — бусад сарын дүн зүгээр л тооцогдохгүй
+  assertCategories(categories, monthKeys, true);
   return reliabilityParts(categories, params, monthKeys).score;
 }
 

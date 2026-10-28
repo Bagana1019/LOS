@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BsaSummary } from './dto';
-import { BsaStatus, ImportStatus } from './enums';
+import { BsaChannel, BsaDtiRole, BsaRuleMatchType, BsaRuleSource, BsaStatus, ImportStatus, TxnDirection } from './enums';
 
 // BSA (docs/02-bsa-requirements.md) — enum болон service хоорондын гэрээ. Enum-ийг өөр газар давтахгүй.
 
@@ -12,26 +12,9 @@ export type ImportFormat = typeof ImportFormat[number];
 export const BankCode = ['KHAN', 'GOLOMT', 'TDB', 'XAC', 'CAPITRON', 'STATE', 'MBANK'] as const;
 export type BankCode = typeof BankCode[number];
 
-export const TxnDirection = ['INCOME', 'EXPENSE'] as const;
-export type TxnDirection = typeof TxnDirection[number];
-
-/** docs/03 bsa_transaction.channel */
-export const TxnChannel = ['QPAY', 'POS', 'ATM', 'TRANSFER', 'OTHER'] as const;
-export type TxnChannel = typeof TxnChannel[number];
-
-/** docs/03 bsa_category.dti_role */
-export const BsaDtiRole = ['INCOME', 'DEBT_SERVICE', 'HOUSEHOLD', 'BUSINESS_EXPENSE', 'EXCLUDE', 'INFO'] as const;
-export type BsaDtiRole = typeof BsaDtiRole[number];
-
 /** BSA-FR-4.2: Бага/Дунд/Өндөр (завсар admin-д) */
 export const DtiLevel = ['LOW', 'MEDIUM', 'HIGH'] as const;
 export type DtiLevel = typeof DtiLevel[number];
-
-/** docs/03 bsa_rule.match_type / source */
-export const BsaRuleMatchType = ['KEYWORD', 'COUNTERPARTY', 'REGEX'] as const;
-export type BsaRuleMatchType = typeof BsaRuleMatchType[number];
-export const BsaRuleSource = ['ADMIN', 'FEEDBACK'] as const;
-export type BsaRuleSource = typeof BsaRuleSource[number];
 
 /**
  * BSA → Тооцоолол (scoring) руу өгөх оролт. `ScoreRequest` (businessNcfMonthly, existingDebtServiceMonthly,
@@ -350,7 +333,7 @@ export const BsaTransactionListQuery = z
     direction: z.preprocess(blankToUndefined, z.enum(TxnDirection).optional()),
     /** `category=SALARY,BUSINESS_INCOME` эсвэл давтсан параметр */
     category: z.preprocess(queryList, z.array(z.string().min(1).max(64)).max(50).optional()),
-    channel: z.preprocess(queryList, z.array(z.enum(TxnChannel)).max(TxnChannel.length).optional()),
+    channel: z.preprocess(queryList, z.array(z.enum(BsaChannel)).max(BsaChannel.length).optional()),
     ownTransfer: optionalBool,
     manualOverride: optionalBool,
     amountMin: optionalAmount,
@@ -430,7 +413,7 @@ export type BsaRetentionRunRequest = z.infer<typeof BsaRetentionRunRequest>;
 /** Алдааны нэгдсэн хэлбэр (бүх 4xx/5xx). `message` монгол, оруулсан утга/PII-гүй; `issues` нь зөвхөн зам + zod код */
 export const BsaApiError = z.object({
   statusCode: z.number().int(),
-  errorCode: z.string(),
+  code: z.string(),
   message: z.string(),
   details: z.record(z.unknown()).optional(),
   issues: z.array(z.object({ path: z.string(), code: z.string() })).optional(),
