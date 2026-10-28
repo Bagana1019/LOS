@@ -1,2 +1,3 @@
 import mnJson from './mn.json';
-export const mn = mnJson;
+import mnMakerChecker from './mn.maker-checker.json';
+export const mn = { ...mnJson, ...mnMakerChecker };
