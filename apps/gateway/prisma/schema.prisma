@@ -1,0 +1,132 @@
+// Schema-per-service: зөвхөн `iam` schema. Өөр schema-ийн хүснэгт рүү FK хориотой — ID-г string-ээр хадгална.
+// Эзэмшил: org, branch, user, role, session, audit_log (нэвтрэлт). Сервисүүд org_id/branch_id/user_id-г string-ээр хадгална.
+// Дүрэм: docs/03-data-model.md (мөнгө Decimal(18,2), харьцаа Decimal(7,4) бутархай, enum-шиг талбар String — утгыг @los/contracts шалгана).
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../node_modules/.prisma/client-gateway"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["iam"]
+}
+
+model Org {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branches Branch[]
+  users    User[]
+
+  @@map("org")
+  @@schema("iam")
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  code      String // гэрээний дугаарын {BRANCH} хэсэг (BR-11)
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  org   Org    @relation(fields: [orgId], references: [id])
+  users User[]
+
+  @@unique([orgId, code])
+  @@map("branch")
+  @@schema("iam")
+}
+
+/// Дүрийн лавлах (docs/03: OFFICER | BRANCH_MANAGER | APPROVER | ADMIN). Эрх нь @los/contracts ROLE_PERMISSIONS-д.
+model Role {
+  code        String   @id
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("role")
+  @@schema("iam")
+}
+
+model User {
+  id               String    @id @default(uuid())
+  orgId            String    @map("org_id")
+  branchId         String?   @map("branch_id") // төвийн хэрэглэгч (батлагч, админ) = null байж болно
+  username         String    @unique
+  passwordHash     String    @map("password_hash") // scrypt
+  fullName         String    @map("full_name")
+  email            String?
+  phone            String?
+  roles            String[] // UserRole[]
+  isActive         Boolean   @default(true) @map("is_active")
+  failedLoginCount Int       @default(0) @map("failed_login_count")
+  lockedUntil      DateTime? @map("locked_until")
+  lastLoginAt      DateTime? @map("last_login_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  createdBy        String?   @map("created_by")
+  updatedBy        String?   @map("updated_by")
+
+  org      Org       @relation(fields: [orgId], references: [id])
+  branch   Branch?   @relation(fields: [branchId], references: [id])
+  sessions Session[]
+
+  @@index([orgId, isActive])
+  @@map("user")
+  @@schema("iam")
+}
+
+/// Refresh token-ийн сесс. Token өөрөө хадгалагдахгүй — зөвхөн SHA-256 hash. Rotation: хуучныг revoked болгоно.
+model Session {
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  familyId         String    @map("family_id") // rotation-ий гинж; дахин ашиглалт илэрвэл бүгдийг хүчингүй болгоно
+  userAgent        String?   @map("user_agent")
+  ip               String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastUsedAt       DateTime  @default(now()) @map("last_used_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@map("session")
+  @@schema("iam")
+}
+
+/// Нэвтрэлтийн аудит (docs/04 M0 AC): LOGIN_SUCCESS, LOGIN_FAILED, LOGOUT, TOKEN_REFRESH, TOKEN_REUSE_DETECTED.
+model AuditLog {
+  id            String   @id @default(uuid())
+  orgId         String?  @map("org_id")
+  entity        String
+  entityId      String   @map("entity_id")
+  action        String
+  actorId       String?  @map("actor_id")
+  at            DateTime @default(now())
+  beforeJson    Json?    @map("before_json")
+  afterJson     Json?    @map("after_json")
+  applicationId String?  @map("application_id")
+  correlationId String?  @map("correlation_id")
+  ip            String?
+  userAgent     String?  @map("user_agent")
+
+  @@index([entity, entityId])
+  @@index([actorId, at])
+  @@index([action, at])
+  @@map("audit_log")
+  @@schema("iam")
+}
