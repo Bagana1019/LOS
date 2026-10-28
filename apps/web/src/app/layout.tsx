@@ -1,1 +1,11 @@
-export default function RootLayout({ children }: { children: React.ReactNode }) { return <html lang="mn"><body>{children}</body></html>; }
+import { Providers } from './providers';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="mn">
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
