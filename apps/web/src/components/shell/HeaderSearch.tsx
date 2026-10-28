@@ -79,6 +79,10 @@ export function HeaderSearch({ me }: { me: MeResponse }) {
         suffix={<Typography.Text className="los-kbd-hint" keyboard type="secondary" aria-hidden>/</Typography.Text>}
         placeholder={t('shell.search.placeholder')}
         aria-label={t('shell.search.label')}
+        // rc-select Tab-ыг Enter шиг эхний сонголт болгож шилжүүлдэг — гарнаас фокус зөөхөд хуудас солигдохгүй байхын тулд хаана
+        onKeyDown={(e) => {
+          if (e.key === 'Tab') e.stopPropagation();
+        }}
       />
     </AutoComplete>
   );

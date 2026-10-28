@@ -1,8 +1,17 @@
 import { MENU, type MenuItem, type Permission } from '@los/contracts';
 
-/** Нэвтрээгүй байхад нээлттэй хуудас. */
+const matchesPrefix = (pathname: string, prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
+
+/** Нэвтрээгүй байхад нээлттэй, нэвтэрсэн бол нүүр рүү буцаадаг хуудас. */
 export const PUBLIC_PATHS: readonly string[] = ['/login'];
-export const isPublicPath = (pathname: string) => PUBLIC_PATHS.includes(pathname);
+export const isPublicPath = (pathname: string) => PUBLIC_PATHS.some((p) => matchesPrefix(pathname, p));
+
+/**
+ * Staff shell-гүй, нэвтрэлт шаардахгүй, өөрийн token-той хуудас (жишээ нь зээлдэгчийн гарын үсгийн холбоос `/sign/<token>`).
+ * Эдгээр дээр сесс сэргээх (`/auth/refresh`) дуудлага хийгдэхгүй, redirect хийгдэхгүй. Шинэ хуудас нэмэх бол prefix-ийг энд бич.
+ */
+export const STANDALONE_PREFIXES: readonly string[] = [];
+export const isStandalonePath = (pathname: string, prefixes: readonly string[] = STANDALONE_PREFIXES) => prefixes.some((p) => matchesPrefix(pathname, p));
 
 /** Нэвтэрсний дараах `next` зам — зөвхөн ижил origin-ийн зам (open redirect-ээс сэргийлнэ). */
 export function safeNext(raw: string | null | undefined): string {
@@ -12,7 +21,9 @@ export function safeNext(raw: string | null | undefined): string {
     const u = new URL(raw, base);
     // `/\t/evil.com`, `//evil.com`, `/\evil.com`-г URL parser өөр origin болгоно
     if (u.origin !== base || isPublicPath(u.pathname)) return '/';
-    return `${u.pathname}${u.search}${u.hash}`;
+    const out = `${u.pathname}${u.search}${u.hash}`;
+    // `/.//evil.com` нь dot-segment-ийг задлаад `//evil.com` болдог — protocol-relative тул router гаднах руу гаргана
+    return out.startsWith('//') || out.startsWith('/\\') ? '/' : out;
   } catch {
     return '/';
   }
@@ -31,11 +42,11 @@ export function activeHref(pathname: string, menu: readonly MenuItem[]): string 
   return best;
 }
 
-// Цэсэнд байхгүй ч эрх шаарддаг хуудаснууд (docs/01 §2). Цэсний бусад хуудас contracts-ийн MENU-ээс гарна.
+// Цэсэнд байхгүй ч эрх шаарддаг хуудаснууд (docs/02 BSA дэлгэц, docs/01 §2). Цэсний бусад хуудас contracts-ийн MENU-ээс гарна.
 const EXTRA_ROUTES: readonly { href: string; permission: Permission }[] = [{ href: '/los/bsa', permission: 'bsa:review' }];
 const ROUTE_PERMISSIONS = [...flattenMenu(MENU), ...EXTRA_ROUTES].map(({ href, permission }) => ({ href, permission }));
 
-/** UX-ийн шалгалт: эцсийн эрхийг gateway ба сервис шалгана. Тодорхойгүй зам нээлттэй (нэвтэрсэн бол). */
+/** NFR-3. UX-ийн шалгалт: эцсийн эрхийг gateway ба сервис шалгана. Тодорхойгүй зам нээлттэй (нэвтэрсэн бол). */
 export function requiredPermission(pathname: string): Permission | null {
   let best: { href: string; permission: Permission } | null = null;
   for (const r of ROUTE_PERMISSIONS) {

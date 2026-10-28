@@ -11,7 +11,7 @@ import { brand, BrandLogo } from '../../theme/brand';
 
 /** Амжилттай нэвтэрсний дараах шилжилтийг AppShell хийнэ (`next` параметрийг шалгаад). */
 export function LoginForm() {
-  const { login, expired } = useAuth();
+  const { login, reason } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -36,14 +36,14 @@ export function LoginForm() {
             <Typography.Text type="secondary">{t('auth.login.subtitle')}</Typography.Text>
           </div>
         </div>
-        {expired && !error && <Alert type="info" showIcon message={t('auth.session.expired')} style={{ marginBottom: 16 }} />}
+        {reason === 'expired' && !error && <Alert type="info" showIcon message={t('auth.session.expired')} style={{ marginBottom: 16 }} />}
         {error && <Alert type="error" showIcon role="alert" message={error} style={{ marginBottom: 16 }} />}
         <Form<LoginRequest> layout="vertical" requiredMark={false} onFinish={onFinish} disabled={busy}>
           <Form.Item name="username" label={t('auth.username')} rules={[{ required: true, whitespace: true, message: t('auth.username.required') }]}>
-            <Input prefix={<UserOutlined />} autoComplete="username" autoFocus />
+            <Input prefix={<UserOutlined aria-hidden />} autoComplete="username" autoFocus />
           </Form.Item>
           <Form.Item name="password" label={t('auth.password')} rules={[{ required: true, message: t('auth.password.required') }]}>
-            <Input.Password prefix={<LockOutlined />} autoComplete="current-password" />
+            <Input.Password prefix={<LockOutlined aria-hidden />} autoComplete="current-password" />
           </Form.Item>
           <Button type="primary" htmlType="submit" block loading={busy}>{t('auth.submit')}</Button>
         </Form>

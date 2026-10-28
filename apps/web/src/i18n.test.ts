@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MENU, NotificationType, UserRole } from '@los/contracts';
+import { DataScope, MENU, NotificationType, UserRole } from '@los/contracts';
 import { mn, mnSources, t } from '@los/ui';
 import { flattenMenu } from './lib/access';
 
@@ -21,12 +21,11 @@ describe('mn i18n', () => {
     for (const i of flattenMenu(MENU)) expect(t(i.labelKey), i.labelKey).not.toBe(i.labelKey);
   });
   it('translates roles, data scopes and notification types', () => {
-    for (const r of UserRole) expect(t(`role.${r}`)).not.toBe(`role.${r}`);
-    for (const s of ['NONE', 'OWN', 'BRANCH', 'ALL']) expect(t(`scope.${s}`)).not.toBe(`scope.${s}`);
-    for (const n of NotificationType) expect(t(`notification.type.${n}`)).not.toBe(`notification.type.${n}`);
+    const keys = [...UserRole.map((r) => `auth.role.${r}`), ...DataScope.map((s) => `auth.scope.${s}`), ...NotificationType.map((n) => `shell.notifications.type.${n}`)];
+    for (const k of keys) expect(t(k), k).not.toBe(k);
   });
   it('interpolates {params} and falls back to the key', () => {
-    expect(t('home.welcome', { name: 'Бат' })).toBe('Сайн байна уу, Бат');
+    expect(t('shell.home.welcome', { name: 'Бат' })).toBe('Сайн байна уу, Бат');
     expect(t('shell.notifications.aria', { n: 3 })).toBe('Мэдэгдэл, 3 уншаагүй');
     expect(t('no.such.key')).toBe('no.such.key');
   });

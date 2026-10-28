@@ -70,7 +70,7 @@ flowchart LR
 | `@los/contracts` | Enum, DTO (zod), event схем, OpenAPI клиент | Сервис хоорондын **цорын ганц** гэрээ; enum-ийг өөр газар давтахгүй |
 | `@los/calc` | ЭТХ, A/B/C, ӨОХ/ӨТЧХ/LTV, DTI, haircut, Sosco Score — цэвэр функц | I/O байхгүй, 100% coverage заавал; UI-д тооцоолол хийхгүй |
 | `@los/database` | Prisma helper, pgcrypto wrapper, outbox, Redis event bus, schema init SQL, DWH view | **Сервисийн модель энд биш** — `apps/<svc>/prisma/` |
-| `@los/ui` | Ant Design дээрх design system, WizardLayout, DataTable, `mn.json` | web л ашиглана |
+| `@los/ui` | Ant Design дээрх design system, WizardLayout, DataTable, i18n (`mn.<модуль>.json` + `t()`) | web л ашиглана |
 | `@los/config` | tsconfig, eslint, vitest preset, Dockerfile template | бүгд |
 
 ## 3. Дэд систем хоорондын харилцааны дүрэм
@@ -122,7 +122,7 @@ flowchart LR
 Барьцаа (collateral) нь origination (хүсэлттэй холбоо, KYC, ачаалал, ЭБ) ба valuation (үнэ) хоёрт хуваагдана: origination `collateral` эзэмшинэ, valuation `collateral_valuation`-ийг `collateralId` string-ээр холбоно.
 
 ## 5. Технологийн стек
-Node 22, pnpm 9, Turborepo 2 · NestJS 10 + Prisma 5 (schema-per-service) · Next.js 15 + React 19 + Ant Design 5 + TanStack Query · PostgreSQL 16 (operational + DWH тусдаа instance) · Redis 7 (Streams + BullMQ) · MinIO · zod · Vitest, Supertest, Playwright · Docker Compose · GitHub Actions. Хэл: UI монгол кирилл (`packages/ui/src/i18n/mn.json`), код/commit англи.
+Node 22, pnpm 9, Turborepo 2 · NestJS 10 + Prisma 5 (schema-per-service) · Next.js 15 + React 19 + Ant Design 5 + TanStack Query · PostgreSQL 16 (operational + DWH тусдаа instance) · Redis 7 (Streams + BullMQ) · MinIO · zod · Vitest, Supertest, Playwright · Docker Compose · GitHub Actions. Хэл: UI монгол кирилл (`packages/ui/src/i18n/mn.<модуль>.json`, `t('<модуль>.<түлхүүр>')`; web shell: `docs/00-foundation.md` §7), код/commit англи.
 
 ## 6. Ажиллах журам
 1. `docs/04-build-plan.md`-ийн дарааллаар **нэг модуль = нэг даалгавар**; дуусаад миграци + тест + AC шалгаад зогс.

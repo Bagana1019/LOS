@@ -40,7 +40,7 @@ export function NotificationBell() {
           renderItem={(n) => (
             <List.Item>
               <List.Item.Meta
-                title={<Typography.Text strong={!n.readAt}>{t(`notification.type.${n.type}`)}</Typography.Text>}
+                title={<Typography.Text strong={!n.readAt}>{t(`shell.notifications.type.${n.type}`)}</Typography.Text>}
                 description={when(n.createdAt)}
               />
             </List.Item>
@@ -55,7 +55,7 @@ export function NotificationBell() {
   return (
     <Popover content={content} title={t('shell.notifications')} trigger="click" placement="bottomRight">
       <Badge count={unread} size="small" overflowCount={99}>
-        <Button type="text" shape="circle" icon={<BellOutlined style={{ fontSize: 18 }} />} aria-label={t('shell.notifications.aria', { n: unread })} />
+        <Button type="text" shape="circle" icon={<BellOutlined aria-hidden style={{ fontSize: 18 }} />} aria-label={t('shell.notifications.aria', { n: unread })} />
       </Badge>
     </Popover>
   );

@@ -7,7 +7,8 @@ export const NotificationItem = z.object({
   id: z.string(),
   type: z.enum(NotificationType),
   applicationId: z.string().nullable(),
-  payload: z.record(z.unknown()).default({}),
+  // docs/03 payload_json nullable → `{}`
+  payload: z.record(z.unknown()).nullish().transform((v) => v ?? {}),
   readAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
 });

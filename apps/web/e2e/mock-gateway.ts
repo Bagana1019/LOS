@@ -21,6 +21,8 @@ export interface Gateway {
   notifications: NotificationFeed | null;
   /** /auth/refresh сүлжээний алдаа өгөх (gateway унасан). */
   down: boolean;
+  /** Access token хүчингүй болсон: хамгаалагдсан endpoint бүр 401 (бодит gateway-н SESSION_ENDED). */
+  rejectAccess: boolean;
   requests: string[];
 }
 
@@ -33,7 +35,7 @@ const cors = (route: Route) => ({
 
 /** Gateway-г Playwright-ийн route-аар дуурайна (CORS-той, бодит хэлбэр — `@los/contracts`-аас). */
 export async function mockGateway(page: Page, init: Partial<Gateway> = {}): Promise<Gateway> {
-  const gw: Gateway = { signedIn: false, role: 'OFFICER', notifications: null, down: false, requests: [], ...init };
+  const gw: Gateway = { signedIn: false, role: 'OFFICER', notifications: null, down: false, rejectAccess: false, requests: [], ...init };
   await page.route(
     (url) => url.pathname.startsWith('/api/'),
     async (route) => {
@@ -44,6 +46,12 @@ export async function mockGateway(page: Page, init: Partial<Gateway> = {}): Prom
         route.fulfill({ status, headers, ...(body === undefined ? {} : { contentType: 'application/json', body: JSON.stringify(body) }) });
       if (req.method() === 'OPTIONS') return reply(204);
       gw.requests.push(`${req.method()} ${path}`);
+
+      // Бодит gateway-н JwtAuthGuard: /auth/{login,refresh,logout}-оос бусад бүгд bearer token шаардана
+      const open = path === '/auth/login' || path === '/auth/refresh' || path === '/auth/logout';
+      if (!open && (gw.rejectAccess || !(req.headers().authorization ?? '').startsWith('Bearer token-'))) {
+        return reply(401, { code: 'SESSION_ENDED', message: 'Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү' });
+      }
 
       if (path === '/auth/refresh') {
         if (gw.down) return route.abort('failed');

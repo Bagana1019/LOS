@@ -1,3 +1,4 @@
+import { t } from '@los/ui';
 import { API } from './config';
 
 /** Gateway-ийн алдааны хариу: `{ code, message }` (DomainError / HttpException). `status 0` = сүлжээний алдаа. */
@@ -63,6 +64,6 @@ export async function send(path: string, o: SendOptions = {}): Promise<{ res: Re
     return { res, correlationId };
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
-    throw new ApiError(0, NETWORK_ERROR, 'Серверт холбогдож чадсангүй', correlationId);
+    throw new ApiError(0, NETWORK_ERROR, t('shell.unreachable.title'), correlationId);
   }
 }

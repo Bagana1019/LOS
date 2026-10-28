@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MENU, menuFor, permissionsFor } from '@los/contracts';
-import { activeHref, canAccess, contractSearchHref, flattenMenu, looksLikeContractNo, requiredPermission, safeNext, searchMenu } from './access';
+import { activeHref, canAccess, contractSearchHref, flattenMenu, isPublicPath, isStandalonePath, looksLikeContractNo, requiredPermission, safeNext, searchMenu } from './access';
 
 describe('safeNext (open redirect)', () => {
   it.each([
@@ -17,6 +17,11 @@ describe('safeNext (open redirect)', () => {
     ['javascript:alert(1)', '/'],
     ['/login', '/'],
     ['/login?next=/x', '/'],
+    // dot-segment-ийн дараа `//` үлддэг хэлбэрүүд (protocol-relative)
+    ['/.//evil.com', '/'],
+    ['/..//evil.com', '/'],
+    ['/a/..//evil.com/p?q=1', '/'],
+    ['/a/./b', '/a/b'],
   ])('%j → %j', (raw, expected) => {
     expect(safeNext(raw)).toBe(expected);
   });
@@ -80,5 +85,20 @@ describe('header search (FR-1.4)', () => {
     expect(looksLikeContractNo('LA-2026-000123')).toBe(true);
     expect(looksLikeContractNo('Тайлан')).toBe(false);
     expect(contractSearchHref(' LA 2026/1 ')).toBe('/los/loan-application?q=LA%202026%2F1');
+  });
+});
+
+describe('public and standalone paths', () => {
+  it('/login (and below) is public; look-alikes are not', () => {
+    expect(isPublicPath('/login')).toBe(true);
+    expect(isPublicPath('/login/')).toBe(true);
+    expect(isPublicPath('/loginx')).toBe(false);
+    expect(isPublicPath('/')).toBe(false);
+  });
+  it('standalone pages are matched by whole path segment', () => {
+    expect(isStandalonePath('/sign/abc', ['/sign'])).toBe(true);
+    expect(isStandalonePath('/sign', ['/sign'])).toBe(true);
+    expect(isStandalonePath('/signature', ['/sign'])).toBe(false);
+    expect(isStandalonePath('/sign/abc')).toBe(false); // анхдагч жагсаалт хоосон
   });
 });

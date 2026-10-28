@@ -115,7 +115,7 @@ async onModuleInit() {
 
 ## 6. Мерж хийх үед зөрчил гарах газрууд
 
-`pnpm-lock.yaml` (merge-ийн дараа `pnpm install`-ээр дахин үүсгэ), `apps/<svc>/prisma/schema.prisma` + migration (өөр өөр feature-ийн хүснэгт бол нэг файлд зэрэгцэх тул шинэ migration файлаар нэм), `packages/contracts/src/{events,settings,auth}.ts` (нэмэх л), `packages/ui/src/i18n/mn.ts` (модуль бүр НЭГ import мөр нэмнэ — §7).
+`pnpm-lock.yaml` (merge-ийн дараа `pnpm install`-ээр дахин үүсгэ), `apps/<svc>/prisma/schema.prisma` + migration (өөр өөр feature-ийн хүснэгт бол нэг файлд зэрэгцэх тул шинэ migration файлаар нэм), `packages/contracts/src/{events,settings,auth}.ts` (нэмэх л), `packages/ui/src/i18n/mn.ts` (модуль бүр НЭГ import + `mnSources`-д НЭГ мөр нэмнэ — §7).
 
 ## 7. Web (apps/web) — shell, нэвтрэлт, i18n
 
@@ -133,7 +133,8 @@ app/layout.tsx → <Providers> (antd, TanStack Query, AuthProvider) → <AppShel
 
 * **Бүх дуудлага `apiFetch('/<service>/<зам>', { schema })`-ээр** (gateway `/api/...`, bearer + `X-Correlation-Id` автоматаар, хариуг `@los/contracts`-ийн zod-оор шалгана). Шууд `fetch` бүү хий.
 * **Шинэ хуудас** = `app/<зам>/page.tsx`. Цэсэнд харагдах эсэх нь `packages/contracts/src/auth.ts` `MENU` + `ROLE_PERMISSIONS` (web дээр цэс бичихгүй). Цэсний дүрс: `components/shell/menu-icons.tsx`. Цэсэнд байхгүй ч эрх шаардах зам бол `lib/access.ts` `EXTRA_ROUTES`. Хуудас дотор эрхээр товч нууцлахдаа `useAuth().me.permissions`.
-* **i18n:** текст бүр `t('<модуль>.<түлхүүр>')`. Модуль бүр `packages/ui/src/i18n/mn.<модуль>.json` үүсгээд `mn.ts`-д НЭГ import + НЭГ spread мөр нэмнэ. Түлхүүр давхардвал `pnpm test` (`apps/web/src/i18n.test.ts`) унана.
+* **i18n:** текст бүр `t('<модуль>.<түлхүүр>')`. Түлхүүр модулийн нэрээр угтвартай (`auth.*`, `shell.*`, `customer.*`, `notification.*`) — өөр модулийн угтвыг бүү ашигла. Модуль бүр `packages/ui/src/i18n/mn.<модуль>.json` үүсгээд `mn.ts`-д НЭГ import + `mnSources`-д НЭГ мөр нэмнэ. Түлхүүр давхардвал `pnpm test` (`apps/web/src/i18n.test.ts`) унана.
+* **Нэвтрэлтгүй хуудас:** `/login` ба түүнтэй адил нээлттэй хуудас `PUBLIC_PATHS`; shell-гүй, өөрийн token-той хуудас (зээлдэгчийн гарын үсгийн холбоос гэх мэт) `lib/access.ts` `STANDALONE_PREFIXES`-д prefix-ээ нэмнэ — тэнд сесс сэргээх дуудлага, redirect хийгдэхгүй. Бусад бүх зам нэвтрэлт шаардана.
 * **UI-д тооцоолол хийхгүй** (`@los/calc` л).
-* **Тест:** `pnpm --filter @los/web test` (vitest, хурдан). E2E: `pnpm --filter @los/web e2e` — gateway-г mock хийсэн, backend хэрэггүй; `E2E_LIVE=1 pnpm --filter @los/web e2e` — ажиллаж буй бодит stack (§1) дээр. Урьдчилан суулгасан Chromium ашиглах бол `PW_CHROMIUM_PATH`.
+* **Тест:** эхлээд `pnpm --filter @los/contracts build` (web нь contracts-ийн `dist`-ийг ашигладаг; эсвэл `pnpm turbo test --filter @los/web`). `pnpm --filter @los/web test` (vitest, хурдан). E2E: `pnpm --filter @los/web e2e` — gateway-г mock хийсэн, backend хэрэггүй; `E2E_LIVE=1 pnpm --filter @los/web e2e` — ажиллаж буй бодит stack (§1) дээр (`live.spec.ts`). Модуль бүр `apps/web/e2e/<нэр>.spec.ts` нэмнэ; spec бүр `mockGateway(page, { signedIn: true, role })` (`e2e/mock-gateway.ts`)-оор эхэлнэ, учир нь бүх хуудас нэвтрэлт шаарддаг. Урьдчилан суулгасан Chromium ашиглах бол `PW_CHROMIUM_PATH`.
 * Хонх: `GET /api/origination/notifications` (`NotificationFeed`, contracts) M13-д хэрэгжинэ; тэр болтол 404 = "мэдэгдэл алга". Дээд хайлтын гэрээний дугаар `/los/loan-application?q=` руу очно — жагсаалтыг хэрэгжүүлэгч `q`-г унших ёстой (FR-1.4).

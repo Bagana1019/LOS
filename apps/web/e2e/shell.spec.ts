@@ -67,6 +67,27 @@ test.describe('нэвтрэлт', () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
+  test('гарахад `next` үлдэхгүй: дараагийн хүн өмнөх хуудас руу очихгүй', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/los/report');
+    await expect(menuItem(page, 'Тайлан')).toBeVisible();
+    await page.getByRole('button', { name: 'Хэрэглэгчийн цэс' }).click();
+    await page.getByRole('menuitem', { name: 'Гарах' }).click();
+    await expect(page).toHaveURL(/\/login$/);
+  });
+
+  test('сесс дундаа дуусвал (refresh 401) нэвтрэх хуудас руу, "дууссан" мэдэгдэлтэй', async ({ page }) => {
+    const gw = await mockGateway(page, { signedIn: true, notifications: { unreadCount: 0, items: [] } });
+    await page.clock.install();
+    await page.goto('/los/report');
+    await expect(menuItem(page, 'Тайлан')).toBeVisible();
+    gw.signedIn = false;
+    gw.rejectAccess = true;
+    await page.clock.fastForward(61_000); // хонхны 60с-ийн polling → 401 → refresh 401
+    await expect(page).toHaveURL(/\/login\?next=%2Flos%2Freport$/);
+    await expect(page.getByText('Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү.')).toBeVisible();
+  });
+
   test('gateway хариугүй үед "нэвтрээгүй" гэж андуурахгүй: дахин оролдох товч', async ({ page }) => {
     const gw = await mockGateway(page, { signedIn: true, down: true });
     await page.goto('/');
@@ -103,7 +124,46 @@ test.describe('дүрээр цэс (GET /api/auth/me)', () => {
   });
 });
 
+test.describe('sidebar', () => {
+  test('эцэг цэс дээр дарахад дэд цэс нуугдахгүй; дэд хуудас руу шууд орсон ч сонгосон мөр харагдана', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/');
+    await menuItem(page, 'Хүсэлт').click();
+    await expect(page).toHaveURL('/los/loan-application');
+    await expect(menuItem(page, 'Хар жагсаалт')).toBeVisible();
+    await page.goto('/los/loan-application/blacklist');
+    await expect(page.locator('.ant-menu-item-selected', { hasText: 'Хар жагсаалт' })).toBeVisible();
+  });
+
+  test('мөрийн хоосон хэсэг дээр дарсан ч шилжинэ (зөвхөн текст биш)', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/');
+    await menuItem(page, 'Тайлан').click({ position: { x: 200, y: 8 } });
+    await expect(page).toHaveURL('/los/report');
+  });
+
+  test('товчоор нугалж, aria-expanded шинэчлэгдэнэ', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/');
+    const toggle = page.getByRole('button', { name: 'Цэсийг нээх, хаах' });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('.ant-layout-sider-collapsed')).toBeVisible();
+  });
+});
+
 test.describe('дээд хайлт ба мэдэгдлийн хонх', () => {
+  test('Tab дарахад (фокус зөөх) хуудас солигдохгүй', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/');
+    const search = page.getByPlaceholder('Гэрээний дугаар эсвэл цэс хайх');
+    await search.fill('Тай');
+    await expect(page.locator('.ant-select-item-option', { hasText: 'Тайлан' })).toBeVisible();
+    await search.press('Tab');
+    await expect(page).toHaveURL('/');
+  });
+
   test('цэсээр хайж, сонгоход тухайн хуудас руу очно', async ({ page }) => {
     await mockGateway(page, { signedIn: true });
     await page.goto('/');
@@ -133,11 +193,13 @@ test.describe('дээд хайлт ба мэдэгдлийн хонх', () => {
 
   test('хонх: endpoint хараахан байхгүй (404) үед "мэдэгдэл алга", алдаа харуулахгүй', async ({ page }) => {
     const gw = await mockGateway(page, { signedIn: true, notifications: null });
+    const answered = page.waitForResponse((r) => r.url().includes('/origination/notifications'));
     await page.goto('/');
+    expect((await answered).status()).toBe(404);
     await page.getByRole('button', { name: /Мэдэгдэл/ }).click();
     await expect(page.getByText('Шинэ мэдэгдэл алга')).toBeVisible();
     await expect(page.getByText('Мэдэгдэл ачаалж чадсангүй')).toHaveCount(0);
-    expect(gw.requests.filter((r) => r.includes('/notifications')).length).toBe(1);
+    expect(gw.requests.filter((r) => r.includes('/notifications'))).toHaveLength(1);
   });
 
   test('хонх: уншаагүй тоо ба жагсаалт', async ({ page }) => {

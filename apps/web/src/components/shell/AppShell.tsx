@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Button, Layout, Result, Spin } from 'antd';
+import { Button, Layout, Result, Spin, theme } from 'antd';
+import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import type { MeResponse } from '@los/contracts';
 import { t } from '@los/ui';
-import { canAccess, isPublicPath, safeNext } from '../../lib/access';
+import { canAccess, isPublicPath, isStandalonePath, safeNext } from '../../lib/access';
 import { useAuth } from '../../lib/auth/auth-context';
 import { HeaderSearch } from './HeaderSearch';
 import { NotificationBell } from './NotificationBell';
@@ -17,12 +18,21 @@ const Loading = () => <Spin fullscreen size="large" tip={t('shell.loading')} />;
 
 function Frame({ me, children }: { me: MeResponse; children: ReactNode }) {
   const pathname = usePathname();
+  const { token } = theme.useToken();
+  const [collapsed, setCollapsed] = useState(false);
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout hasSider style={{ minHeight: '100vh' }}>
       <a className="los-skip" href="#main">{t('shell.skip')}</a>
-      <Sidebar menu={me.menu} />
-      <Layout>
-        <Layout.Header style={{ display: 'flex', alignItems: 'center', gap: 16, height: 56, lineHeight: 'normal', borderBottom: '1px solid rgba(5, 5, 5, 0.06)' }}>
+      <Sidebar menu={me.menu} collapsed={collapsed} onCollapse={setCollapsed} />
+      <Layout style={{ minWidth: 0 }}>
+        <Layout.Header style={{ display: 'flex', alignItems: 'center', gap: 12, height: 56, lineHeight: 'normal', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+          <Button
+            type="text"
+            icon={collapsed ? <MenuUnfoldOutlined aria-hidden /> : <MenuFoldOutlined aria-hidden />}
+            aria-label={t('shell.nav.toggle')}
+            aria-expanded={!collapsed}
+            onClick={() => setCollapsed((c) => !c)}
+          />
           <HeaderSearch me={me} />
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             <NotificationBell />
@@ -41,22 +51,26 @@ function Frame({ me, children }: { me: MeResponse; children: ReactNode }) {
   );
 }
 
-/** Нэвтрэлтийн хаалга: сесс сэргээгдтэл хүлээнэ, нэвтрээгүй бол /login руу (next-тэй), нэвтэрсэн бол shell. */
+/** NFR-3: нэвтрэлтийн хаалга. Сесс сэргээгдтэл хүлээнэ, нэвтрээгүй бол /login руу, нэвтэрсэн бол shell. */
 export function AppShell({ children }: { children: ReactNode }) {
-  const { status, me, retry } = useAuth();
+  const { status, me, reason, retry } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
+  const standalone = isStandalonePath(pathname);
   const isPublic = isPublicPath(pathname);
 
   useEffect(() => {
+    if (standalone) return;
     if (status === 'anonymous' && !isPublic) {
+      // `next` нь сесс дууссан/нэвтрээгүй үед л; хэрэглэгч өөрөө гарсан бол дараагийн хүн өмнөх хуудас руу очихгүй
       const here = `${pathname}${window.location.search}`;
-      router.replace(here === '/' ? '/login' : `/login?next=${encodeURIComponent(here)}`);
+      router.replace(reason === 'signed_out' || here === '/' ? '/login' : `/login?next=${encodeURIComponent(here)}`);
     } else if (status === 'authenticated' && isPublic) {
       router.replace(safeNext(new URLSearchParams(window.location.search).get('next')));
     }
-  }, [status, isPublic, pathname, router]);
+  }, [status, isPublic, standalone, pathname, reason, router]);
 
+  if (standalone) return <>{children}</>;
   if (status === 'booting') return <Loading />;
   if (status === 'unreachable') {
     return <Result status="error" title={t('shell.unreachable.title')} subTitle={t('shell.unreachable.hint')} extra={<Button type="primary" onClick={retry}>{t('shell.retry')}</Button>} />;

@@ -14,12 +14,12 @@
   "auth.error.network": "Серверт холбогдож чадсангүй. Сүлжээгээ шалгаад дахин оролдоно уу.",
   "auth.error.unknown": "Нэвтэрч чадсангүй. Дахин оролдоно уу.",
   "auth.session.expired": "Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү.",
-  "role.OFFICER": "Зээлийн эдийн засагч",
-  "role.BRANCH_MANAGER": "Салбарын захирал",
-  "role.APPROVER": "Батлагч",
-  "role.ADMIN": "Админ",
-  "scope.NONE": "Хандах эрхгүй",
-  "scope.OWN": "Зөвхөн өөрийн хариуцсан хүсэлт",
-  "scope.BRANCH": "Өөрийн салбарын бүх хүсэлт",
-  "scope.ALL": "Бүх хүсэлт"
+  "auth.role.OFFICER": "Зээлийн эдийн засагч",
+  "auth.role.BRANCH_MANAGER": "Салбарын захирал",
+  "auth.role.APPROVER": "Батлагч",
+  "auth.role.ADMIN": "Админ",
+  "auth.scope.NONE": "Хандах эрхгүй",
+  "auth.scope.OWN": "Зөвхөн өөрийн хариуцсан хүсэлт",
+  "auth.scope.BRANCH": "Өөрийн салбарын бүх хүсэлт",
+  "auth.scope.ALL": "Бүх хүсэлт"
 }
