@@ -9,6 +9,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@los/contracts": "workspace:*",
     "@prisma/client": "^5.20.0",
     "ioredis": "^5.4.0"
   },

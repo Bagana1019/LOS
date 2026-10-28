@@ -1,3 +1,10 @@
 {
-  "extends": "@los/config/tsconfig/nest.json"
+  "extends": "@los/config/tsconfig/nest.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": [
+    "src"
+  ]
 }
