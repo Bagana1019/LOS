@@ -18,6 +18,6 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('dms service foundation', () => 
     const res = await request(app.getHttpServer()).get('/api/health');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ service: 'dms', ok: true });
-    expect((await request(app.getHttpServer()).get('/api/health/ready')).body.checks).toEqual({ db: 'up' });
+    expect((await request(app.getHttpServer()).get('/api/health/ready')).body.checks).toEqual({ db: 'up', storage: 'up' });
   });
 });

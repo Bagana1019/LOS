@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { PrismaService } from '../src/prisma.service';
 import { HAS_DB, PASSWORD, createGateway } from './app';
 
-interface Seen { method: string; url: string; headers: IncomingHttpHeaders; body: string }
+interface Seen { method: string; url: string; headers: IncomingHttpHeaders; body: string; raw: Buffer }
 
 describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
   let app: INestApplication;
@@ -23,7 +23,8 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
       req.on('end', () => {
-        seen.push({ method: req.method!, url: req.url!, headers: req.headers, body: Buffer.concat(chunks).toString() });
+        const raw = Buffer.concat(chunks);
+        seen.push({ method: req.method!, url: req.url!, headers: req.headers, body: raw.toString(), raw });
         res.setHeader('content-type', 'application/json');
         res.setHeader('x-powered-by', 'upstream');
         res.end(JSON.stringify({ ok: true, url: req.url }));
@@ -93,6 +94,14 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
     expect(res.status).toBe(200);
     expect(seen[0]!.method).toBe('POST');
     expect(JSON.parse(seen[0]!.body)).toEqual({ amount: 5_000_000, purpose: 'ХЭРЭГЛЭЭНИЙ' });
+  });
+
+  it('streams binary / multipart uploads through byte-for-byte (no body parser in the way)', async () => {
+    const bytes = Buffer.from(Array.from({ length: 200_000 }, (_, i) => (i * 31) % 256));
+    const res = await api().post('/api/dms/files').set(bearer('officer.a')).attach('file', bytes, { filename: 'scan.pdf', contentType: 'application/pdf' });
+    expect(res.status).toBe(200);
+    expect(seen[0]!.headers['content-type']).toMatch(/^multipart\/form-data; boundary=/);
+    expect(seen[0]!.raw.includes(bytes)).toBe(true);
   });
 
   it('route policy: settings/blacklist writes need the permission; reads stay open', async () => {

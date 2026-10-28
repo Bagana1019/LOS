@@ -3,7 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { CommonModule, EventsModule, HealthModule, envFilePaths } from '@los/nest-common';
 import { PrismaModule, PrismaService } from './prisma.service';
 // Feature модуль бүр: өөрийн мөрийг `import` + `imports` хоёрт задлана (мөр тус бүр тусдаа тул зэрэгцээ салбар мерж хийхэд зөрчилгүй).
-// import { FileModule } from './modules/file/file.module';
+import { FileModule } from './modules/file/file.module';
+import { OBJECT_STORAGE, type ObjectStorage } from './modules/file/storage';
 // import { DocumentModule } from './modules/document/document.module';
 // import { TemplateModule } from './modules/template/template.module';
 // import { RetentionModule } from './modules/retention/retention.module';
@@ -14,8 +15,8 @@ import { PrismaModule, PrismaService } from './prisma.service';
     CommonModule.forRoot(),
     PrismaModule,
     EventsModule.forRoot({ schema: 'dms', db: PrismaService }),
-    HealthModule.forServiceAsync({ service: 'dms', inject: [PrismaService], useFactory: (db: PrismaService) => ({ db: () => db.$queryRaw`SELECT 1` }) }),
-    // FileModule,
+    HealthModule.forServiceAsync({ service: 'dms', imports: [FileModule], inject: [PrismaService, OBJECT_STORAGE], useFactory: (db: PrismaService, storage: ObjectStorage) => ({ db: () => db.$queryRaw`SELECT 1`, storage: () => storage.ping() }) }),
+    FileModule,
     // DocumentModule,
     // TemplateModule,
     // RetentionModule,
