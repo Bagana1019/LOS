@@ -6,7 +6,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
 // import { ApplicationModule } from './modules/application/application.module';
 // import { BorrowerModule } from './modules/borrower/borrower.module';
 // import { IncomeModule } from './modules/income/income.module';
-// import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
+import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
 // import { ScheduleModule } from './modules/schedule/schedule.module';
 // import { ApprovalModule } from './modules/approval/approval.module';
 // import { ContractModule } from './modules/contract/contract.module';
@@ -26,7 +26,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     // ApplicationModule,
     // BorrowerModule,
     // IncomeModule,
-    // LoanTermsModule,
+    LoanTermsModule,
     // ScheduleModule,
     // ApprovalModule,
     // ContractModule,
