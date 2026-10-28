@@ -630,8 +630,14 @@ model Contract {
   contractNo      String    @map("contract_no")
   templateVersion Int?      @map("template_version")
   generatedFileId String?   @map("generated_file_id") // dms.file.id
-  signedFileId    String?   @map("signed_file_id")
+  signedFileId    String?   @map("signed_file_id") // G4: гарын үсэгтэй PDF (e-sign) эсвэл скан (цаас)
   signedAt        DateTime? @map("signed_at")
+  // FR-11.4 цахим гарын үсэг (dms.signing_request-ийн тусгал; CHECK constraint нь migration-д)
+  signChannel          String    @default("PAPER") @map("sign_channel") // PAPER | ESIGN
+  signingRequestId     String?   @map("signing_request_id") // dms.signing_request.id — stale event шүүх түлхүүр
+  signingStatus        String?   @map("signing_status") // SigningStatus; хүсэлт илгээгээгүй бол null
+  signingFailureReason String?   @map("signing_failure_reason") // SigningFailureReason
+  signingSentAt        DateTime? @map("signing_sent_at") // зээлдэгчид линк (SMS) хүрсэн
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   createdBy       String?   @map("created_by")

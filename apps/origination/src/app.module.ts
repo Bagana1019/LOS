@@ -9,7 +9,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
 // import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
 // import { ScheduleModule } from './modules/schedule/schedule.module';
 // import { ApprovalModule } from './modules/approval/approval.module';
-// import { ContractModule } from './modules/contract/contract.module';
+import { ContractModule } from './modules/contract/contract.module';
 // import { DisbursementModule } from './modules/disbursement/disbursement.module';
 // import { BlacklistModule } from './modules/blacklist/blacklist.module';
 // import { NotificationModule } from './modules/notification/notification.module';
@@ -29,7 +29,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     // LoanTermsModule,
     // ScheduleModule,
     // ApprovalModule,
-    // ContractModule,
+    ContractModule,
     // DisbursementModule,
     // BlacklistModule,
     // NotificationModule,
