@@ -102,3 +102,16 @@ describe('CommonModule (guard, filter, context)', () => {
     delete process.env.INTERNAL_AUTH_SECRET;
   });
 });
+
+describe('gateway mode (trustIdentityHeaders=false)', () => {
+  it('ignores client-supplied identity headers but keeps the correlation id', async () => {
+    @Controller('g') class G { @Public() @Get('ctx') c(@Ctx() ctx: RequestContext) { return ctx; } }
+    @Module({ imports: [CommonModule.forRoot({ contextGuard: false, trustIdentityHeaders: false })], controllers: [G] }) class GM {}
+    const m = await Test.createTestingModule({ imports: [GM] }).compile();
+    const a = m.createNestApplication(); a.setGlobalPrefix('api'); await a.init();
+    const res = await request(a.getHttpServer()).get('/api/g/ctx').set({ 'x-user-id': 'attacker', 'x-roles': 'ADMIN', 'x-org-id': 'evil', 'x-correlation-id': 'keep-me' });
+    expect(res.body).toMatchObject({ userId: null, roles: [], correlationId: 'keep-me' });
+    expect(res.body.orgId).not.toBe('evil');
+    await a.close();
+  });
+});

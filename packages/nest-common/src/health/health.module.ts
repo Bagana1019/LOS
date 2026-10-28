@@ -32,8 +32,23 @@ class HealthController {
   }
 }
 
+export interface HealthAsyncOptions {
+  service: string;
+  imports?: NonNullable<DynamicModule['imports']>;
+  inject: any[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+  useFactory: (...deps: any[]) => Record<string, HealthCheck>; // eslint-disable-line @typescript-eslint/no-explicit-any
+}
+
 @Module({})
 export class HealthModule {
+  /** DB/Redis холболтыг DI-аас авах: `forServiceAsync({ service, inject: [PrismaService], useFactory: (db) => ({ db: () => db.$queryRaw`SELECT 1` }) })` */
+  static forServiceAsync(o: HealthAsyncOptions): DynamicModule {
+    return {
+      module: HealthModule, imports: o.imports ?? [], controllers: [HealthController],
+      providers: [{ provide: HEALTH_OPTIONS, inject: o.inject, useFactory: (...deps: unknown[]): HealthOptions => ({ service: o.service, checks: o.useFactory(...deps) }) }],
+    };
+  }
+
   static forService(service: string, checks: Record<string, HealthCheck> = {}): DynamicModule {
     return { module: HealthModule, controllers: [HealthController], providers: [{ provide: HEALTH_OPTIONS, useValue: { service, checks } satisfies HealthOptions }] };
   }

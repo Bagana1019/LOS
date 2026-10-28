@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
-import { createParamDecorator, Injectable, type ExecutionContext, type NestMiddleware } from '@nestjs/common';
+import { createParamDecorator, Inject, Injectable, Optional, type ExecutionContext, type NestMiddleware } from '@nestjs/common';
 import { CTX_HEADERS, type RequestContext } from '@los/contracts';
 
 // CLAUDE.md §3.2.9, §3.2.10: gateway-ээс ирсэн X-User-Id / X-Roles / X-Branch-Id / X-Org-Id / X-Correlation-Id толгойд итгэнэ.
@@ -45,9 +45,21 @@ export function contextOf(req: CtxRequest): RequestContext {
 /** `@Ctx() ctx: RequestContext` */
 export const Ctx = createParamDecorator((_d: unknown, ex: ExecutionContext): RequestContext => contextOf(ex.switchToHttp().getRequest<CtxRequest>()));
 
+export const REQUEST_CONTEXT_OPTIONS = Symbol('REQUEST_CONTEXT_OPTIONS');
+export interface RequestContextOptions {
+  /** `false` (gateway): клиентээс ирсэн X-User-Id / X-Roles / … толгойг ХҮЛЭЭН АВАХГҮЙ — guard нь JWT-ээс баталгаажуулж өөрөө тавина. */
+  trustIdentityHeaders: boolean;
+}
+
 @Injectable()
 export class RequestContextMiddleware implements NestMiddleware {
+  constructor(@Optional() @Inject(REQUEST_CONTEXT_OPTIONS) private readonly opts?: RequestContextOptions) {}
+
   use(req: CtxRequest, res: { setHeader(k: string, v: string): void }, next: () => void): void {
+    if (this.opts?.trustIdentityHeaders === false) {
+      const parsed = parseRequestContext({ [CTX_HEADERS.correlationId]: req.headers[CTX_HEADERS.correlationId] });
+      req.ctx = { ...systemContext(process.env.DEFAULT_ORG_ID ?? '', parsed.correlationId) };
+    }
     const ctx = contextOf(req);
     res.setHeader(CTX_HEADERS.correlationId, ctx.correlationId);
     store.run(ctx, next);

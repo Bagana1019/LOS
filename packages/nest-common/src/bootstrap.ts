@@ -11,6 +11,8 @@ export interface BootstrapOptions {
   defaultPort: number;
   /** web → gateway л хөндлөнгийн (browser) дуудлагатай; бусад сервис CORS нээхгүй. */
   cors?: { origin: string[]; credentials?: boolean };
+  /** Gateway: `false` — proxy-д body stream хэвээр дамжуулахын тулд парсерыг өөрөө route тус бүрт тавина. */
+  bodyParser?: boolean;
   configure?: (app: INestApplication) => void | Promise<void>;
 }
 
@@ -18,7 +20,7 @@ export interface BootstrapOptions {
 export async function bootstrapService(opts: BootstrapOptions): Promise<INestApplication> {
   loadEnvFiles();
   const logger = new JsonLogger(opts.service);
-  const app = await NestFactory.create(opts.module, { bufferLogs: true });
+  const app = await NestFactory.create(opts.module, { bufferLogs: true, bodyParser: opts.bodyParser ?? true });
   app.useLogger(logger);
   app.setGlobalPrefix('api');
   app.enableShutdownHooks();

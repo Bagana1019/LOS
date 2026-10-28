@@ -2,12 +2,14 @@ import { type DynamicModule, Global, type MiddlewareConsumer, Module, type NestM
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { Clock, SystemClock } from './clock';
 import { ContextAuthGuard } from './auth/guards';
-import { RequestContextMiddleware } from './context/request-context';
+import { REQUEST_CONTEXT_OPTIONS, RequestContextMiddleware } from './context/request-context';
 import { AllExceptionsFilter } from './http/errors';
 
 export interface CommonModuleOptions {
   /** Gateway өөрөө JWT-ээр нэвтрүүлдэг тул `false`. Бусад сервис `true` (анхдагч). */
   contextGuard?: boolean;
+  /** Gateway: `false` — identity толгойг хүлээн авахгүй (JWT guard тавина). Анхдагч `true`. */
+  trustIdentityHeaders?: boolean;
 }
 
 /** Сервис бүрийн AppModule-д: `CommonModule.forRoot()`. Контекст middleware, алдааны фильтр, guard, Clock. */
@@ -19,6 +21,7 @@ export class CommonModule implements NestModule {
     return {
       module: CommonModule,
       providers: [
+        { provide: REQUEST_CONTEXT_OPTIONS, useValue: { trustIdentityHeaders: opts.trustIdentityHeaders ?? true } },
         { provide: Clock, useClass: SystemClock },
         { provide: APP_FILTER, useClass: AllExceptionsFilter },
         ...(guard ? [{ provide: APP_GUARD, useClass: ContextAuthGuard }] : []),
