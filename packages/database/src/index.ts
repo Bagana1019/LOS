@@ -5,3 +5,4 @@ export * from './processed-events';
 export * from './audit';
 export * from './crypto';
 export * from './seed-ids';
+export * from './register-no';

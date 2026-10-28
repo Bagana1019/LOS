@@ -11,7 +11,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
 // import { ApprovalModule } from './modules/approval/approval.module';
 // import { ContractModule } from './modules/contract/contract.module';
 // import { DisbursementModule } from './modules/disbursement/disbursement.module';
-// import { BlacklistModule } from './modules/blacklist/blacklist.module';
+import { BlacklistModule } from './modules/blacklist/blacklist.module';
 // import { NotificationModule } from './modules/notification/notification.module';
 // import { ReportModule } from './modules/report/report.module';
 import { SettingsModule } from './modules/settings/settings.module';
@@ -31,7 +31,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     // ApprovalModule,
     // ContractModule,
     // DisbursementModule,
-    // BlacklistModule,
+    BlacklistModule,
     // NotificationModule,
     // ReportModule,
     SettingsModule,

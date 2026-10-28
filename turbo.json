@@ -5,7 +5,9 @@
     "REDIS_URL",
     "MINIO_ENDPOINT",
     "JWT_SECRET",
-    "INTEGRATION_MODE"
+    "INTEGRATION_MODE",
+    "DEFAULT_ORG_ID",
+    "AML_LIST_REFRESH_MINUTES"
   ],
   "globalPassThroughEnv": [
     "TEST_DATABASE_URL",

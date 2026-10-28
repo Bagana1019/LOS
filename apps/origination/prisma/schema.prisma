@@ -701,6 +701,7 @@ model DisbursementRequest {
 model Blacklist {
   id                  String   @id @default(uuid())
   orgId               String   @map("org_id")
+  branchId            String?  @map("branch_id")
   registerNoHash      String   @map("register_no_hash") // blind index — customer.register_no_hash-тай тулгах (FR-3.4)
   registerNoEncrypted String   @map("register_no_encrypted") // NFR-5
   customerType        String   @map("customer_type")
@@ -716,7 +717,9 @@ model Blacklist {
   createdBy           String?  @map("created_by")
   updatedBy           String?  @map("updated_by")
 
+  @@unique([orgId, registerNoHash, listType])
   @@index([orgId, registerNoHash])
+  @@index([orgId, isActive])
   @@map("blacklist")
   @@schema("origination")
 }
