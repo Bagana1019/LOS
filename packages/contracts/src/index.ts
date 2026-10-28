@@ -5,3 +5,4 @@ export * from './settings';
 export * from './dto';
 export * from './maker-checker';
 export * from './merchant';
+export * from './bsa';
