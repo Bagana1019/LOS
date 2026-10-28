@@ -9,7 +9,7 @@
 //  - Алдаа: BsaNotFoundError / BsaDuplicateError / BsaInvalidError (доор). Алдааны мессежид PII орохгүй.
 //  - `runInTransaction`: callback шидвэл бүх бичилт буцна; `tx` нь DomainEventPublisher.enqueue(tx, event)-д өгөх объект
 //    (CLAUDE.md §3.2(4): event-ийг бизнес бичилттэй НЭГ транзакцид outbox-д бичнэ).
-import type { BsaStatus, BsaSummary, ImportStatus, TxnChannel, TxnDirection } from '@los/contracts';
+import type { BsaStatus, BsaSummary, ImportFormat, ImportStatus, TxnChannel, TxnDirection } from '@los/contracts';
 import type { BsaCategoryDef, BsaRuleDef } from '../../classify/classify.types';
 
 export const BSA_REPOSITORY = Symbol('BSA_REPOSITORY');
@@ -18,9 +18,8 @@ export const BSA_REPOSITORY = Symbol('BSA_REPOSITORY');
 export type IsoDate = string;
 export type BsaAnalysisStatus = (typeof BsaStatus)[number];
 export type ImportJobStatus = (typeof ImportStatus)[number];
-/** TODO: @los/contracts/bsa.ts руу шилжүүлэх (энэ unit-д contracts-д бичих эрхгүй) */
-export const ImportFormat = ['PDF', 'IMAGE', 'CSV', 'TEXT'] as const;
-export type ImportFormat = (typeof ImportFormat)[number];
+/** Нэг эх сурвалж: @los/contracts/bsa.ts (REST DTO-той хуваалцана). Өмнөх импорт (`from './bsa.repository'`) хэвээр ажиллана */
+export { ImportFormat } from '@los/contracts';
 
 // ───────────────────────── Нийтлэг ─────────────────────────
 
