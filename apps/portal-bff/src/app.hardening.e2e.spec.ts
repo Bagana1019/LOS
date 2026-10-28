@@ -1,4 +1,5 @@
 import type { ServerResponse } from 'node:http';
+import { gzipSync } from 'node:zlib';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { DEMO_1, DEMO_2, createRealModeApp, createTestApp, type TestApp } from './testing/test-app';
 
@@ -22,7 +23,7 @@ const until = async (cond: () => boolean, ms = 2000) => {
 describe('hardening (mock integrations)', () => {
   let t: TestApp;
   beforeAll(async () => {
-    t = await createTestApp({ PORTAL_OTP_REQUESTS_PER_HOUR: '5', PORTAL_OTP_REQUESTS_PER_HOUR_PER_IDENTITY: '30', PORTAL_OTP_REQUESTS_PER_HOUR_PER_IP: '1000' });
+    t = await createTestApp({ PORTAL_OTP_REQUESTS_PER_HOUR: '5', PORTAL_OTP_REQUESTS_PER_HOUR_PER_IP: '1000' });
   });
   afterAll(async () => {
     await t.app.close();
@@ -31,9 +32,13 @@ describe('hardening (mock integrations)', () => {
   describe('OTP request quotas', () => {
     const otp = (registerNo: string, phone: string, ip = '10.20.0.1') => t.http().post('/api/portal/auth/otp').set('X-Forwarded-For', ip).send({ registerNo, phone });
 
-    it('someone who knows only a register number cannot lock its owner out of login', async () => {
-      for (let i = 0; i < 10; i++) await otp(DEMO_1.registerNo, `9900000${i}`).expect(200); // хос бүр өөр: хос тус бүрийн хязгаарт хүрэхгүй
-      await otp(DEMO_1.registerNo, DEMO_1.phone).expect(200); // эзэн нь нэвтэрч чадна
+    it('someone who knows only a register number (or only a phone) cannot lock its owner out, however many requests they send', async () => {
+      // Хэдэн ч өөр IP-ээс, 60 удаа (хуучин identity-wide 30/цагийн хязгаараас олон): хос бүр өөр тул хос тус бүрийн хязгаарт хүрэхгүй
+      for (let i = 0; i < 60; i++) await otp(DEMO_1.registerNo, `9900${String(i).padStart(4, '0')}`, `198.51.100.${i + 1}`).expect(200);
+      for (let i = 0; i < 60; i++) await otp(`УБ${String(10000000 + i)}`, DEMO_1.phone, `203.0.113.${i + 1}`).expect(200);
+      await otp(DEMO_1.registerNo, DEMO_1.phone, '192.0.2.77').expect(200); // эзэн нь нэвтэрч чадна
+      await t.settle();
+      expect(t.otp.lastCodeFor(DEMO_1.customerId)).toMatch(/^\d{6}$/);
     });
 
     it('the per-pair quota (5/hour) still stops SMS bombing of one customer', async () => {
@@ -43,11 +48,6 @@ describe('hardening (mock integrations)', () => {
       expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
     });
 
-    it('a much higher per-identity quota (30/hour) stops phone-number guessing for one register number', async () => {
-      const reg = 'УБ12345678';
-      for (let i = 0; i < 30; i++) await otp(reg, `9000${String(i).padStart(4, '0')}`).expect(200);
-      await otp(reg, '90009999').expect(429);
-    });
   });
 
   it('the documented mock login works with the default fixed code 123456', async () => {
@@ -261,6 +261,12 @@ describe('hardening (INTEGRATION_MODE=real, fake origination over HTTP)', () => 
       expect(rig.origination.received.filter((r) => r.method === 'POST')).toEqual([]); // төлбөр үүсгэх дуудлага огт явсангүй
     });
 
+    it('an INVALID_REQUEST from origination on a normal call is contract drift: a 502, not a 400 blamed on the customer', async () => {
+      rig.origination.overrides.push({ match: new RegExp(`/loans/${L1}/payments$`), times: 1, respond: reply(400, { error: { code: 'INVALID_REQUEST' } }) });
+      const res = await http().post(`/api/portal/loans/${L1}/payments`).set(auth(c1.accessToken)).set('Idempotency-Key', idem()).send({ amountType: 'CUSTOM', method: 'QPAY', amount: 1500 }).expect(502);
+      expect(res.body.error.code).toBe('DOWNSTREAM_INVALID_RESPONSE');
+    });
+
     it('payment history and payment creation', async () => {
       const pay = ledger().createPayment(DEMO_1.customerId, { loanId: L1, method: 'QPAY', amountType: 'CUSTOM', amount: 1500, currency: 'MNT' }, idem());
       const wrongLoan = { ...pay, loanId: L2 };
@@ -362,6 +368,34 @@ describe('hardening (INTEGRATION_MODE=real, fake origination over HTTP)', () => 
       });
       const r = await download();
       expect(r.aborted).toBe(true);
+    });
+
+    it('a client that gives up while origination is still preparing the file is recorded as aborted, not as a successful download', async () => {
+      const cid = 'corr-abort-window-01';
+      const mine = (action: string) => small.t.audit.records.filter((r) => r.action === action && r.correlationId === cid);
+      content((res) => {
+        setTimeout(() => {
+          res.writeHead(200, { ...pdfHeaders, 'Content-Length': pdf().length });
+          res.end(pdf());
+        }, 400);
+      });
+      const ac = new AbortController();
+      const pending = fetch(`${baseUrl}/api/portal/loans/${L1}/contract/download`, { headers: { ...auth(token), 'X-Correlation-Id': cid }, signal: ac.signal }).catch(() => null);
+      setTimeout(() => ac.abort(), 150);
+      await pending;
+      expect(await until(() => mine('CONTRACT_DOWNLOAD_ABORTED').length === 1, 3000)).toBe(true); // дамжуулалт дуусаагүй гэж тэмдэглэгдсэн
+    });
+
+    it('a Content-Encoding upstream is not framed with the encoded length', async () => {
+      const gz = gzipSync(pdf());
+      content((res) => {
+        res.writeHead(200, { ...pdfHeaders, 'Content-Encoding': 'gzip', 'Content-Length': gz.length });
+        res.end(gz);
+      });
+      const r = await download();
+      expect(r.aborted).toBe(false);
+      expect(r.status).toBe(200);
+      expect(r.body.equals(pdf())).toBe(true);
     });
 
     it('an empty body is a clean JSON 502', async () => {

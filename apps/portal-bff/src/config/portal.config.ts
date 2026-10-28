@@ -23,8 +23,6 @@ export interface PortalConfig {
     /** (регистр, утас) хос тус бүрт цаг тутамд. */
     otpRequestsPerHour: number;
     otpRequestsPerHourPerIp: number;
-    /** Зөвхөн регистр эсвэл зөвхөн утсаар (хос таах/SMS бөмбөгдөлтөөс хамгаалах) — хос хязгаараас өндөр. */
-    otpRequestsPerHourPerIdentity: number;
     mockOtpCode?: string;
   };
   cors: { origins: string[] };
@@ -56,7 +54,6 @@ const Env = z.object({
   PORTAL_OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
   PORTAL_OTP_REQUESTS_PER_HOUR: z.coerce.number().int().min(1).default(5),
   PORTAL_OTP_REQUESTS_PER_HOUR_PER_IP: z.coerce.number().int().min(1).default(20),
-  PORTAL_OTP_REQUESTS_PER_HOUR_PER_IDENTITY: z.coerce.number().int().min(1).default(30),
   PORTAL_MOCK_OTP_CODE: z.string().regex(/^\d{6}$/).optional(),
   PORTAL_CORS_ORIGINS: z.string().default(''),
   PORTAL_TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
@@ -88,8 +85,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (e.PORTAL_JWT_SECRET && e.PORTAL_JWT_SECRET === e.PORTAL_HASH_SECRET) {
       problems.push('PORTAL_JWT_SECRET and PORTAL_HASH_SECRET must differ');
     }
-    if (e.PORTAL_JWT_SECRET && e.JWT_SECRET && e.PORTAL_JWT_SECRET === e.JWT_SECRET) {
-      problems.push('PORTAL_JWT_SECRET must differ from the staff gateway JWT_SECRET');
+    for (const [name, value] of [['PORTAL_JWT_SECRET', e.PORTAL_JWT_SECRET], ['PORTAL_HASH_SECRET', e.PORTAL_HASH_SECRET]] as const) {
+      if (value && e.JWT_SECRET && value === e.JWT_SECRET) problems.push(`${name} must differ from the staff gateway JWT_SECRET`);
+      if (value === DEV_JWT_SECRET || value === DEV_HASH_SECRET) problems.push(`${name} must not be the public development default`);
     }
     if (!e.ORIGINATION_URL) problems.push('ORIGINATION_URL is required in production / real integration mode');
     if (e.PORTAL_MOCK_OTP_CODE) problems.push('PORTAL_MOCK_OTP_CODE must not be set in production / real integration mode');
@@ -123,7 +121,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       otpMaxAttempts: e.PORTAL_OTP_MAX_ATTEMPTS,
       otpRequestsPerHour: e.PORTAL_OTP_REQUESTS_PER_HOUR,
       otpRequestsPerHourPerIp: e.PORTAL_OTP_REQUESTS_PER_HOUR_PER_IP,
-      otpRequestsPerHourPerIdentity: e.PORTAL_OTP_REQUESTS_PER_HOUR_PER_IDENTITY,
       // Mock горимд (зөвхөн dev/test) код тогтмол — frontend хөгжүүлэгч бодит SMS-гүйгээр нэвтэрнэ. Real горимд хэзээ ч үгүй.
       mockOtpCode: real ? undefined : (e.PORTAL_MOCK_OTP_CODE ?? '123456'),
     },

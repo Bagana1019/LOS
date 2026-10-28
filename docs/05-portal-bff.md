@@ -50,11 +50,11 @@ CLAUDE.md §3.2 дүрмийн дагуу: portal-bff → зөвхөн `originat
 | PRT-FR-5.5 | Төлбөрийн түүх (cursor хуудаслалт) | S |
 | PRT-FR-6.1 | Аудит (FR-13.5, NFR-4): нэвтрэлт (амжилт/алдаа), refresh reuse, гэрээ татах, төлбөр үүсгэх/давтах/татгалзах. PII, токен, OTP бичигдэхгүй | M |
 | PRT-NFR-1 | Объект түвшний эрх (BOLA): `:loanId`/`:paymentId` бүр хоёр давхар шалгагдана — downstream (`X-Customer-Id`) + portal-bff (өөрийн зээлийн жагсаалт). Харьяалахгүй бол 403 биш **404** | M |
-| PRT-NFR-2 | Rate limit: IP глобал 300/мин; OTP хүсэлт (регистр, утас) **хос** тус бүрт 5/цаг, зөвхөн регистр эсвэл зөвхөн утсаар 30/цаг (хос таах/SMS бөмбөгдөлтөөс хамгаална; регистр нийтэд мэдэгдэх тул ганцаараа хатуу хязгаарлавал гуравдагч этгээд эзнийг түгжинэ), IP 20/цаг, хосонд 60с cooldown; OTP шалгалт IP 30/10мин; төлбөр үүсгэх 10/мин/харилцагч; гэрээ татах 20/мин; нэвтрэлтийн алдаа IP 60/мин | M |
+| PRT-NFR-2 | Rate limit: IP глобал 300/мин; OTP хүсэлт (регистр, утас) **хос** тус бүрт 5/цаг (SMS бөмбөгдөлтөөс хамгаална), IP 20/цаг, хосонд 60с cooldown. Зөвхөн регистр эсвэл зөвхөн утсаар (identity-wide) хязгаар **тавихгүй**: тэдгээр нь нийтэд мэдэгдэх тул гуравдагч этгээд эзнийг түгжих боломж олгоно, харин хамгаалалт нэмэхгүй (SMS зөвхөн хос таарсан үед явна, таарсан/таараагүй хариу ялгагдахгүй); OTP шалгалт IP 30/10мин; төлбөр үүсгэх 10/мин/харилцагч; гэрээ татах 20/мин; нэвтрэлтийн алдаа IP 60/мин | M |
 | PRT-NFR-3 | Нууцлал: бүх хариу `Cache-Control: no-store`; лог/аудитад регистр, утас, данс, токен, OTP бичихгүй (CLAUDE.md §6-5); регистр/утсыг Redis түлхүүрт HMAC-аар | M |
 | PRT-NFR-4 | Интеграци: `INTEGRATION_MODE=mock\|real` (§3.2-7); дотоод timeout 3с, retry зөвхөн idempotent GET (§3.1); downstream хариуг zod-оор шалгана | M |
 | PRT-NFR-5 | Бизнес өдөр = `Asia/Ulaanbaatar` (UTC+8); хугацаа хэтрэлт, «өнөөдөр» энэ цагаар | M |
-| PRT-NFR-6 | Тохиргоо буруу бол эхлэхгүй (fail fast): production **эсвэл** `INTEGRATION_MODE=real` үед тохируулаагүй/давхцсан нууц, шууд заагаагүй `ORIGINATION_URL`, mock OTP, redis-гүй store хориотой (NODE_ENV тавиагүй deploy dev нууцаар босохгүй) | M |
+| PRT-NFR-6 | Тохиргоо буруу бол эхлэхгүй (fail fast): production **эсвэл** `INTEGRATION_MODE=real` үед тохируулаагүй/давхцсан нууц, шууд заагаагүй `ORIGINATION_URL`, mock OTP, redis-гүй store хориотой — production-д `memory` огт болохгүй, бусад `real` орчинд зөвхөн `PORTAL_STORE=memory` гэж ТОДОРХОЙ зааж болно (NODE_ENV тавиагүй deploy dev нууцаар босохгүй) | M |
 
 ## 4. Харилцагчийн урсгал
 
@@ -135,7 +135,7 @@ portal-bff `INTEGRATION_MODE=real` үед эдгээрийг дуудна. **Ori
 | `PORTAL_JWT_SECRET`, `PORTAL_HASH_SECRET` | dev утга | ≥32 тэмдэгт, бие биенээсээ ялгаатай, ажилтны `JWT_SECRET`-ээс ялгаатай. Production/`real` үед заавал. Анхаар: аль нэгийг солих нь бүх session (JWT, refresh токен), хүлээгдэж буй OTP-г хүчингүй болгоно |
 | `PORTAL_ACCESS_TTL_SEC` / `PORTAL_REFRESH_TTL_SEC` | `600` / `2592000` | |
 | `PORTAL_OTP_TTL_SEC`, `PORTAL_OTP_RESEND_SEC`, `PORTAL_OTP_MAX_ATTEMPTS` | `300`, `60`, `5` | |
-| `PORTAL_OTP_REQUESTS_PER_HOUR`, `…_PER_IDENTITY`, `…_PER_IP` | `5`, `30`, `20` | OTP хүсэлтийн хязгаар: (регистр,утас) хос, зөвхөн регистр/утас, IP |
+| `PORTAL_OTP_REQUESTS_PER_HOUR`, `…_PER_IP` | `5`, `20` | OTP хүсэлтийн хязгаар: (регистр,утас) хос тус бүрт, IP тус бүрт |
 | `PORTAL_MOCK_OTP_CODE` | `123456` (mock горимд) | Mock горимын тогтмол 6 оронтой код; `real`/production-д тохируулж болохгүй (код зөвхөн SMS-ээр) |
 | `PORTAL_CORS_ORIGINS` | хоосон | таслалаар; `*` хориотой; production-д https. Хоосон = CORS унтраалттай (мобайл апп-д хэрэггүй) |
 | `PORTAL_TRUST_PROXY` | `0` | LB/ingress ард хэдэн hop. Буруу бол IP rate-limit хуурамч болно |
@@ -180,7 +180,7 @@ curl -s localhost:4007/api/portal/auth/verify -H 'content-type: application/json
 
 Mock төлбөр нэг ledger дээр ажиллана: төлбөр PAID болмогц үлдэгдэл, хуваарийн төлөв, түүх өөрчлөгдөнө (хугацаа хэтэрсэн хэсгээс эхлэн хүү→үндсэн дарааллаар хаана; PAYOFF зээлийг хааж ирээдүйн хүүг уучилна). Торгууль загварчлаагүй.
 
-Тест: `pnpm --filter @los/portal-bff test` (178 тест; `TEST_REDIS_URL=redis://… ` өгвөл Redis хэрэгжүүлэлт мөн гэрээний тестээр шалгагдана — turbo-оор ажиллуулахад ч дамжина). `pnpm --filter @los/portal-bff lint` нь eslint + `tsc --noEmit` (spec, testing-ийг оруулан) ажиллуулна. `INTEGRATION_MODE=real` e2e нь `FakeOrigination`-тэй жинхэнэ HTTP-ээр ажиллана.
+Тест: `pnpm --filter @los/portal-bff test` (183 тест; `TEST_REDIS_URL=redis://… ` өгвөл Redis хэрэгжүүлэлт мөн гэрээний тестээр шалгагдана — turbo-оор ажиллуулахад ч дамжина). `pnpm --filter @los/portal-bff lint` нь eslint + `tsc --noEmit` (spec, testing-ийг оруулан) ажиллуулна. `INTEGRATION_MODE=real` e2e нь `FakeOrigination`-тэй жинхэнэ HTTP-ээр ажиллана.
 
 ## 10. Нээлттэй асуудал, дараагийн алхам
 
@@ -189,7 +189,8 @@ Mock төлбөр нэг ledger дээр ажиллана: төлбөр PAID б�
 3. **Төлбөрийн adapter** (QPay, SocialPay, банкны данс) — төлбөр тооцооны thread-ийн `integrations/payment/`; webhook-ийн баталгаажуулалт, Core-д тусгал, `RepaymentReceived` event.
 4. **Аудитыг хадгалах** — одоо `audit:true` JSON лог; `origination.audit_log` (дотоод API) эсвэл portal schema руу бичдэг sink нэмэх.
 5. **OpenAPI** — DTO нь zod; `@los/contracts`-аас OpenAPI үүсгэх (CLAUDE.md §2.2) нэгдсэн алхамд.
-6. **Нэвтрэлтийн нэмэлт хүчин зүйл** — PIN/биометр, ДАН (ХУР/ДАН интеграцитай), төхөөрөмж бүртгэл, идэвхтэй session-ий жагсаалт.
+6. **Нэвтрэлтийн нэмэлт хүчин зүйл** — PIN/биометр, ДАН (ХУР/ДАН интеграцитай), төхөөрөмж бүртгэл, идэвхтэй session-ий жагсаалт, refresh токен хулгайлагдсан үед харилцагчийн бүх session-ийг устгах (`sess-by-customer` индекс).
 7. **Мэдэгдэл** — төлбөрийн сануулга, баталгаажилт push/SMS (мэдэгдлийн thread).
 8. **Вэб портал UI** — `apps/web` дээр `/portal/*` хуудас (`@los/ui`), `NEXT_PUBLIC_PORTAL_URL`.
-9. **Тоон дээр** — торгуулийн томьёо, ханш (USD), хэсэгчилсэн төлөлтийн дараалал (`торгууль → хүү → үндсэн`) Core-ийн бодит дүрмээр.
+9. **OTP хүсэлтийн түгжилт** — хос (регистр+утас) хоёуланг нь мэддэг этгээд хос тус бүрийн 5/цагийн хязгаарыг дуусгаж эзний OTP хүсэлтийг 1 цаг түгжиж болно (нэвтэрсэн session-д нөлөөлөхгүй). CAPTCHA, төхөөрөмж бүртгэл эсвэл ДАН-аар нэвтрэх нэмэгдэхэд арилна.
+10. **Тоон дээр** — торгуулийн томьёо, ханш (USD), хэсэгчилсэн төлөлтийн дараалал (`торгууль → хүү → үндсэн`) Core-ийн бодит дүрмээр.

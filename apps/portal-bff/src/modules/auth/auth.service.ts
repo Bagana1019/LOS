@@ -51,16 +51,14 @@ export class AuthService implements BeforeApplicationShutdown {
 
   async requestOtp(dto: PortalOtpRequest, req: RequestInfo): Promise<PortalOtpChallenge> {
     const a = this.cfg.auth;
-    const regKey = this.mac(`reg:${dto.registerNo}`);
-    const phoneKey = this.mac(`phone:${dto.phone}`);
     const pairKey = this.mac(`${dto.registerNo}|${dto.phone}`);
 
-    // Хос (регистр+утас) бүрт хатуу, зөвхөн регистр/утсаар илүү өндөр босго: регистр нийтэд мэдэгдэх тул
-    // зөвхөн регистрээр хатуу хязгаарлавал гуравдагч этгээд хэн нэгний нэвтрэлтийг цаг тутамд түгжиж чадна.
+    // Хязгаар зөвхөн IP болон (регистр, утас) ХОС-оор. Зөвхөн регистр эсвэл зөвхөн утсаар (identity-wide) хязгаарлахгүй:
+    // регистр/утас нийтэд мэдэгдэх тул тийм хязгаар нь гуравдагч этгээдэд бусдын нэвтрэлтийг цаг тутамд түгжих боломж өгнө,
+    // харин хамгаалалт нэмэхгүй — SMS зөвхөн хос таарсан үед л явдаг тул ганц утас руу явах SMS-ийг хос тус бүрийн хязгаар хаана,
+    // decoy-той ялгагдахгүй тул хос таах нь мэдээлэл өгөхгүй.
     await this.limiter.enforce({ name: 'otp-req:ip', limit: a.otpRequestsPerHourPerIp, windowSec: HOUR }, req.ip);
     await this.limiter.enforce({ name: 'otp-req:pair', limit: a.otpRequestsPerHour, windowSec: HOUR }, pairKey);
-    await this.limiter.enforce({ name: 'otp-req:reg', limit: a.otpRequestsPerHourPerIdentity, windowSec: HOUR }, regKey);
-    await this.limiter.enforce({ name: 'otp-req:phone', limit: a.otpRequestsPerHourPerIdentity, windowSec: HOUR }, phoneKey);
 
     const coolKey = `otp-cool:${pairKey}`;
     if (a.otpResendSec > 0 && !(await this.store.setIfAbsent(coolKey, '1', a.otpResendSec))) {
@@ -85,7 +83,7 @@ export class AuthService implements BeforeApplicationShutdown {
       correlationId: req.correlationId,
       outcome: 'SUCCESS',
       ip: req.ip,
-      meta: { subject: regKey.slice(0, 12), known: customer !== null },
+      meta: { subject: pairKey.slice(0, 12), known: customer !== null },
     });
     return { challengeId, maskedDestination: maskPhone(dto.phone), expiresInSec: a.otpTtlSec, resendAfterSec: a.otpResendSec };
   }

@@ -22,7 +22,9 @@ export class RealContractFiles implements ContractFilesPort {
       stream.destroy();
       throw new PortalError('DOWNSTREAM_INVALID_RESPONSE');
     }
+    // Content-Length нь эх урсгалын (шахсан/ задлагдаагүй) хэмжээ: fetch задалсан бол хэмжээ таарахгүй тул дамжуулахгүй
     const declared = Number(headers.get('content-length'));
-    return { info, stream, ...(Number.isInteger(declared) && declared > 0 ? { contentLength: declared } : {}) };
+    const encoded = (headers.get('content-encoding') ?? 'identity').toLowerCase() !== 'identity';
+    return { info, stream, ...(!encoded && Number.isInteger(declared) && declared > 0 ? { contentLength: declared } : {}) };
   }
 }

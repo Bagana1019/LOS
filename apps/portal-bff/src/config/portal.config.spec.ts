@@ -42,6 +42,9 @@ describe('loadConfig', () => {
     ['http cors origin', { PORTAL_CORS_ORIGINS: 'http://app.example.mn' }],
     ['implicit origination url', { ORIGINATION_URL: undefined }],
     ['jwt secret shared with the staff gateway', { JWT_SECRET: 'j'.repeat(40) }],
+    ['hash secret shared with the staff gateway', { JWT_SECRET: 'h'.repeat(40) }],
+    ['public development jwt secret', { PORTAL_JWT_SECRET: 'dev-only-portal-jwt-secret-change-me!!' }],
+    ['public development hash secret', { PORTAL_HASH_SECRET: 'dev-only-portal-hash-secret-change-me!' }],
   ])('refuses to start in production with %s', (_name, patch) => {
     expect(() => loadConfig({ ...prodEnv, ...patch })).toThrow(ConfigError);
   });
@@ -66,10 +69,8 @@ describe('loadConfig', () => {
     expect(loadConfig(realEnv).auth.mockOtpCode).toBeUndefined();
   });
 
-  it('per-pair OTP quota is stricter than the per-identity quota', () => {
-    const a = loadConfig({}).auth;
-    expect(a.otpRequestsPerHour).toBe(5);
-    expect(a.otpRequestsPerHourPerIdentity).toBeGreaterThan(a.otpRequestsPerHour);
+  it('OTP quotas default to 5/hour per (register, phone) pair and 20/hour per IP', () => {
+    expect(loadConfig({}).auth).toMatchObject({ otpRequestsPerHour: 5, otpRequestsPerHourPerIp: 20 });
   });
 
   it('never allows a wildcard CORS origin', () => {

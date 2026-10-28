@@ -2,6 +2,7 @@ import { Controller, Get, Param, Res, StreamableFile } from '@nestjs/common';
 import { PortalId, type PortalContractInfo } from '@los/contracts';
 import type { Response } from 'express';
 import type { ServerResponse } from 'node:http';
+import type { Readable } from 'node:stream';
 import type { CallContext } from '../../common/request-context';
 import { ZodPipe } from '../../common/zod.pipe';
 import { RateLimit } from '../../security/rate-limit.decorator';
@@ -27,11 +28,20 @@ export class ContractController {
     @Param('loanId', loanIdPipe) loanId: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const { info, stream, contentLength } = await this.contracts.download(ctx, loanId);
+    // Listener-ийг татах хүсэлт ЭХЛЭХЭЭС ӨМНӨ бүртгэнэ: origination/dms-ийг хүлээх хугацаанд клиент таславал ч алдахгүй.
+    const state: { stream?: Readable; opened: boolean } = { opened: false };
     res.on('close', () => {
-      stream.destroy(); // Клиент таслахад upstream (origination/dms) холболтыг хаана
-      if (!res.writableFinished) void this.contracts.recordAborted(ctx, loanId);
+      state.stream?.destroy(); // Клиент таслахад upstream (origination/dms) холболтыг хаана
+      if (state.opened && !res.writableFinished) void this.contracts.recordAborted(ctx, loanId);
     });
+    const { info, stream, contentLength } = await this.contracts.download(ctx, loanId);
+    state.stream = stream;
+    state.opened = true;
+    if (res.destroyed) {
+      // Хүлээх хугацаанд клиент аль хэдийн тасарсан: «амжилттай татсан» аудит үлдэхгүйн тулд тасарсан гэж тэмдэглэнэ
+      stream.destroy();
+      void this.contracts.recordAborted(ctx, loanId);
+    }
     return new StreamableFile(stream, {
       type: info.mime,
       disposition: contentDisposition(info.fileName, info.contractNo),

@@ -18,6 +18,8 @@ interface BaseRequest {
   headers?: Record<string, string>;
   /** 404-д буцаах код; заагаагүй бол гэрээний зөрчил гэж үзнэ. */
   notFound?: PortalErrorCode;
+  /** Энэ дуудлагад ГАНЦ харилцагч руу дамжуулж болох нэмэлт бизнес код (глобал жагсаалтаас гадна). */
+  passThrough?: PortalErrorCode[];
 }
 
 export interface JsonRequest<T> extends BaseRequest {
@@ -187,7 +189,11 @@ export class InternalHttpClient {
     }
     if (status === 400 || status === 409 || status === 422) {
       const code = businessCode(text);
-      if (code && PASS_THROUGH_DOWNSTREAM_CODES.has(code)) return new PortalError(code);
+      if (code && (PASS_THROUGH_DOWNSTREAM_CODES.has(code) || req.passThrough?.includes(code))) {
+        // Харилцагчид бизнес алдаа болж очиж байгаа ч BFF↔origination гэрээний зөрчил (жишээ нь талбар нэр өөрчлөгдсөн) далд үлдэхгүй
+        this.logger.warn({ msg: 'downstream business error passed through', ...where, code });
+        return new PortalError(code);
+      }
       this.logger.error({ msg: 'downstream unmapped business error', ...where });
       return new PortalError('DOWNSTREAM_INVALID_RESPONSE');
     }

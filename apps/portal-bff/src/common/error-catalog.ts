@@ -27,7 +27,6 @@ export const ERROR_CATALOG: Record<PortalErrorCode, { status: number; message: s
 
 /** Downstream-ээс ирсэн бизнес алдааны кодуудаас зөвхөн эдгээрийг харилцагч руу дамжуулна. */
 export const PASS_THROUGH_DOWNSTREAM_CODES = new Set<PortalErrorCode>([
-  'INVALID_REQUEST', // жишээ нь origination мэдэхгүй cursor
   'LOAN_NOT_PAYABLE',
   'NO_OVERDUE',
   'AMOUNT_OUT_OF_RANGE',

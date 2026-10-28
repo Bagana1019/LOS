@@ -51,6 +51,7 @@ export class RealPaymentCollection implements PaymentCollectionPort {
       ctx,
       schema: PortalPaymentList,
       notFound: 'LOAN_NOT_FOUND',
+      passThrough: ['INVALID_REQUEST'], // origination мэдэхгүй cursor → харилцагчид 400 (бусад endpoint-д гэрээний зөрчил 502 хэвээр)
     });
   }
 }
