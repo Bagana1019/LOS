@@ -34,6 +34,7 @@ describe('portal-bff e2e (INTEGRATION_MODE=real against a fake origination over 
   it('OTP is delivered through the origination notification endpoint (never to the client)', async () => {
     const ch = await rig.t.http().post('/api/portal/auth/otp').set('X-Forwarded-For', '10.9.0.2').send({ registerNo: DEMO_1.registerNo, phone: DEMO_1.phone }).expect(200);
     expect(JSON.stringify(ch.body)).not.toMatch(/\d{6}/);
+    await rig.t.settle(); // SMS арын ажлаар явна
     expect(rig.origination.otpCodes.get(DEMO_1.customerId)).toMatch(/^\d{6}$/);
     const otpCall = rig.origination.received.find((r) => r.path.endsWith('/otp'));
     expect(otpCall?.headers['x-customer-id']).toBe(DEMO_1.customerId);
@@ -41,6 +42,7 @@ describe('portal-bff e2e (INTEGRATION_MODE=real against a fake origination over 
 
   it('unknown customer: lookup 404 → same 200 challenge, nothing sent', async () => {
     await rig.t.http().post('/api/portal/auth/otp').set('X-Forwarded-For', '10.9.0.3').send({ registerNo: 'УБ11111111', phone: '99000000' }).expect(200);
+    await rig.t.settle();
     expect(rig.origination.received.some((r) => r.path.endsWith('/otp'))).toBe(false);
   });
 
@@ -159,8 +161,12 @@ describe('portal-bff e2e (INTEGRATION_MODE=real against a fake origination over 
     });
 
     it('does not follow redirects and rejects non-PDF contract bodies', async () => {
-      rig.origination.overrides.push({ match: /\/loans$/, times: 3, respond: reply(302, {}, { Location: 'http://169.254.169.254/latest/meta-data' }) });
+      // Redirect-ийн зорилтот хаяг нь ӨӨРӨӨ origination (бодит, хүрч болох хаяг): дагавал `received`-д заавал харагдана.
+      // Тестийн хост дээрх сүлжээний байдлаас (metadata IP зэрэг) үл хамаарна.
+      const target = `${rig.origination.url}/api/internal/portal/loans?followed=1`;
+      rig.origination.overrides.push({ match: /\/loans$/, times: 3, respond: reply(302, {}, { Location: target }) });
       await rig.t.http().get('/api/portal/loans').set(auth(c1.accessToken)).expect(503);
+      expect(rig.origination.received.filter((r) => r.path.includes('followed=1'))).toHaveLength(0);
 
       await rig.t.http().get('/api/portal/loans').set(auth(c1.accessToken)).expect(200);
       rig.origination.overrides.push({ match: /\/contract\/content$/, times: 1, respond: reply(200, '<html>not a pdf</html>', { 'Content-Type': 'text/html' }) });

@@ -8,7 +8,7 @@
     "start": "node dist/main.js",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint src"
+    "lint": "eslint src && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@los/calc": "workspace:*",

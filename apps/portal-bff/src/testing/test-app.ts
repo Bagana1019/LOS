@@ -10,6 +10,7 @@ import { MOCK_LEDGER } from '../integrations/integrations.module';
 import type { MockLedger } from '../integrations/mock/mock-ledger';
 import type { MockOtpSender } from '../integrations/otp-sender/mock-otp-sender';
 import { OTP_SENDER } from '../integrations/otp-sender/otp-sender.port';
+import { AuthService } from '../modules/auth/auth.service';
 import { KV_STORE, type KvStore } from '../store/kv-store';
 import { MemoryKvStore } from '../store/memory-kv-store';
 import { FakeOrigination } from './fake-origination';
@@ -42,6 +43,7 @@ export const TEST_ENV = {
   PORTAL_TRUST_PROXY: '1',
   PORTAL_OTP_RESEND_SEC: '0',
   PORTAL_OTP_REQUESTS_PER_HOUR: '1000',
+  PORTAL_OTP_REQUESTS_PER_HOUR_PER_IDENTITY: '1000',
   PORTAL_OTP_REQUESTS_PER_HOUR_PER_IP: '1000',
   PORTAL_MOCK_PAYMENT_CONFIRM_MS: '1000',
 } satisfies Record<string, string>;
@@ -55,6 +57,8 @@ export interface TestApp {
   otp: MockOtpSender;
   audit: MemoryAuditSink;
   http: () => ReturnType<typeof request>;
+  /** Арын ажил (OTP SMS илгээлт) дуустал хүлээнэ. */
+  settle: () => Promise<void>;
   /** Демо харилцагчаар OTP-оор нэвтэрч access/refresh токен авна. */
   login(registerNo?: string, phone?: string, ip?: string): Promise<{ accessToken: string; refreshToken: string; customerId: string }>;
 }
@@ -86,9 +90,11 @@ export async function createTestApp(env: Record<string, string> = {}): Promise<T
   const otp = app.get<MockOtpSender>(OTP_SENDER);
   const ledger = app.get<MockLedger>(MOCK_LEDGER);
   const http = () => request(app.getHttpServer());
+  const settle = () => app.get(AuthService).drainPendingSends();
 
   const login: TestApp['login'] = async (registerNo = DEMO_1.registerNo, phone = DEMO_1.phone, ip = '10.0.0.1') => {
     const challenge = await http().post('/api/portal/auth/otp').set('X-Forwarded-For', ip).send({ registerNo, phone }).expect(200);
+    await settle();
     const customerId = [DEMO_1, DEMO_2].find((c) => c.registerNo === registerNo)?.customerId ?? '';
     const code = otp.lastCodeFor(customerId) as string;
     const res = await http()
@@ -99,7 +105,7 @@ export async function createTestApp(env: Record<string, string> = {}): Promise<T
     return { accessToken: res.body.accessToken, refreshToken: res.body.refreshToken, customerId };
   };
 
-  return { app, cfg, clock, store, ledger, otp, audit, http, login };
+  return { app, cfg, clock, store, ledger, otp, audit, http, settle, login };
 }
 
 /** INTEGRATION_MODE=real: portal-bff ↔ FakeOrigination (жинхэнэ HTTP, сүлжээгээр). */
@@ -129,9 +135,11 @@ export async function createRealModeApp(env: Record<string, string> = {}): Promi
   configureApp(app, cfg);
   await app.init();
   const http = () => request(app.getHttpServer());
+  const settle = () => app.get(AuthService).drainPendingSends();
 
   const login = async (registerNo = DEMO_1.registerNo, phone = DEMO_1.phone, ip = '10.0.0.1') => {
     const challenge = await http().post('/api/portal/auth/otp').set('X-Forwarded-For', ip).send({ registerNo, phone }).expect(200);
+    await settle();
     const customerId = [DEMO_1, DEMO_2].find((c) => c.registerNo === registerNo)?.customerId ?? '';
     const code = origination.otpCodes.get(customerId) as string;
     const res = await http().post('/api/portal/auth/verify').set('X-Forwarded-For', ip).send({ challengeId: challenge.body.challengeId, code }).expect(200);
@@ -139,7 +147,7 @@ export async function createRealModeApp(env: Record<string, string> = {}): Promi
   };
 
   return {
-    t: { app, cfg, clock, store, audit, http, login },
+    t: { app, cfg, clock, store, audit, http, settle, login },
     origination,
     close: async () => {
       await app.close();

@@ -10,6 +10,8 @@ export interface KvStore {
   set(key: string, value: string, ttlSec: number): Promise<void>;
   /** Түлхүүр байхгүй үед л үүсгэнэ. Үүсгэсэн бол true. */
   setIfAbsent(key: string, value: string, ttlSec: number): Promise<boolean>;
+  /** Түлхүүр одоо ч байгаа үед л дарж бичнэ (SET XX). Бичсэн бол true. Устгагдсан бичлэгийг «амилуулахгүй». */
+  setIfExists(key: string, value: string, ttlSec: number): Promise<boolean>;
   del(key: string): Promise<void>;
   /** Нэг удаагийн хэрэглээ (OTP, refresh rotation): уншаад нэгэн зэрэг устгана. */
   getAndDelete(key: string): Promise<string | null>;

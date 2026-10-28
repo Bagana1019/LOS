@@ -155,6 +155,30 @@ describe('MockLedger payments', () => {
     expect([...p1.items, ...p2.items, ...p3.items].map((p) => p.paymentId)).toEqual([...ids].reverse());
     expect(p3.nextCursor).toBeNull();
   });
+
+  it('refuses an unknown cursor instead of silently restarting from page 1 (a client would loop forever)', () => {
+    const { ledger, clock } = make();
+    ledger.createPayment(C2, cmd('loan_demo_003', 1000), 'k-cursor-1');
+    clock.advance(1000);
+    expect(() => ledger.listPayments(C2, 'loan_demo_003', { limit: 2, cursor: 'pay_does_not_exist' })).toThrowError(expect.objectContaining({ code: 'INVALID_REQUEST' }));
+  });
+});
+
+describe('MockLedger payments across the Ulaanbaatar midnight', () => {
+  it('a PAYOFF created at 23:50 and confirmed at 00:05 still closes the loan at the quoted amount', () => {
+    const { ledger, clock } = make(12 * 60 * 1000); // баталгаажилт 12 минутын дараа (хугацаа 15 мин)
+    clock.current = new Date('2026-10-28T15:50:00Z'); // УБ 23:50
+    const payoff = ledger.getBalance(C1, 'loan_demo_001').payoff.amount;
+    const created = ledger.createPayment(C1, cmd('loan_demo_001', payoff, 'PAYOFF'), 'k-midnight-1');
+    expect(created.status).toBe('PENDING');
+    clock.current = new Date('2026-10-28T16:05:00Z'); // УБ 00:05 маргааш
+    const paid = ledger.getPayment(C1, created.paymentId);
+    expect(paid.status).toBe('PAID');
+    const after = ledger.getBalance(C1, 'loan_demo_001');
+    expect(after.payoff.amount).toBe(0);
+    expect(after.outstandingPrincipal).toBe(0);
+    expect(ledger.listLoans(C1).find((l) => l.loanId === 'loan_demo_001')?.status).toBe('CLOSED');
+  });
 });
 
 describe('buildMockPdf', () => {

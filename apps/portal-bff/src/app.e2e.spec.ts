@@ -149,7 +149,7 @@ describe('portal-bff e2e (mock integrations)', () => {
       const r1 = await t.http().post('/api/portal/auth/refresh').send({ refreshToken: s.refreshToken }).expect(200);
       await t.http().get('/api/portal/me').set(auth(r1.body.accessToken)).expect(200);
 
-      // эхний refresh токеныг дахин ашиглах = хулгайн шинж → бүх session хүчингүй
+      // эхний refresh токеныг дахин ашиглах = хулгайн шинж → тухайн session (token family) хүчингүй
       const reuse = await t.http().post('/api/portal/auth/refresh').send({ refreshToken: s.refreshToken }).expect(401);
       expect(reuse.body.error.code).toBe('UNAUTHENTICATED');
       await t.http().get('/api/portal/me').set(auth(r1.body.accessToken)).expect(401);

@@ -6,6 +6,7 @@ import { PortalError } from './portal-error';
 
 function codeForStatus(status: number): PortalErrorCode {
   if (status === 401) return 'UNAUTHENTICATED';
+  if (status === 413) return 'PAYLOAD_TOO_LARGE';
   if (status === 404) return 'NOT_FOUND';
   if (status === 429) return 'RATE_LIMITED';
   if (status >= 400 && status < 500) return 'INVALID_REQUEST';
@@ -46,7 +47,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
     if (status >= 500) {
       const err = exception instanceof Error ? exception : new Error(String(exception));
-      this.logger.error(`[${req.correlationId}] ${req.method} ${req.path} → ${code}: ${err.message}`, err.stack);
+      this.logger.error({ msg: err.message, correlationId: req.correlationId, method: req.method, path: req.path, code, status }, err.stack);
     }
 
     if (headers) for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);

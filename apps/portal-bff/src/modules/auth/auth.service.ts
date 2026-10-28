@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, type BeforeApplicationShutdown } from '@nestjs/common';
 import type { PortalOtpChallenge, PortalOtpRequest, PortalOtpVerify, PortalProfile, PortalRefreshRequest, PortalTokens } from '@los/contracts';
 import { randomInt } from 'node:crypto';
 import { hmacHex, randomToken, safeEqual } from '../../common/crypto';
@@ -33,7 +33,11 @@ const HOUR = 3600;
  * - OTP-г HMAC-аар хадгална, нэг удаа, 5 оролдлогоор хязгаарлана.
  */
 @Injectable()
-export class AuthService {
+export class AuthService implements BeforeApplicationShutdown {
+  private readonly logger = new Logger('AuthService');
+  /** Арын ажил болж буй OTP илгээлтүүд (тест, graceful shutdown-д дуусгахад). */
+  private readonly pendingSends = new Set<Promise<void>>();
+
   constructor(
     @Inject(PORTAL_CONFIG) private readonly cfg: PortalConfig,
     @Inject(KV_STORE) private readonly store: KvStore,
@@ -49,32 +53,31 @@ export class AuthService {
     const a = this.cfg.auth;
     const regKey = this.mac(`reg:${dto.registerNo}`);
     const phoneKey = this.mac(`phone:${dto.phone}`);
+    const pairKey = this.mac(`${dto.registerNo}|${dto.phone}`);
 
+    // Хос (регистр+утас) бүрт хатуу, зөвхөн регистр/утсаар илүү өндөр босго: регистр нийтэд мэдэгдэх тул
+    // зөвхөн регистрээр хатуу хязгаарлавал гуравдагч этгээд хэн нэгний нэвтрэлтийг цаг тутамд түгжиж чадна.
     await this.limiter.enforce({ name: 'otp-req:ip', limit: a.otpRequestsPerHourPerIp, windowSec: HOUR }, req.ip);
-    await this.limiter.enforce({ name: 'otp-req:reg', limit: a.otpRequestsPerHour, windowSec: HOUR }, regKey);
-    await this.limiter.enforce({ name: 'otp-req:phone', limit: a.otpRequestsPerHour, windowSec: HOUR }, phoneKey);
+    await this.limiter.enforce({ name: 'otp-req:pair', limit: a.otpRequestsPerHour, windowSec: HOUR }, pairKey);
+    await this.limiter.enforce({ name: 'otp-req:reg', limit: a.otpRequestsPerHourPerIdentity, windowSec: HOUR }, regKey);
+    await this.limiter.enforce({ name: 'otp-req:phone', limit: a.otpRequestsPerHourPerIdentity, windowSec: HOUR }, phoneKey);
 
-    const coolKey = `otp-cool:${this.mac(`${dto.registerNo}|${dto.phone}`)}`;
+    const coolKey = `otp-cool:${pairKey}`;
     if (a.otpResendSec > 0 && !(await this.store.setIfAbsent(coolKey, '1', a.otpResendSec))) {
       throw new PortalError('RATE_LIMITED', undefined, { 'Retry-After': String(Math.max(1, await this.store.ttl(coolKey))) });
     }
 
     const challengeId = randomToken(16);
     const customer = await this.directory.lookupForLogin({ registerNo: dto.registerNo, phone: dto.phone }, { correlationId: req.correlationId });
-    try {
-      if (customer) {
-        const code = a.mockOtpCode ?? String(randomInt(0, 1_000_000)).padStart(6, '0');
-        await this.saveChallenge(challengeId, { customerId: customer.customerId, mac: this.otpMac(challengeId, code) });
-        await this.sender.send({ customerId: customer.customerId, code, ttlSec: a.otpTtlSec }, { correlationId: req.correlationId });
-      } else {
-        // Decoy: хэзээ ч таарахгүй mac. verify() ижил замаар OTP_INVALID/OTP_ATTEMPTS_EXCEEDED буцаана.
-        await this.saveChallenge(challengeId, { customerId: '', mac: this.mac(`decoy:${randomToken(16)}`) });
-      }
-    } catch (err) {
-      // Илгээж чадаагүй бол cooldown/challenge-ийг цэвэрлэж, харилцагч шууд дахин оролдож болно.
-      await this.store.del(`otp:${challengeId}`).catch(() => undefined);
-      await this.store.del(coolKey).catch(() => undefined);
-      throw err;
+    if (customer) {
+      const code = a.mockOtpCode ?? String(randomInt(0, 1_000_000)).padStart(6, '0');
+      await this.saveChallenge(challengeId, { customerId: customer.customerId, mac: this.otpMac(challengeId, code) });
+      // PRT-FR-1.4: SMS-ийг хүсэлтийн замд хүлээхгүй, илгээлтийн алдааг ч хариунд гаргахгүй — үгүй бол хугацаа/алдаагаар
+      // бүртгэлтэй хос мөн эсэхийг тандаж болно (decoy зам SMS илгээдэггүй).
+      this.sendInBackground(customer.customerId, code, req);
+    } else {
+      // Decoy: хэзээ ч таарахгүй mac. verify() ижил замаар OTP_INVALID/OTP_ATTEMPTS_EXCEEDED буцаана.
+      await this.saveChallenge(challengeId, { customerId: '', mac: this.mac(`decoy:${randomToken(16)}`) });
     }
 
     await this.audit.record({
@@ -85,6 +88,27 @@ export class AuthService {
       meta: { subject: regKey.slice(0, 12), known: customer !== null },
     });
     return { challengeId, maskedDestination: maskPhone(dto.phone), expiresInSec: a.otpTtlSec, resendAfterSec: a.otpResendSec };
+  }
+
+  /** Тест болон graceful shutdown: арын илгээлтүүд дуустал хүлээнэ. */
+  async drainPendingSends(): Promise<void> {
+    await Promise.allSettled([...this.pendingSends]);
+  }
+
+  async beforeApplicationShutdown(): Promise<void> {
+    await this.drainPendingSends();
+  }
+
+  private sendInBackground(customerId: string, code: string, req: RequestInfo): void {
+    const task: Promise<void> = this.sender
+      .send({ customerId, code, ttlSec: this.cfg.auth.otpTtlSec }, { correlationId: req.correlationId })
+      .catch((err: unknown) => {
+        // Хариунд нөлөөлөхгүй; cooldown (resendAfterSec) өнгөрмөгц харилцагч шинэ код авна. Мониторинг audit/лог-оор.
+        this.logger.error({ msg: 'otp delivery failed', correlationId: req.correlationId, code: err instanceof PortalError ? err.code : 'UNKNOWN' });
+        return this.audit.record({ action: 'AUTH_OTP_SEND_FAILED', correlationId: req.correlationId, outcome: 'FAILURE', customerId, ip: req.ip });
+      })
+      .finally(() => this.pendingSends.delete(task));
+    this.pendingSends.add(task);
   }
 
   async verifyOtp(dto: PortalOtpVerify, req: RequestInfo): Promise<PortalTokens> {

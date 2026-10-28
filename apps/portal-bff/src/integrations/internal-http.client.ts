@@ -89,7 +89,32 @@ export class InternalHttpClient {
     source.on('error', (e) => limiter.destroy(e));
     // Клиент таслахад (limiter destroy) эх урсгалыг мөн хаана
     limiter.on('close', () => source.destroy());
-    return { headers: res.headers, stream: source.pipe(limiter) };
+    // Хэн ч сонсоогүй мөчид гарсан 'error' процессыг унагахаас сэргийлнэ (бодит хүлээн авагч pipeline-аар алдааг авна).
+    limiter.on('error', () => undefined);
+    const body = source.pipe(limiter);
+    // Эхний chunk иртэл хүлээнэ: HTTP толгой явахаас өмнө алдаа (хоосон/хэт том/тасарсан) нь жирийн JSON алдаа болно.
+    await this.firstChunk(body);
+    return { headers: res.headers, stream: body };
+  }
+
+  private firstChunk(s: Readable): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const finish = (err?: PortalError) => {
+        clearTimeout(timer);
+        s.off('readable', onReadable);
+        s.off('error', onError);
+        if (err) {
+          s.destroy();
+          reject(err);
+        } else resolve();
+      };
+      // 'readable' нь буфер хоосон байхад зөвхөн урсгалын төгсгөлд ирнэ → хоосон бие
+      const onReadable = () => finish(s.readableLength > 0 ? undefined : new PortalError('DOWNSTREAM_INVALID_RESPONSE'));
+      const onError = (e: Error) => finish(e instanceof PortalError ? e : new PortalError('DOWNSTREAM_UNAVAILABLE'));
+      const timer = setTimeout(() => finish(new PortalError('DOWNSTREAM_UNAVAILABLE')), this.opts.timeoutMs);
+      s.once('readable', onReadable);
+      s.once('error', onError);
+    });
   }
 
   private async jsonOnce<T>(req: JsonRequest<T>): Promise<T> {
@@ -98,7 +123,7 @@ export class InternalHttpClient {
       const text = await readLimited(res, this.opts.maxJsonBytes ?? 5 * 1024 * 1024);
       const parsed = req.schema.safeParse(JSON.parse(text));
       if (!parsed.success) {
-        this.logger.error(`[${req.ctx.correlationId}] ${req.method} ${req.path} contract mismatch at "${parsed.error.issues[0]?.path.join('.')}"`);
+        this.logger.error({ msg: 'downstream contract mismatch', ...logFields(req), at: parsed.error.issues[0]?.path.join('.') });
         throw new PortalError('DOWNSTREAM_INVALID_RESPONSE');
       }
       return parsed.data;
@@ -139,7 +164,7 @@ export class InternalHttpClient {
       });
     } catch (err) {
       settle();
-      this.logger.warn(`[${req.ctx.correlationId}] ${req.method} ${url.pathname} failed: ${(err as Error).name}`);
+      this.logger.warn({ msg: 'downstream request failed', ...logFields(req), reason: (err as Error).name });
       throw new TransientError();
     }
     if (res.ok) return { res, settle };
@@ -150,24 +175,24 @@ export class InternalHttpClient {
   }
 
   private mapError(req: BaseRequest & { method: string }, status: number, text: string): Error {
-    const where = `[${req.ctx.correlationId}] ${req.method} ${req.path} → ${status}`;
+    const where = { ...logFields(req), status };
     if (status === 404) {
       if (req.notFound) return new PortalError(req.notFound);
-      this.logger.error(`${where} (unexpected 404)`);
+      this.logger.error({ msg: 'downstream unexpected 404', ...where });
       return new PortalError('DOWNSTREAM_INVALID_RESPONSE');
     }
     if (RETRYABLE_STATUS.has(status)) {
-      this.logger.warn(where);
+      this.logger.warn({ msg: 'downstream transient status', ...where });
       return new TransientError();
     }
     if (status === 400 || status === 409 || status === 422) {
       const code = businessCode(text);
       if (code && PASS_THROUGH_DOWNSTREAM_CODES.has(code)) return new PortalError(code);
-      this.logger.error(`${where} (unmapped business error)`);
+      this.logger.error({ msg: 'downstream unmapped business error', ...where });
       return new PortalError('DOWNSTREAM_INVALID_RESPONSE');
     }
     // 401/403 = портал → origination итгэлцэл буруу тохируулагдсан; 429/500 = доголдол
-    this.logger.error(where);
+    this.logger.error({ msg: 'downstream error status', ...where });
     return new PortalError('DOWNSTREAM_UNAVAILABLE');
   }
 }
@@ -200,6 +225,8 @@ class SizeLimit extends Transform {
     cb(null, chunk);
   }
 }
+
+const logFields = (req: BaseRequest & { method?: string }) => ({ correlationId: req.ctx.correlationId, method: req.method, path: req.path });
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

@@ -40,6 +40,12 @@ export class MemoryKvStore implements KvStore {
     return true;
   }
 
+  async setIfExists(key: string, value: string, ttlSec: number): Promise<boolean> {
+    if (!this.live(key)) return false;
+    this.data.set(key, { value, expiresAt: this.expiry(ttlSec) });
+    return true;
+  }
+
   async del(key: string): Promise<void> {
     this.data.delete(key);
   }

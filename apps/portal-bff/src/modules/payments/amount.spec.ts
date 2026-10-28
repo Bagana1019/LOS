@@ -1,6 +1,6 @@
 import type { PortalCreatePayment, PortalLoanBalance } from '@los/contracts';
 import { describe, expect, it } from 'vitest';
-import { checkMethodLimit, resolveAmount } from './amount';
+import { checkMethodLimit, offeredInstallment, offeredOverdue, resolveAmount } from './amount';
 
 const balance = (over: Partial<PortalLoanBalance> = {}): PortalLoanBalance => ({
   loanId: 'l1',
@@ -52,15 +52,42 @@ describe('resolveAmount', () => {
   });
 });
 
+describe('offered amounts match what resolveAmount charges', () => {
+  it('clamps instalment and overdue to the payoff in both places', () => {
+    const b = balance({
+      payoff: { amount: 300_000, validUntil: '2026-10-28' },
+      overdue: { principal: 800_000, interest: 200_000, penalty: 0, total: 1_000_000, days: 3 },
+    });
+    expect(offeredInstallment(b)).toBe(300_000);
+    expect(offeredOverdue(b)).toBe(300_000);
+    expect(resolveAmount(body('INSTALLMENT'), b)).toBe(offeredInstallment(b));
+    expect(resolveAmount(body('OVERDUE'), b)).toBe(offeredOverdue(b));
+  });
+  it('offers nothing for a closed loan or when nothing is due', () => {
+    expect(offeredInstallment(balance({ nextInstallment: null }))).toBeNull();
+    expect(offeredOverdue(balance())).toBeNull();
+    expect(offeredInstallment(balance({ payoff: { amount: 0, validUntil: '2026-10-28' } }))).toBeNull();
+  });
+});
+
 describe('checkMethodLimit', () => {
   const limits = [{ method: 'QPAY' as const, minAmount: 100, maxAmount: 1000 }];
+  const payoff = 5_000;
   it('allows amounts within [min, max] inclusive', () => {
-    expect(code(() => checkMethodLimit('QPAY', 100, limits))).toBeNull();
-    expect(code(() => checkMethodLimit('QPAY', 1000, limits))).toBeNull();
+    expect(code(() => checkMethodLimit('QPAY', 100, limits, payoff))).toBeNull();
+    expect(code(() => checkMethodLimit('QPAY', 1000, limits, payoff))).toBeNull();
   });
   it('rejects out-of-range amounts and methods that are not offered', () => {
-    expect(code(() => checkMethodLimit('QPAY', 99.99, limits))).toBe('AMOUNT_OUT_OF_RANGE');
-    expect(code(() => checkMethodLimit('QPAY', 1000.01, limits))).toBe('AMOUNT_OUT_OF_RANGE');
-    expect(code(() => checkMethodLimit('SOCIALPAY', 500, limits))).toBe('METHOD_NOT_AVAILABLE');
+    expect(code(() => checkMethodLimit('QPAY', 99.99, limits, payoff))).toBe('AMOUNT_OUT_OF_RANGE');
+    expect(code(() => checkMethodLimit('QPAY', 1000.01, limits, payoff))).toBe('AMOUNT_OUT_OF_RANGE');
+    expect(code(() => checkMethodLimit('SOCIALPAY', 500, limits, payoff))).toBe('METHOD_NOT_AVAILABLE');
+  });
+  it('waives the minimum for the payment that closes the loan, so a tiny remainder can still be paid', () => {
+    expect(code(() => checkMethodLimit('QPAY', 50, limits, 50))).toBeNull();
+    expect(code(() => checkMethodLimit('QPAY', 50, limits, 50.004))).toBeNull(); // 2 оронгийн дугуйруулалтын хэлбэлзэл
+    expect(code(() => checkMethodLimit('QPAY', 50, limits, 50.01))).toBe('AMOUNT_OUT_OF_RANGE'); // хаахгүй төлөлт
+  });
+  it('still enforces the maximum for a closing payment', () => {
+    expect(code(() => checkMethodLimit('QPAY', 1500, limits, 1500))).toBe('AMOUNT_OUT_OF_RANGE');
   });
 });

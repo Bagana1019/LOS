@@ -40,4 +40,15 @@ export class ContractService {
     });
     return download;
   }
+
+  /** Урсгал дундаа тасарсан (эх үүсвэр эсвэл клиент) — «амжилттай татсан» гэж андуурахгүйн тулд тусад нь тэмдэглэнэ. */
+  recordAborted(ctx: CallContext, loanId: string): Promise<void> {
+    return this.audit.record({
+      action: 'CONTRACT_DOWNLOAD_ABORTED',
+      correlationId: ctx.correlationId,
+      outcome: 'FAILURE',
+      customerId: ctx.customerId,
+      target: { type: 'LOAN', id: loanId },
+    });
+  }
 }

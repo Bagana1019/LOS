@@ -36,25 +36,25 @@ CLAUDE.md §3.2 дүрмийн дагуу: portal-bff → зөвхөн `originat
 | ID | Шаардлага | Эрэмбэ |
 | --- | --- | --- |
 | PRT-FR-1.1 | Регистр + бүртгэлтэй утас → SMS OTP (6 орон, 5 мин, 5 буруу оролдлогоор хаагдана) → access JWT | M |
-| PRT-FR-1.2 | Access JWT 10 мин; refresh токен 30 хоног, ашиглах бүрд солигдоно (rotation), session дээд нас 90 хоног; хуучин refresh дахин ашиглагдвал бүх session хүчингүй | M |
+| PRT-FR-1.2 | Access JWT 10 мин; refresh токен 30 хоног, ашиглах бүрд солигдоно (rotation), session дээд нас 90 хоног. Аль ч үеийн (хэдэн удаа эргэсэн ч) хуучин refresh дахин ирвэл тухайн session (token family) хүчингүй болж аудитад бичигдэнэ. Токен = `<sid>.<gen>.<HMAC>`; Redis-ийн агуулга дангаараа токен хуурамчлах боломж олгохгүй | M |
 | PRT-FR-1.3 | Logout тэр дор access + refresh-ийг хүчингүй болгоно | M |
-| PRT-FR-1.4 | Регистр/утас бүртгэлтэй эсэхийг хариу, алдаа, мессежээр задруулахгүй | M |
+| PRT-FR-1.4 | Регистр/утас бүртгэлтэй эсэхийг хариу, алдаа, хугацаа, мессежээр задруулахгүй: SMS-ийг хүсэлтийн замд хүлээхгүй (арын ажил), илгээлтийн алдаа хариунд гарахгүй (аудит `AUTH_OTP_SEND_FAILED`-д л). Код ирээгүй бол `resendAfterSec`-ийн дараа дахин хүснэ | M |
 | PRT-FR-2.1 | Миний зээлүүд (ACTIVE, CLOSED): үлдэгдэл үндсэн, дараагийн төлөлт, хугацаа хэтэрсэн дүн/хоног | M |
 | PRT-FR-2.2 | Үлдэгдэл: үндсэн, хуримтлагдсан хүү/торгууль, хэтэрсэн (үндсэн/хүү/торгууль/хоног), өнөөдөр бүрэн хаах дүн | M |
 | PRT-FR-3.1 | Эргэн төлөлтийн хуваарь: FR-7.2-ын баганууд (№, огноо, хоног, үндсэн, хүү, нийт, үлдэгдэл) + мөр бүрийн төлөв (PAID, PARTIALLY_PAID, DUE, OVERDUE, UPCOMING) ба нийлбэр | M |
 | PRT-FR-4.1 | Гэрээний PDF татах (гарын үсэгтэй хувилбар байвал түүнийг); татсан үйлдэл аудитад бичигдэнэ | M |
 | PRT-FR-5.1 | Төлөх боломжит дүн (дараагийн төлөлт, хугацаа хэтэрсэн, бүрэн хаах) + төлбөрийн хэрэгсэл бүрийн доод/дээд хязгаар | M |
-| PRT-FR-5.2 | Төлбөр эхлүүлэх (INSTALLMENT, OVERDUE, PAYOFF, CUSTOM). CUSTOM-оос бусад төрөлд дүнг **сервер** тодорхойлно; бүрэн хаах дүнгээс илүү төлөхгүй; хэрэгслийн хязгаарт багтана | M |
+| PRT-FR-5.2 | Төлбөр эхлүүлэх (INSTALLMENT, OVERDUE, PAYOFF, CUSTOM). CUSTOM-оос бусад төрөлд дүнг **сервер** тодорхойлно; бүрэн хаах дүнгээс илүү төлөхгүй; хэрэгслийн хязгаарт багтана. `payment-options`-д харуулсан дүн нь төлбөр үүсгэх дүнтэй яг ижил (бүрэн хаах дүнгээр хязгаарласан). Зээлийг бүрэн хаах төлөлтөд хэрэгслийн **доод** хязгаар үйлчлэхгүй (үгүй бол бага үлдэгдэл хэзээ ч төлөгдөхгүй); дээд хязгаар үйлчилнэ | M |
 | PRT-FR-5.3 | `Idempotency-Key` заавал; ижил түлхүүр+ижил агуулга → анхны хариу (`Idempotent-Replayed: true`), өөр агуулга → 422 | M |
 | PRT-FR-5.4 | Төлбөрийн төлөв: PENDING → PAID / FAILED / EXPIRED / CANCELLED; PAID боловч `postedAt=null` бол Core-д тусгал хүлээгдэж байна | M |
 | PRT-FR-5.5 | Төлбөрийн түүх (cursor хуудаслалт) | S |
 | PRT-FR-6.1 | Аудит (FR-13.5, NFR-4): нэвтрэлт (амжилт/алдаа), refresh reuse, гэрээ татах, төлбөр үүсгэх/давтах/татгалзах. PII, токен, OTP бичигдэхгүй | M |
 | PRT-NFR-1 | Объект түвшний эрх (BOLA): `:loanId`/`:paymentId` бүр хоёр давхар шалгагдана — downstream (`X-Customer-Id`) + portal-bff (өөрийн зээлийн жагсаалт). Харьяалахгүй бол 403 биш **404** | M |
-| PRT-NFR-2 | Rate limit: IP глобал 300/мин; OTP хүсэлт регистр/утсаар 5/цаг, IP 20/цаг, 60с cooldown; OTP шалгалт IP 30/10мин; төлбөр үүсгэх 10/мин/харилцагч; нэвтрэлтийн алдаа IP 60/мин | M |
+| PRT-NFR-2 | Rate limit: IP глобал 300/мин; OTP хүсэлт (регистр, утас) **хос** тус бүрт 5/цаг, зөвхөн регистр эсвэл зөвхөн утсаар 30/цаг (хос таах/SMS бөмбөгдөлтөөс хамгаална; регистр нийтэд мэдэгдэх тул ганцаараа хатуу хязгаарлавал гуравдагч этгээд эзнийг түгжинэ), IP 20/цаг, хосонд 60с cooldown; OTP шалгалт IP 30/10мин; төлбөр үүсгэх 10/мин/харилцагч; гэрээ татах 20/мин; нэвтрэлтийн алдаа IP 60/мин | M |
 | PRT-NFR-3 | Нууцлал: бүх хариу `Cache-Control: no-store`; лог/аудитад регистр, утас, данс, токен, OTP бичихгүй (CLAUDE.md §6-5); регистр/утсыг Redis түлхүүрт HMAC-аар | M |
 | PRT-NFR-4 | Интеграци: `INTEGRATION_MODE=mock\|real` (§3.2-7); дотоод timeout 3с, retry зөвхөн idempotent GET (§3.1); downstream хариуг zod-оор шалгана | M |
 | PRT-NFR-5 | Бизнес өдөр = `Asia/Ulaanbaatar` (UTC+8); хугацаа хэтрэлт, «өнөөдөр» энэ цагаар | M |
-| PRT-NFR-6 | Тохиргоо буруу бол эхлэхгүй (fail fast): production-д mock, memory store, тохируулаагүй нууц, mock OTP хориотой | M |
+| PRT-NFR-6 | Тохиргоо буруу бол эхлэхгүй (fail fast): production **эсвэл** `INTEGRATION_MODE=real` үед тохируулаагүй/давхцсан нууц, шууд заагаагүй `ORIGINATION_URL`, mock OTP, redis-гүй store хориотой (NODE_ENV тавиагүй deploy dev нууцаар босохгүй) | M |
 
 ## 4. Харилцагчийн урсгал
 
@@ -91,7 +91,7 @@ GET  /payments/:id  (2–3 сек тутам) ──► PAID ──► GET /loan
 | `GET /portal/payments/:paymentId` | Bearer | Төлөв (polling) | 200 `PortalPayment` |
 | `GET /health` | — | Амьд эсэх | 200 |
 
-Алдааны код → HTTP: `INVALID_REQUEST` 400 · `UNAUTHENTICATED` 401 · `LOAN_NOT_FOUND`/`PAYMENT_NOT_FOUND`/`CONTRACT_NOT_AVAILABLE`/`NOT_FOUND` 404 · `LOAN_NOT_PAYABLE`/`NO_OVERDUE`/`REQUEST_IN_PROGRESS` 409 · `AMOUNT_OUT_OF_RANGE`/`METHOD_NOT_AVAILABLE`/`IDEMPOTENCY_KEY_REUSED` 422 · `OTP_INVALID`/`OTP_EXPIRED`/`IDEMPOTENCY_KEY_REQUIRED` 400 · `RATE_LIMITED`/`OTP_ATTEMPTS_EXCEEDED` 429 (+`Retry-After`) · `DOWNSTREAM_INVALID_RESPONSE` 502 · `DOWNSTREAM_UNAVAILABLE` 503 · `INTERNAL` 500. Мессеж бүр `apps/portal-bff/src/common/error-catalog.ts`-д.
+Алдааны код → HTTP: `INVALID_REQUEST` 400 · `PAYLOAD_TOO_LARGE` 413 · `UNAUTHENTICATED` 401 · `LOAN_NOT_FOUND`/`PAYMENT_NOT_FOUND`/`CONTRACT_NOT_AVAILABLE`/`NOT_FOUND` 404 · `LOAN_NOT_PAYABLE`/`NO_OVERDUE`/`REQUEST_IN_PROGRESS` 409 · `AMOUNT_OUT_OF_RANGE`/`METHOD_NOT_AVAILABLE`/`IDEMPOTENCY_KEY_REUSED` 422 · `OTP_INVALID`/`OTP_EXPIRED`/`IDEMPOTENCY_KEY_REQUIRED` 400 · `RATE_LIMITED`/`OTP_ATTEMPTS_EXCEEDED` 429 (`RATE_LIMITED`-д л `Retry-After`) · `DOWNSTREAM_INVALID_RESPONSE` 502 · `DOWNSTREAM_UNAVAILABLE` 503 · `INTERNAL` 500. Мессеж бүр `apps/portal-bff/src/common/error-catalog.ts`-д.
 
 Мөнгө `numeric(18,2)` → `number` (2 орон); хувь нь нэрэндээ нэгжтэй (`annualInterestRatePercent: 23.99` = 23.99%); огноо `YYYY-MM-DD`, цаг ISO-8601.
 
@@ -99,7 +99,7 @@ GET  /payments/:id  (2–3 сек тутам) ──► PAID ──► GET /loan
 
 portal-bff `INTEGRATION_MODE=real` үед эдгээрийг дуудна. **Origination талын хэрэгжилт энэ PR-д ороогүй** (origination-д одоогоор хүснэгт/модуль байхгүй — Модуль 0, 7, 10, 11 хүлээгдэж байна). Лавлах хэрэгжилт: `apps/portal-bff/src/testing/fake-origination.ts` (MockLedger дээр, жинхэнэ HTTP-ээр real adapter-уудыг тест хийдэг).
 
-Бүх дуудлагад толгой: `X-Correlation-Id`, `X-Actor-Type: CUSTOMER` (нэвтрэхээс өмнөх дуудлагад `PORTAL_ANONYMOUS`), `X-Customer-Id`, `X-Roles: CUSTOMER`. Ажилтны `X-User-Id/X-Branch-Id` байхгүй — origination эдгээр маршрутад **ажилтны guard-ыг хэрэглэж болохгүй**, тусдаа guard (`X-Actor-Type=CUSTOMER` шаардана). Дотоод сүлжээ/mTLS нь CLAUDE.md §3.2-9-тэй адил; portal-bff-ээс өөр эх үүсвэр эдгээр маршрутад хандаж болохгүй (network policy).
+Толгой: `X-Correlation-Id` бүх дуудлагад; нэвтэрсэн харилцагчийн дуудлагад `X-Actor-Type: CUSTOMER`, `X-Customer-Id`, `X-Roles: CUSTOMER`. Зөвхөн `POST /customers/lookup` нэвтрэхээс өмнөх тул `X-Actor-Type: PORTAL_ANONYMOUS` (харилцагчийн ID-гүй). `POST /otp` нь lookup-аар тодорхойлогдсон харилцагчийн нэрийн өмнөөс `CUSTOMER` + `X-Customer-Id`-тэй явна. Ажилтны `X-User-Id/X-Branch-Id` байхгүй — origination эдгээр маршрутад **ажилтны guard-ыг хэрэглэж болохгүй**, тусдаа guard (`X-Actor-Type=CUSTOMER` шаардана). Дотоод сүлжээ/mTLS нь CLAUDE.md §3.2-9-тэй адил; portal-bff-ээс өөр эх үүсвэр эдгээр маршрутад хандаж болохгүй (network policy).
 
 | Endpoint | Хариу (zod: `@los/contracts`) | Дүрэм |
 | --- | --- | --- |
@@ -112,8 +112,12 @@ portal-bff `INTEGRATION_MODE=real` үед эдгээрийг дуудна. **Ori
 | `GET /loans/:id/contract/content` | `application/pdf` stream | origination `dms`-ээс авч дамжуулна; `Content-Type: application/pdf` заавал |
 | `GET /loans/:id/payment-methods` | `PortalPaymentMethodLimit[]` | Идэвхтэй хэрэгсэл + доод/дээд (тохиргооноос, hardcode биш — CLAUDE.md §3.2-8) |
 | `POST /loans/:id/payments` + `Idempotency-Key` | 201 `PortalPayment` | Body = `PortalCreatePaymentCommand` (дүн тодорхойлогдсон). **(customerId, key)-ээр давхардлыг хаана**; ижил түлхүүр+өөр body → 422 `IDEMPOTENCY_KEY_REUSED`. Дүнг Core-той дахин тулгана (`LOAN_NOT_PAYABLE`, `AMOUNT_OUT_OF_RANGE`, `METHOD_NOT_AVAILABLE`) |
-| `GET /loans/:id/payments?limit&cursor` | `PortalPaymentList` | Шинэ нь түрүүнд; cursor нь тогтвортой |
+| `GET /loans/:id/payments?limit&cursor` | `PortalPaymentList` | Шинэ нь түрүүнд. `nextCursor`/`cursor` = `[A-Za-z0-9_=.-]{1,256}` (өөр тэмдэгт, хоосон мөр бол BFF 502 өгнө — клиент буцааж илгээж чадахгүй cursor-ыг дамжуулдаггүй). Мэдэхгүй cursor → 400 `INVALID_REQUEST` (эхний хуудас руу чимээгүй буцаж болохгүй) |
 | `GET /payments/:id` | `PortalPayment` | Харьяалахгүй бол 404 `PAYMENT_NOT_FOUND`. Шаардлагатай бол провайдераас шалгаж төлөв шинэчилнэ |
+
+**PAYOFF-ийн үнэлгээ:** бүрэн хаах дүнг төлбөр **үүсэх үеийн** бизнес өдөр (Улаанбаатар, UTC+8)-өөр тогтоож, баталгаажилт хожим (өдөр солигдсон ч, төлбөрийн хугацаа дуустал) ирэхэд тэр үнэлгээгээр тусгана. Үгүй бол 23:55-д эхэлсэн төлбөр 00:05-д «хэсэгчилсэн» болж ирээдүйн хүүг урьдчилж авна. Origination бизнес өдрийг `PORTAL_TIMEZONE`-оор (анхдагч `Asia/Ulaanbaatar`) бодно — portal-bff real горимд огнооны тооцоо хийдэггүй, зөвхөн origination-ы өгсөн огноог дамжуулна.
+
+**Гэрээний PDF:** `/contract/content` нь `Content-Type: application/pdf`, боломжтой бол `Content-Length` явуулна. BFF `Content-Length`-ийг клиентэд дамжуулж, урсгал дундаа тасарвал (хэмжээ хэтэрсэн, эх үүсвэр тасарсан) холболтыг таслана — «200 + дутуу PDF» болохгүй. Эхний chunk-ээс өмнөх алдаа (хоосон, `PORTAL_MAX_CONTRACT_BYTES`-аас том) жирийн 502 JSON.
 
 Төлбөрийн хариуцлага (origination): төлбөрийн бичлэг, провайдерын нэхэмжлэх, callback/webhook-ийн баталгаажуулалт, Core руу тусгах (`postedAt`), давхар тусгалаас сэргийлэх. Провайдерын webhook **portal-bff-д биш origination `integrations/payment/`-д** төгсөнө. Төлбөр баталгаажихад origination `RepaymentReceived`-тэй төстэй event-ийг outbox-оор нийтэлж (dwh-sync, ERP/Core sync) §3.2-4-ийг мөрдөнө — event-ийн нэр/схемийг төлбөр, ERP thread-үүдтэй тохируулна.
 
@@ -124,15 +128,15 @@ portal-bff `INTEGRATION_MODE=real` үед эдгээрийг дуудна. **Ori
 | `NODE_ENV` | `development` | `production`-д доорх нөхцөл заавал |
 | `PORTAL_BFF_PORT` | `4007` | |
 | `INTEGRATION_MODE` | `mock` | `mock` \| `real`. Production-д зөвхөн `real` |
-| `ORIGINATION_URL` | `http://localhost:4001` | `real` үед |
+| `ORIGINATION_URL` | `http://localhost:4001` (зөвхөн mock/dev) | `real`/production үед **заавал** тодорхой зааж өгнө |
 | `PORTAL_INTERNAL_TIMEOUT_MS` | `3000` | Дотоод дуудлагын timeout (§3.1) |
-| `PORTAL_MAX_CONTRACT_BYTES` | `26214400` | Гэрээний PDF-ийн дээд хэмжээ (25 MiB); давбал 502 |
-| `PORTAL_STORE` / `REDIS_URL` | `memory` / — | `REDIS_URL` өгвөл `redis`. Production-д redis заавал |
-| `PORTAL_JWT_SECRET`, `PORTAL_HASH_SECRET` | dev утга | ≥32 тэмдэгт, бие биенээсээ ялгаатай. Production-д заавал, ажилтны `JWT_SECRET`-тэй давхцуулахгүй |
+| `PORTAL_MAX_CONTRACT_BYTES` | `26214400` | Гэрээний PDF-ийн дээд хэмжээ (25 MiB). Эхэнд нь мэдэгдэж/илэрвэл 502, урсгал дундаа давбал холболт тасална (§6) |
+| `PORTAL_STORE` / `REDIS_URL` | `memory` / — | `REDIS_URL` өгвөл `redis`. Production болон `real` горимд redis (`memory`-г зөвхөн production бус орчинд `PORTAL_STORE=memory` гэж тодорхой зааж болно) |
+| `PORTAL_JWT_SECRET`, `PORTAL_HASH_SECRET` | dev утга | ≥32 тэмдэгт, бие биенээсээ ялгаатай, ажилтны `JWT_SECRET`-ээс ялгаатай. Production/`real` үед заавал. Анхаар: аль нэгийг солих нь бүх session (JWT, refresh токен), хүлээгдэж буй OTP-г хүчингүй болгоно |
 | `PORTAL_ACCESS_TTL_SEC` / `PORTAL_REFRESH_TTL_SEC` | `600` / `2592000` | |
 | `PORTAL_OTP_TTL_SEC`, `PORTAL_OTP_RESEND_SEC`, `PORTAL_OTP_MAX_ATTEMPTS` | `300`, `60`, `5` | |
-| `PORTAL_OTP_REQUESTS_PER_HOUR`, `…_PER_IP` | `5`, `20` | OTP хүсэлтийн хязгаар |
-| `PORTAL_MOCK_OTP_CODE` | — | Зөвхөн dev: тогтмол 6 оронтой код. Production-д хориотой |
+| `PORTAL_OTP_REQUESTS_PER_HOUR`, `…_PER_IDENTITY`, `…_PER_IP` | `5`, `30`, `20` | OTP хүсэлтийн хязгаар: (регистр,утас) хос, зөвхөн регистр/утас, IP |
+| `PORTAL_MOCK_OTP_CODE` | `123456` (mock горимд) | Mock горимын тогтмол 6 оронтой код; `real`/production-д тохируулж болохгүй (код зөвхөн SMS-ээр) |
 | `PORTAL_CORS_ORIGINS` | хоосон | таслалаар; `*` хориотой; production-д https. Хоосон = CORS унтраалттай (мобайл апп-д хэрэггүй) |
 | `PORTAL_TRUST_PROXY` | `0` | LB/ingress ард хэдэн hop. Буруу бол IP rate-limit хуурамч болно |
 | `PORTAL_TIMEZONE` | `Asia/Ulaanbaatar` | |
@@ -144,24 +148,25 @@ portal-bff `INTEGRATION_MODE=real` үед эдгээрийг дуудна. **Ori
 | --- | --- |
 | Өөр хүний зээл/төлбөр харах (BOLA/IDOR) | downstream `X-Customer-Id`-аар хязгаарлана **ба** portal-bff `:loanId`-г өөрийн жагсаалттай тулгана; зөрсөн хариуг (өөр loanId) 502-оор хаана; харьяалахгүй → 404 |
 | OTP таах / brute force | HMAC-аар хадгална, нэг удаа, 5 оролдлого (атомар `INCR`), IP+регистр+утсаар rate limit, 60с cooldown, `getdel`-ээр нэг удаагийн хэрэглээ |
-| Хэрэглэгч байгаа эсэхийг тандах | Decoy challenge: ижил хариу, `OTP_INVALID` ижил. (Анхаар: SMS илгээх хугацааны зөрүү жижиг; нэмэлт хамгаалалт §10) |
-| Токен хулгай | 10 мин access; refresh rotation + reuse detection (бүх session хүчингүй); server-side session (logout тэр дор); HS256 тогтмол (alg-confusion үгүй), ажилтны токентой холилдохгүй |
+| Хэрэглэгч байгаа эсэхийг тандах | Decoy challenge: ижил хариу, `OTP_INVALID` ижил; SMS-ийг арын ажлаар илгээнэ → хугацаа ба илгээлтийн алдаа хариунд нөлөөлөхгүй. OTP хүсэлтийн хязгаар хосоор (регистр ганцаараа хатуу биш) |
+| Токен хулгай | 10 мин access; refresh rotation + аль ч үеийн reuse detection (тухайн session/token family хүчингүй, аудит); server-side session (logout тэр дор; rotate-тэй зэрэгцсэн ч session «амилахгүй»); HS256 тогтмол (alg-confusion үгүй), ажилтны токентой холилдохгүй |
 | Давхар төлбөр | `Idempotency-Key` (Redis, customer-scoped, 24ц) + downstream-д дамжуулж давхар хаалт; алдаа гарвал түлхүүр суллагдана |
 | Дүн хуурах | Сервер дүнг Core-ийн үлдэгдлээс тодорхойлно; CUSTOM ≤ бүрэн хаах дүн; хэрэгслийн хязгаар |
 | Downstream-ээс мэдээлэл алдагдах | Хариуг zod-оор шалгаж, гэрээнд үгүй талбарыг хасна; үл мэдэх бизнес алдааны код харилцагчид гарахгүй |
 | SSRF / redirect | Зөвхөн тохируулсан `ORIGINATION_URL`; `redirect: 'error'`; ID-г regexp-ээр хязгаарласан + `encodeURIComponent` |
 | Лог дахь PII | `JsonLogger`/аудит зөвхөн ID, код, дүн; регистр, утас, токен, OTP бичихгүй (тестээр баталгаажсан) |
 | Кэшлэгдэх | `Cache-Control: no-store`; `helmet` толгойнууд |
-| Буруу тохиргоо | `loadConfig` production-д mock/memory/нууц дутуу бол эхлэхгүй |
+| Буруу тохиргоо | `loadConfig` production **ба** `real` горимд mock/memory/нууц дутуу/давхцсан/dev `ORIGINATION_URL` бол эхлэхгүй |
 
 ## 9. Ажиллуулах (mock горим)
 
 ```
 pnpm install
-pnpm --filter @los/portal-bff dev          # http://localhost:4007/api/health
+pnpm exec turbo run build --filter=@los/portal-bff^...    # @los/contracts, @los/calc (dist/ git-д байхгүй)
+pnpm --filter @los/portal-bff dev                          # http://localhost:4007/api/health
 ```
 
-Mock-д Redis, origination шаардлагагүй. Демо нэвтрэлт (`PORTAL_MOCK_OTP_CODE=123456` тохируулбал код тогтмол):
+Mock-д Redis, origination шаардлагагүй. Демо нэвтрэлт (mock горимд OTP код тогтмол `123456`):
 
 | Харилцагч | Регистр | Утас | Зээл |
 | --- | --- | --- | --- |
@@ -175,7 +180,7 @@ curl -s localhost:4007/api/portal/auth/verify -H 'content-type: application/json
 
 Mock төлбөр нэг ledger дээр ажиллана: төлбөр PAID болмогц үлдэгдэл, хуваарийн төлөв, түүх өөрчлөгдөнө (хугацаа хэтэрсэн хэсгээс эхлэн хүү→үндсэн дарааллаар хаана; PAYOFF зээлийг хааж ирээдүйн хүүг уучилна). Торгууль загварчлаагүй.
 
-Тест: `pnpm --filter @los/portal-bff test` (112 тест; `TEST_REDIS_URL=redis://… ` өгвөл Redis хэрэгжүүлэлт мөн гэрээний тестээр шалгагдана). `INTEGRATION_MODE=real` e2e нь `FakeOrigination`-тэй жинхэнэ HTTP-ээр ажиллана.
+Тест: `pnpm --filter @los/portal-bff test` (178 тест; `TEST_REDIS_URL=redis://… ` өгвөл Redis хэрэгжүүлэлт мөн гэрээний тестээр шалгагдана — turbo-оор ажиллуулахад ч дамжина). `pnpm --filter @los/portal-bff lint` нь eslint + `tsc --noEmit` (spec, testing-ийг оруулан) ажиллуулна. `INTEGRATION_MODE=real` e2e нь `FakeOrigination`-тэй жинхэнэ HTTP-ээр ажиллана.
 
 ## 10. Нээлттэй асуудал, дараагийн алхам
 

@@ -9,18 +9,19 @@
 
 ```
 pnpm install
+pnpm exec turbo run build --filter=@los/portal-bff^...   # @los/contracts, @los/calc (dist/ git-д байхгүй)
 pnpm --filter @los/portal-bff dev      # mock горим, Redis/origination хэрэггүй
 curl localhost:4007/api/health
 ```
 
-Demo харилцагч: `УБ90010112` / `99112233` (идэвхтэй зээл `loan_demo_001`), `УА85050505` / `88112233` (хугацаа хэтэрсэн `loan_demo_003`). Код тогтмол байлгах: `PORTAL_MOCK_OTP_CODE=123456`.
+Demo харилцагч: `УБ90010112` / `99112233` (идэвхтэй зээл `loan_demo_001`), `УА85050505` / `88112233` (хугацаа хэтэрсэн `loan_demo_003`). Mock горимд OTP код тогтмол `123456` (`PORTAL_MOCK_OTP_CODE`-оор солино; real горимд хориотой).
 
 ## Тест
 
 ```
 pnpm --filter @los/portal-bff test            # unit + e2e (mock ба real(HTTP) горим)
 TEST_REDIS_URL=redis://localhost:6379 pnpm --filter @los/portal-bff test   # Redis store-ыг мөн шалгана
-pnpm --filter @los/portal-bff lint && pnpm --filter @los/portal-bff build
+pnpm --filter @los/portal-bff lint && pnpm --filter @los/portal-bff build   # lint = eslint + tsc --noEmit
 ```
 
 ## Бүтэц
@@ -43,4 +44,4 @@ DTO / zod схем: `packages/contracts/src/portal.ts` (`@los/contracts`). То�
 
 ## Үндсэн env
 
-`INTEGRATION_MODE` (`mock`|`real`), `ORIGINATION_URL`, `REDIS_URL`, `PORTAL_JWT_SECRET`, `PORTAL_HASH_SECRET`, `PORTAL_CORS_ORIGINS`, `PORTAL_TRUST_PROXY`. Бүрэн жагсаалт: docs/05 §7. Production-д mock, memory store, дутуу/давхцсан нууц, mock OTP-г `loadConfig` хүлээж авахгүй.
+`INTEGRATION_MODE` (`mock`|`real`), `ORIGINATION_URL`, `REDIS_URL`, `PORTAL_JWT_SECRET`, `PORTAL_HASH_SECRET`, `PORTAL_CORS_ORIGINS`, `PORTAL_TRUST_PROXY`. Бүрэн жагсаалт: docs/05 §7. Production **болон** `INTEGRATION_MODE=real` үед mock OTP, memory store, дутуу/давхцсан нууц, тодорхой бус `ORIGINATION_URL`-г `loadConfig` хүлээж авахгүй.

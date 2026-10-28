@@ -70,6 +70,9 @@ interface MockPayment {
   failureReason: string | null;
   idempotencyKey: string;
   fingerprint: string;
+  /** Төлбөр үүсэх үеийн (Улаанбаатарын) огноо ба тэр өдрийн бүрэн хаах дүн: зээлд тусгахдаа энэ «үнэлгээ»-г баримтална. */
+  quoteDate: string;
+  quotedPayoff: number;
 }
 
 const PAYMENT_TTL_MS = 15 * 60 * 1000;
@@ -193,6 +196,7 @@ export class MockLedger {
     if (!METHOD_LIMITS.some((m) => m.method === cmd.method)) throw new PortalError('METHOD_NOT_AVAILABLE');
 
     const now = this.clock.now();
+    const quotedPayoff = this.balance(loan).payoff.amount;
     const payment: MockPayment = {
       paymentId: `pay_${randomToken(9)}`,
       customerId,
@@ -209,6 +213,8 @@ export class MockLedger {
       failureReason: this.failNext,
       idempotencyKey,
       fingerprint,
+      quoteDate: this.today(),
+      quotedPayoff,
     };
     this.failNext = null;
     this.payments.set(payment.paymentId, payment);
@@ -226,7 +232,12 @@ export class MockLedger {
     const all = [...this.payments.values()]
       .filter((p) => p.customerId === customerId && p.loanId === loanId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.paymentId.localeCompare(a.paymentId));
-    const start = query.cursor ? all.findIndex((p) => p.paymentId === query.cursor) + 1 : 0;
+    let start = 0;
+    if (query.cursor) {
+      const at = all.findIndex((p) => p.paymentId === query.cursor);
+      if (at < 0) throw new PortalError('INVALID_REQUEST', [{ path: 'cursor', message: 'unknown cursor' }]); // чимээгүй эхний хуудас руу буцахгүй
+      start = at + 1;
+    }
     const page = all.slice(start, start + query.limit);
     const next = start + query.limit < all.length ? page[page.length - 1].paymentId : null;
     return { items: page.map((p) => this.view(this.settle(p))), nextCursor: next };
@@ -350,8 +361,10 @@ export class MockLedger {
   private apply(p: MockPayment): void {
     const l = this.loans.get(p.loanId);
     if (!l || l.closed) return;
-    const today = this.today();
-    const payoff = this.balance(l).payoff.amount;
+    // Өдөр солигдох үед (хэрэглэгч 23:55-д төлж, баталгаажилт 00:05-д ирэх) төлбөрийн ҮЕИЙН огноо, дүнгээр тусгана:
+    // хожим дахин үнэлбэл «бүрэн хаах» дүн таарахгүй болж ирээдүйн хүүг урьдчилж төлсөн хэсэгчилсэн төлөлт болно.
+    const today = p.quoteDate;
+    const payoff = p.quotedPayoff;
     let left = Math.min(p.amount, payoff);
 
     if (left >= payoff - 0.005) {

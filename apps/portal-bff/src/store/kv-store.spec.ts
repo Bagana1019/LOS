@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import Redis from 'ioredis';
+import { afterEach, describe, expect, it } from 'vitest';
 import { FakeClock } from '../testing/test-app';
 import type { KvStore } from './kv-store';
 import { MemoryKvStore } from './memory-kv-store';
@@ -9,9 +10,18 @@ const TTL = 2; // секунд (Redis-д жинхэнэ цаг хүлээнэ)
 /** Нэг гэрээ (contract) тест: Memory болон (TEST_REDIS_URL өгвөл) Redis хэрэгжүүлэлтэд адил биеэ авч явна. */
 function contract(make: () => { store: KvStore; wait: (sec: number) => Promise<void>; close?: () => Promise<void> }) {
   const key = () => `t:${Math.random().toString(36).slice(2)}`;
+  const opened: Array<() => Promise<void>> = [];
+  afterEach(async () => {
+    await Promise.all(opened.splice(0).map((close) => close()));
+  });
+  const open = () => {
+    const h = make();
+    if (h.close) opened.push(h.close);
+    return h;
+  };
 
   it('get/set/del with TTL', async () => {
-    const { store, wait } = make();
+    const { store, wait } = open();
     const k = key();
     expect(await store.get(k)).toBeNull();
     await store.set(k, 'v', TTL);
@@ -24,7 +34,7 @@ function contract(make: () => { store: KvStore; wait: (sec: number) => Promise<v
   });
 
   it('setIfAbsent only creates once', async () => {
-    const { store, wait } = make();
+    const { store, wait } = open();
     const k = key();
     expect(await store.setIfAbsent(k, 'a', TTL)).toBe(true);
     expect(await store.setIfAbsent(k, 'b', TTL)).toBe(false);
@@ -33,8 +43,23 @@ function contract(make: () => { store: KvStore; wait: (sec: number) => Promise<v
     expect(await store.setIfAbsent(k, 'c', TTL)).toBe(true);
   });
 
+  it('setIfExists only overwrites a live key and never resurrects a deleted one', async () => {
+    const { store, wait } = open();
+    const k = key();
+    expect(await store.setIfExists(k, 'x', 60)).toBe(false);
+    expect(await store.get(k)).toBeNull();
+    await store.set(k, 'a', 60);
+    expect(await store.setIfExists(k, 'b', 60)).toBe(true);
+    expect(await store.get(k)).toBe('b');
+    await store.del(k);
+    expect(await store.setIfExists(k, 'c', 60)).toBe(false);
+    await store.set(k, 'd', TTL);
+    await wait(TTL + 0.3);
+    expect(await store.setIfExists(k, 'e', 60)).toBe(false);
+  });
+
   it('getAndDelete is single-use even under concurrency', async () => {
-    const { store } = make();
+    const { store } = open();
     const k = key();
     await store.set(k, 'once', 60);
     const results = await Promise.all([store.getAndDelete(k), store.getAndDelete(k), store.getAndDelete(k)]);
@@ -43,7 +68,7 @@ function contract(make: () => { store: KvStore; wait: (sec: number) => Promise<v
   });
 
   it('incr is atomic and the window TTL is set at creation only', async () => {
-    const { store, wait } = make();
+    const { store, wait } = open();
     const k = key();
     const counts = await Promise.all(Array.from({ length: 20 }, () => store.incr(k, TTL)));
     expect([...counts].sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
@@ -53,8 +78,17 @@ function contract(make: () => { store: KvStore; wait: (sec: number) => Promise<v
     expect(await store.incr(k, TTL)).toBe(1); // шинэ цонх
   });
 
+  it('incr always leaves the counter with a TTL', async () => {
+    const { store } = open();
+    const k = key();
+    await store.incr(k, 30);
+    const t = await store.ttl(k);
+    expect(t).toBeGreaterThan(25);
+    expect(t).toBeLessThanOrEqual(30);
+  });
+
   it('ttl reports remaining seconds, 0 when missing', async () => {
-    const { store, wait } = make();
+    const { store, wait } = open();
     const k = key();
     expect(await store.ttl(k)).toBe(0);
     await store.set(k, 'x', 30);
@@ -76,5 +110,23 @@ describe('MemoryKvStore', () => {
 
 const redisUrl = process.env.TEST_REDIS_URL;
 describe.skipIf(!redisUrl)('RedisKvStore (TEST_REDIS_URL)', () => {
-  contract(() => ({ store: new RedisKvStore(redisUrl as string), wait: (sec) => new Promise((r) => setTimeout(r, sec * 1000)) }));
+  contract(() => {
+    const store = new RedisKvStore(redisUrl as string);
+    return { store, wait: (sec) => new Promise((r) => setTimeout(r, sec * 1000)), close: () => store.onModuleDestroy() };
+  });
+
+  it('incr repairs a counter that lost its TTL (key re-created by a bare INCR)', async () => {
+    const raw = new Redis(redisUrl as string);
+    const store = new RedisKvStore(redisUrl as string);
+    try {
+      const k = `t:nottl:${Math.random().toString(36).slice(2)}`;
+      await raw.incr(`portal:${k}`); // TTL-гүй, өмнөх хэрэгжүүлэлтийн «үхэшгүй» тоолуур
+      expect(await raw.ttl(`portal:${k}`)).toBe(-1);
+      expect(await store.incr(k, 30)).toBe(2);
+      expect(await raw.ttl(`portal:${k}`)).toBeGreaterThan(0);
+    } finally {
+      await raw.quit();
+      await store.onModuleDestroy();
+    }
+  });
 });

@@ -22,6 +22,7 @@ export class RealContractFiles implements ContractFilesPort {
       stream.destroy();
       throw new PortalError('DOWNSTREAM_INVALID_RESPONSE');
     }
-    return { info, stream };
+    const declared = Number(headers.get('content-length'));
+    return { info, stream, ...(Number.isInteger(declared) && declared > 0 ? { contentLength: declared } : {}) };
   }
 }

@@ -229,13 +229,17 @@ export const PortalPayment = z.object({
 });
 export type PortalPayment = z.infer<typeof PortalPayment>;
 
-export const PortalPaymentList = z.object({ items: z.array(PortalPayment), nextCursor: z.string().nullable() });
+/** Хуудаслалтын cursor: тунгалаг (opaque) тэмдэгт мөр. Хариу ба хүсэлтэд ижил хэлбэр — буцаасан cursor-ыг шууд дахин илгээж болно. */
+export const PortalCursor = z.string().regex(/^[A-Za-z0-9_=.-]{1,256}$/);
+export type PortalCursor = z.infer<typeof PortalCursor>;
+
+export const PortalPaymentList = z.object({ items: z.array(PortalPayment), nextCursor: PortalCursor.nullable() });
 export type PortalPaymentList = z.infer<typeof PortalPaymentList>;
 
 export const PortalPaymentListQuery = z
   .object({
     limit: z.coerce.number().int().min(1).max(50).default(20),
-    cursor: z.string().regex(/^[A-Za-z0-9_=.-]{1,256}$/).optional(),
+    cursor: PortalCursor.optional(),
   })
   .strict();
 export type PortalPaymentListQuery = z.infer<typeof PortalPaymentListQuery>;
@@ -260,6 +264,7 @@ export type PortalPaymentOptions = z.infer<typeof PortalPaymentOptions>;
 // ───────────── Алдааны гэрээ ─────────────
 export const PortalErrorCode = z.enum([
   'INVALID_REQUEST',
+  'PAYLOAD_TOO_LARGE',
   'NOT_FOUND',
   'UNAUTHENTICATED',
   'RATE_LIMITED',

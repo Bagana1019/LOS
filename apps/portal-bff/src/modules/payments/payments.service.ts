@@ -7,7 +7,7 @@ import { LOAN_SERVICING, type LoanServicingPort } from '../../integrations/loan-
 import { PAYMENT_COLLECTION, type PaymentCollectionPort } from '../../integrations/payment-collection/payment-collection.port';
 import { IdempotencyService } from '../../security/idempotency.service';
 import { LoanOwnershipService, ensureSameLoan } from '../loans/loan-ownership.service';
-import { checkMethodLimit, resolveAmount } from './amount';
+import { checkMethodLimit, offeredInstallment, offeredOverdue, resolveAmount } from './amount';
 
 export interface CreatedPayment {
   payment: PortalPayment;
@@ -30,11 +30,13 @@ export class PaymentsService {
     const [balance, methods] = await Promise.all([this.loans.getBalance(ctx, loanId), this.payments.listMethods(ctx, loanId)]);
     ensureSameLoan(loanId, balance.loanId);
     const next = balance.nextInstallment;
+    const installment = offeredInstallment(balance); // төлбөр үүсгэхэд ашиглагдах дүнтэй яг ижил
+    const overdue = offeredOverdue(balance);
     return {
       loanId,
       currency: balance.currency,
-      installment: next && next.amountDue > 0 ? { seq: next.seq, dueDate: next.dueDate, amount: next.amountDue } : null,
-      overdue: balance.overdue.total > 0 ? { amount: balance.overdue.total, days: balance.overdue.days } : null,
+      installment: next && installment !== null ? { seq: next.seq, dueDate: next.dueDate, amount: installment } : null,
+      overdue: overdue !== null ? { amount: overdue, days: balance.overdue.days } : null,
       payoff: balance.payoff,
       methods,
     };
@@ -54,7 +56,7 @@ export class PaymentsService {
         const [balance, methods] = await Promise.all([this.loans.getBalance(ctx, loanId), this.payments.listMethods(ctx, loanId)]);
         ensureSameLoan(loanId, balance.loanId);
         const amount = resolveAmount(body, balance);
-        checkMethodLimit(body.method, amount, methods);
+        checkMethodLimit(body.method, amount, methods, balance.payoff.amount);
 
         const payment = await this.payments.create(
           ctx,

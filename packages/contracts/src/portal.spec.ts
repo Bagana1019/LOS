@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PortalAmountInput, PortalCreatePayment, PortalId, PortalOtpRequest, PortalOtpVerify, PortalPaymentCheckout, PortalPaymentListQuery, PortalPhone, PortalRegisterNo } from './portal';
+import { PortalAmountInput, PortalCreatePayment, PortalId, PortalOtpRequest, PortalOtpVerify, PortalPaymentCheckout, PortalPaymentList, PortalPaymentListQuery, PortalPhone, PortalRegisterNo } from './portal';
 
 describe('portal request schemas', () => {
   it('normalises register numbers and phones', () => {
@@ -47,6 +47,17 @@ describe('portal request schemas', () => {
     expect(PortalPaymentListQuery.parse({ limit: '50', cursor: 'pay_abc-1' })).toEqual({ limit: 50, cursor: 'pay_abc-1' });
     expect(PortalPaymentListQuery.safeParse({ limit: '51' }).success).toBe(false);
     expect(PortalPaymentListQuery.safeParse({ cursor: 'a b' }).success).toBe(false);
+  });
+
+  it('a next cursor returned in a list is always accepted back as a query cursor', () => {
+    for (const cursor of ['pay_abc', 'eyJhIjoxfQ==', 'dGVzdA', '2026-10-28T04.00.00.000Z_pay-1']) {
+      const list = PortalPaymentList.parse({ items: [], nextCursor: cursor });
+      expect(PortalPaymentListQuery.parse({ cursor: list.nextCursor }).cursor).toBe(cursor);
+    }
+    // origination-ий хүчингүй cursor (стандарт base64 '+', '/', '|', хоосон) шууд гэрээний зөрчил болно — клиентэд 400 болж очихгүй
+    for (const bad of ['a+b', 'a/b', 'x|y', '', 'a b', 'x'.repeat(257)]) {
+      expect(PortalPaymentList.safeParse({ items: [], nextCursor: bad }).success).toBe(false);
+    }
   });
 
   it('checkout web URLs must be https', () => {

@@ -12,6 +12,7 @@ export class MockContractFiles implements ContractFilesPort {
 
   async open(ctx: CallContext, loanId: string): Promise<ContractDownload> {
     const info = this.ledger.contractInfo(ctx.customerId, loanId);
-    return { info, stream: Readable.from([this.ledger.contractPdf(ctx.customerId, loanId)]) };
+    const pdf = this.ledger.contractPdf(ctx.customerId, loanId);
+    return { info, stream: Readable.from([pdf]), contentLength: pdf.length };
   }
 }

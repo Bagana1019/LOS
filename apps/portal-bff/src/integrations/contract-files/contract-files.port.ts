@@ -7,6 +7,8 @@ export const CONTRACT_FILES = Symbol('CONTRACT_FILES');
 export interface ContractDownload {
   info: PortalContractInfo;
   stream: Readable;
+  /** Эх үүсвэрийн зарласан хэмжээ (байт). Мэдэгдэж байвал клиентэд Content-Length болгож, дутуу татагдсаныг илрүүлнэ. */
+  contentLength?: number;
 }
 
 /**

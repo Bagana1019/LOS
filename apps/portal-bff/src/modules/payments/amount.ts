@@ -2,6 +2,19 @@ import type { PortalCreatePayment, PortalLoanBalance, PortalPaymentMethodLimit }
 import { PortalError } from '../../common/portal-error';
 import { round2 } from '../../common/date';
 
+/** Дараагийн төлөлтийн дүн: бүрэн хаах дүнгээс хэтрэхгүй (сүүлийн төлөлтийг хугацаанаас өмнө төлөхөд хүү бага хуримтлагдсан байдаг). */
+export function offeredInstallment(balance: PortalLoanBalance): number | null {
+  const next = balance.nextInstallment;
+  if (!next || next.amountDue <= 0 || balance.payoff.amount <= 0) return null;
+  return round2(Math.min(next.amountDue, balance.payoff.amount));
+}
+
+/** Хугацаа хэтэрсэн нийт дүн: бүрэн хаах дүнгээс хэтрэхгүй. */
+export function offeredOverdue(balance: PortalLoanBalance): number | null {
+  if (balance.overdue.total <= 0 || balance.payoff.amount <= 0) return null;
+  return round2(Math.min(balance.overdue.total, balance.payoff.amount));
+}
+
 /**
  * Төлөх дүнг СЕРВЕР тодорхойлно (клиентийн илгээсэн дүнд зөвхөн CUSTOM үед итгэнэ).
  * Бүх төрөл «бүрэн хаах дүн»-гээс хэтэрч болохгүй (илүү төлөлт хориотой).
@@ -12,13 +25,15 @@ export function resolveAmount(body: PortalCreatePayment, balance: PortalLoanBala
 
   switch (body.amountType) {
     case 'INSTALLMENT': {
-      const next = balance.nextInstallment;
-      if (!next || next.amountDue <= 0) throw new PortalError('LOAN_NOT_PAYABLE');
-      return round2(Math.min(next.amountDue, payoff));
+      const amount = offeredInstallment(balance);
+      if (amount === null) throw new PortalError('LOAN_NOT_PAYABLE');
+      return amount;
     }
-    case 'OVERDUE':
-      if (balance.overdue.total <= 0) throw new PortalError('NO_OVERDUE');
-      return round2(Math.min(balance.overdue.total, payoff));
+    case 'OVERDUE': {
+      const amount = offeredOverdue(balance);
+      if (amount === null) throw new PortalError('NO_OVERDUE');
+      return amount;
+    }
     case 'PAYOFF':
       return round2(payoff);
     case 'CUSTOM': {
@@ -31,11 +46,16 @@ export function resolveAmount(body: PortalCreatePayment, balance: PortalLoanBala
   }
 }
 
-/** Сонгосон төлбөрийн хэрэгслийн идэвхтэй байдал ба дүнгийн хязгаар (origination-оос ирнэ). */
-export function checkMethodLimit(method: PortalCreatePayment['method'], amount: number, limits: PortalPaymentMethodLimit[]): void {
+/**
+ * Сонгосон төлбөрийн хэрэгслийн идэвхтэй байдал ба дүнгийн хязгаар (origination-оос ирнэ).
+ * Зээлийг бүрэн хаах төлөлтөд доод хязгаар үйлчлэхгүй: үгүй бол хэрэгслийн доод хязгаараас бага үлдэгдэл хэзээ ч төлөгдөхгүй.
+ * (Эцсийн шийдвэр origination-д: дүнг дахин шалгаж AMOUNT_OUT_OF_RANGE буцааж болно.)
+ */
+export function checkMethodLimit(method: PortalCreatePayment['method'], amount: number, limits: PortalPaymentMethodLimit[], payoff: number): void {
   const limit = limits.find((l) => l.method === method);
   if (!limit) throw new PortalError('METHOD_NOT_AVAILABLE');
-  if (amount < limit.minAmount || amount > limit.maxAmount) {
+  const closesLoan = amount >= payoff - 0.005;
+  if ((amount < limit.minAmount && !closesLoan) || amount > limit.maxAmount) {
     throw new PortalError('AMOUNT_OUT_OF_RANGE', [{ path: 'amount', message: `allowed ${limit.minAmount}..${limit.maxAmount}` }]);
   }
 }

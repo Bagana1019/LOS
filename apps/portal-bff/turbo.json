@@ -6,7 +6,7 @@
       "env": ["PORTAL_*", "ORIGINATION_URL", "NODE_ENV"]
     },
     "test": {
-      "env": ["PORTAL_*", "ORIGINATION_URL", "NODE_ENV"]
+      "env": ["PORTAL_*", "ORIGINATION_URL", "NODE_ENV", "TEST_REDIS_URL"]
     }
   }
 }

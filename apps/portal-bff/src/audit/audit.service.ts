@@ -3,12 +3,14 @@ import { CLOCK, type Clock } from '../common/clock';
 
 export type AuditAction =
   | 'AUTH_OTP_REQUESTED'
+  | 'AUTH_OTP_SEND_FAILED'
   | 'AUTH_LOGIN'
   | 'AUTH_LOGIN_FAILED'
   | 'AUTH_REFRESH'
   | 'AUTH_REFRESH_REUSE_DETECTED'
   | 'AUTH_LOGOUT'
   | 'CONTRACT_DOWNLOADED'
+  | 'CONTRACT_DOWNLOAD_ABORTED'
   | 'PAYMENT_CREATED'
   | 'PAYMENT_REPLAYED'
   | 'PAYMENT_REJECTED';
@@ -34,7 +36,7 @@ export interface AuditSink {
 export class LogAuditSink implements AuditSink {
   private readonly logger = new Logger('Audit');
   write(record: AuditEvent & { at: string }): void {
-    this.logger.log(JSON.stringify({ audit: true, ...record }));
+    this.logger.log({ ...record, audit: true, msg: record.action });
   }
 }
 
@@ -56,7 +58,7 @@ export class AuditService {
     try {
       await this.sink.write({ ...event, at: this.clock.now().toISOString() });
     } catch (err) {
-      this.logger.error(`audit sink failed for ${event.action}: ${(err as Error).message}`);
+      this.logger.error({ msg: 'audit sink failed', action: event.action, correlationId: event.correlationId, reason: (err as Error).message });
     }
   }
 }

@@ -3,6 +3,7 @@ import type { PortalErrorCode } from '@los/contracts';
 // Код → HTTP төлөв + харилцагчид харуулах монгол мессеж (UI мөр i18n-тэй адил монгол кирилл).
 export const ERROR_CATALOG: Record<PortalErrorCode, { status: number; message: string }> = {
   INVALID_REQUEST: { status: 400, message: 'Хүсэлтийн мэдээлэл буруу байна.' },
+  PAYLOAD_TOO_LARGE: { status: 413, message: 'Хүсэлтийн хэмжээ хэт том байна.' },
   NOT_FOUND: { status: 404, message: 'Хаяг олдсонгүй.' },
   UNAUTHENTICATED: { status: 401, message: 'Нэвтрэх шаардлагатай эсвэл нэвтрэлтийн хугацаа дууссан байна.' },
   RATE_LIMITED: { status: 429, message: 'Хэт олон оролдлого хийлээ. Түр хүлээгээд дахин оролдоно уу.' },
@@ -26,6 +27,7 @@ export const ERROR_CATALOG: Record<PortalErrorCode, { status: number; message: s
 
 /** Downstream-ээс ирсэн бизнес алдааны кодуудаас зөвхөн эдгээрийг харилцагч руу дамжуулна. */
 export const PASS_THROUGH_DOWNSTREAM_CODES = new Set<PortalErrorCode>([
+  'INVALID_REQUEST', // жишээ нь origination мэдэхгүй cursor
   'LOAN_NOT_PAYABLE',
   'NO_OVERDUE',
   'AMOUNT_OUT_OF_RANGE',

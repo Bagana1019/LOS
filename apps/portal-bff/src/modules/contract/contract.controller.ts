@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Res, StreamableFile } from '@nestjs/common';
 import { PortalId, type PortalContractInfo } from '@los/contracts';
 import type { Response } from 'express';
+import type { ServerResponse } from 'node:http';
 import type { CallContext } from '../../common/request-context';
 import { ZodPipe } from '../../common/zod.pipe';
 import { RateLimit } from '../../security/rate-limit.decorator';
@@ -26,10 +27,17 @@ export class ContractController {
     @Param('loanId', loanIdPipe) loanId: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
-    const { info, stream } = await this.contracts.download(ctx, loanId);
-    // Клиент таслахад upstream (origination/dms) холболтыг хаана
-    res.on('close', () => stream.destroy());
-    return new StreamableFile(stream, { type: info.mime, disposition: contentDisposition(info.fileName, info.contractNo) });
+    const { info, stream, contentLength } = await this.contracts.download(ctx, loanId);
+    res.on('close', () => {
+      stream.destroy(); // Клиент таслахад upstream (origination/dms) холболтыг хаана
+      if (!res.writableFinished) void this.contracts.recordAborted(ctx, loanId);
+    });
+    return new StreamableFile(stream, {
+      type: info.mime,
+      disposition: contentDisposition(info.fileName, info.contractNo),
+      ...(contentLength ? { length: contentLength } : {}),
+      // Эхний chunk-ийн дараа алдаа гарвал холболтыг таслана: цэвэр төгсгөл (clean end) нь дутуу PDF-г 200 гэж харагдуулна.
+    }).setErrorHandler((err, response) => (response as unknown as ServerResponse).destroy(err));
   }
 }
 

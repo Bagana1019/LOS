@@ -5,6 +5,7 @@ const prodEnv = {
   NODE_ENV: 'production',
   INTEGRATION_MODE: 'real',
   REDIS_URL: 'redis://redis:6379',
+  ORIGINATION_URL: 'http://origination:4001',
   PORTAL_JWT_SECRET: 'j'.repeat(40),
   PORTAL_HASH_SECRET: 'h'.repeat(40),
   PORTAL_CORS_ORIGINS: 'https://app.example.mn',
@@ -39,8 +40,36 @@ describe('loadConfig', () => {
     ['memory store', { PORTAL_STORE: 'memory' }],
     ['mock otp code', { PORTAL_MOCK_OTP_CODE: '123456' }],
     ['http cors origin', { PORTAL_CORS_ORIGINS: 'http://app.example.mn' }],
+    ['implicit origination url', { ORIGINATION_URL: undefined }],
+    ['jwt secret shared with the staff gateway', { JWT_SECRET: 'j'.repeat(40) }],
   ])('refuses to start in production with %s', (_name, patch) => {
     expect(() => loadConfig({ ...prodEnv, ...patch })).toThrow(ConfigError);
+  });
+
+  // NODE_ENV тавигдаагүй (Dockerfile-д заагаагүй) боловч жинхэнэ интеграцитай deploy dev нууц/тогтмол OTP-тэй босож болохгүй
+  it.each([
+    ['dev secrets', { PORTAL_JWT_SECRET: undefined, PORTAL_HASH_SECRET: undefined }],
+    ['implicit origination url', { ORIGINATION_URL: undefined }],
+    ['a fixed mock OTP code', { PORTAL_MOCK_OTP_CODE: '123456' }],
+    ['no redis (implicit memory store would break multi-instance auth)', { REDIS_URL: undefined }],
+    ['same secret for jwt and hash', { PORTAL_HASH_SECRET: 'j'.repeat(40) }],
+  ])('refuses INTEGRATION_MODE=real even without NODE_ENV=production: %s', (_n, patch) => {
+    const { NODE_ENV: _drop, ...realEnv } = prodEnv;
+    expect(() => loadConfig({ ...realEnv, ...patch })).toThrow(ConfigError);
+    expect(() => loadConfig(realEnv)).not.toThrow();
+  });
+
+  it('mock mode (dev/test): fixed OTP 123456 by default so the documented flow works; real mode never has one', () => {
+    expect(loadConfig({}).auth.mockOtpCode).toBe('123456');
+    expect(loadConfig({ PORTAL_MOCK_OTP_CODE: '654321' }).auth.mockOtpCode).toBe('654321');
+    const { NODE_ENV: _drop, ...realEnv } = prodEnv;
+    expect(loadConfig(realEnv).auth.mockOtpCode).toBeUndefined();
+  });
+
+  it('per-pair OTP quota is stricter than the per-identity quota', () => {
+    const a = loadConfig({}).auth;
+    expect(a.otpRequestsPerHour).toBe(5);
+    expect(a.otpRequestsPerHourPerIdentity).toBeGreaterThan(a.otpRequestsPerHour);
   });
 
   it('never allows a wildcard CORS origin', () => {

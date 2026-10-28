@@ -20,8 +20,11 @@ export interface PortalConfig {
     otpTtlSec: number;
     otpResendSec: number;
     otpMaxAttempts: number;
+    /** (регистр, утас) хос тус бүрт цаг тутамд. */
     otpRequestsPerHour: number;
     otpRequestsPerHourPerIp: number;
+    /** Зөвхөн регистр эсвэл зөвхөн утсаар (хос таах/SMS бөмбөгдөлтөөс хамгаалах) — хос хязгаараас өндөр. */
+    otpRequestsPerHourPerIdentity: number;
     mockOtpCode?: string;
   };
   cors: { origins: string[] };
@@ -40,9 +43,10 @@ const Env = z.object({
   INTEGRATION_MODE: z.enum(['mock', 'real']).default('mock'),
   PORTAL_STORE: z.enum(['memory', 'redis']).optional(),
   REDIS_URL: z.string().min(1).optional(),
-  ORIGINATION_URL: z.string().url().default('http://localhost:4001'),
+  ORIGINATION_URL: z.string().url().optional(),
   PORTAL_INTERNAL_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(3000),
   PORTAL_MAX_CONTRACT_BYTES: z.coerce.number().int().min(1024).default(25 * 1024 * 1024),
+  JWT_SECRET: z.string().optional(), // ажилтны gateway-ийн нууц: зөвхөн давхцаж буйг шалгана
   PORTAL_JWT_SECRET: z.string().min(32).optional(),
   PORTAL_HASH_SECRET: z.string().min(32).optional(),
   PORTAL_ACCESS_TTL_SEC: z.coerce.number().int().min(60).max(3600).default(600),
@@ -52,6 +56,7 @@ const Env = z.object({
   PORTAL_OTP_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
   PORTAL_OTP_REQUESTS_PER_HOUR: z.coerce.number().int().min(1).default(5),
   PORTAL_OTP_REQUESTS_PER_HOUR_PER_IP: z.coerce.number().int().min(1).default(20),
+  PORTAL_OTP_REQUESTS_PER_HOUR_PER_IDENTITY: z.coerce.number().int().min(1).default(30),
   PORTAL_MOCK_OTP_CODE: z.string().regex(/^\d{6}$/).optional(),
   PORTAL_CORS_ORIGINS: z.string().default(''),
   PORTAL_TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
@@ -70,19 +75,28 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   }
   const e = parsed.data;
   const prod = e.NODE_ENV === 'production';
-  const storeKind = e.PORTAL_STORE ?? (prod || e.REDIS_URL ? 'redis' : 'memory');
+  const real = e.INTEGRATION_MODE === 'real';
+  // `real` горим NODE_ENV-ээс үл хамааран жинхэнэ ачаалалтай гэж үзнэ: NODE_ENV тавиагүй deploy dev нууцаар босохгүй.
+  const strict = prod || real;
+  const storeKind = e.PORTAL_STORE ?? (strict || e.REDIS_URL ? 'redis' : 'memory');
 
   const problems: string[] = [];
   if (storeKind === 'redis' && !e.REDIS_URL) problems.push('REDIS_URL is required when PORTAL_STORE=redis');
-  if (prod) {
-    if (!e.PORTAL_JWT_SECRET) problems.push('PORTAL_JWT_SECRET is required in production');
-    if (!e.PORTAL_HASH_SECRET) problems.push('PORTAL_HASH_SECRET is required in production');
+  if (strict) {
+    if (!e.PORTAL_JWT_SECRET) problems.push('PORTAL_JWT_SECRET is required in production / real integration mode');
+    if (!e.PORTAL_HASH_SECRET) problems.push('PORTAL_HASH_SECRET is required in production / real integration mode');
     if (e.PORTAL_JWT_SECRET && e.PORTAL_JWT_SECRET === e.PORTAL_HASH_SECRET) {
       problems.push('PORTAL_JWT_SECRET and PORTAL_HASH_SECRET must differ');
     }
+    if (e.PORTAL_JWT_SECRET && e.JWT_SECRET && e.PORTAL_JWT_SECRET === e.JWT_SECRET) {
+      problems.push('PORTAL_JWT_SECRET must differ from the staff gateway JWT_SECRET');
+    }
+    if (!e.ORIGINATION_URL) problems.push('ORIGINATION_URL is required in production / real integration mode');
+    if (e.PORTAL_MOCK_OTP_CODE) problems.push('PORTAL_MOCK_OTP_CODE must not be set in production / real integration mode');
+  }
+  if (prod) {
     if (e.INTEGRATION_MODE !== 'real') problems.push('INTEGRATION_MODE must be "real" in production');
     if (storeKind !== 'redis') problems.push('PORTAL_STORE must be "redis" in production (multi-instance)');
-    if (e.PORTAL_MOCK_OTP_CODE) problems.push('PORTAL_MOCK_OTP_CODE must not be set in production');
   }
   const origins = e.PORTAL_CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean);
   if (origins.includes('*')) problems.push('PORTAL_CORS_ORIGINS must not contain "*"');
@@ -94,7 +108,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     port: e.PORTAL_BFF_PORT,
     integrationMode: e.INTEGRATION_MODE,
     store: { kind: storeKind, redisUrl: e.REDIS_URL },
-    originationUrl: e.ORIGINATION_URL.replace(/\/+$/, ''),
+    originationUrl: (e.ORIGINATION_URL ?? 'http://localhost:4001').replace(/\/+$/, ''),
     internalTimeoutMs: e.PORTAL_INTERNAL_TIMEOUT_MS,
     internalMaxContractBytes: e.PORTAL_MAX_CONTRACT_BYTES,
     auth: {
@@ -109,7 +123,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       otpMaxAttempts: e.PORTAL_OTP_MAX_ATTEMPTS,
       otpRequestsPerHour: e.PORTAL_OTP_REQUESTS_PER_HOUR,
       otpRequestsPerHourPerIp: e.PORTAL_OTP_REQUESTS_PER_HOUR_PER_IP,
-      mockOtpCode: e.PORTAL_MOCK_OTP_CODE,
+      otpRequestsPerHourPerIdentity: e.PORTAL_OTP_REQUESTS_PER_HOUR_PER_IDENTITY,
+      // Mock горимд (зөвхөн dev/test) код тогтмол — frontend хөгжүүлэгч бодит SMS-гүйгээр нэвтэрнэ. Real горимд хэзээ ч үгүй.
+      mockOtpCode: real ? undefined : (e.PORTAL_MOCK_OTP_CODE ?? '123456'),
     },
     cors: { origins },
     trustProxy: e.PORTAL_TRUST_PROXY,

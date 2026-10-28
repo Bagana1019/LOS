@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { CLOCK, type Clock } from '../../common/clock';
-import { randomToken, safeEqual, sha256Hex } from '../../common/crypto';
+import { hmacHex, randomToken, safeEqual } from '../../common/crypto';
 import { PortalError } from '../../common/portal-error';
 import { PORTAL_CONFIG, type PortalConfig } from '../../config/portal.config';
 import { KV_STORE, type KvStore } from '../../store/kv-store';
@@ -10,9 +10,10 @@ export const SESSION_ABSOLUTE_TTL_SEC = 90 * 24 * 60 * 60;
 
 interface SessionRecord {
   customerId: string;
-  refreshHash: string;
-  /** Өмнөх refresh токены хэш — дахин ашиглагдвал хулгайлагдсан гэж үзнэ. */
-  prevRefreshHash: string | null;
+  /** Refresh токены нууцыг үүсгэх түлхүүрийн материал (зөвхөн `PORTAL_HASH_SECRET`-тэй хамт утга өгнө). */
+  seed: string;
+  /** Одоогийн (хамгийн сүүлд олгосон) refresh токены үе. Түүнээс бага үе ирвэл хулгайлагдсан гэж үзнэ. */
+  gen: number;
   createdAt: number;
 }
 
@@ -26,11 +27,15 @@ export interface IssuedSession {
 export type RotateOutcome = ({ kind: 'ROTATED' } & IssuedSession) | { kind: 'REUSE_DETECTED'; customerId: string; sessionId: string };
 
 const SESSION_ID = /^[A-Za-z0-9_-]{22}$/;
-const REFRESH_SECRET = /^[A-Za-z0-9_-]{43}$/;
+const GENERATION = /^\d{1,7}$/;
+const REFRESH_SECRET = /^[0-9a-f]{64}$/;
 
 /**
  * Сервер талын session + эргэлддэг (rotating) refresh токен.
- * Refresh токен = `<sessionId>.<secret>`; сервер зөвхөн secret-ийн SHA-256-г хадгална.
+ * Refresh токен = `<sessionId>.<gen>.<secret>`, secret = HMAC(PORTAL_HASH_SECRET, sessionId|seed|gen).
+ * Өмнөх бүх үеийн токеныг хадгалахгүйгээр шалгаж чадна: хуучин (gen < одоогийн) боловч хүчинтэй токен
+ * дахин ирвэл хулгайлагдсан гэж үзэж session (token family)-ийг устгана — хэдэн удаа эргэсэн ч адил.
+ * Redis-ийн агуулга дангаараа токен хуурамчаар үүсгэх боломж олгохгүй (HMAC түлхүүр Redis-д байхгүй).
  */
 @Injectable()
 export class SessionService {
@@ -42,11 +47,10 @@ export class SessionService {
 
   async create(customerId: string): Promise<IssuedSession> {
     const sessionId = randomToken(16);
-    const secret = randomToken(32);
-    const record: SessionRecord = { customerId, refreshHash: sha256Hex(secret), prevRefreshHash: null, createdAt: this.clock.now().getTime() };
+    const record: SessionRecord = { customerId, seed: randomToken(32), gen: 0, createdAt: this.clock.now().getTime() };
     const ttl = this.cfg.auth.refreshTtlSec;
     await this.store.set(sessionKey(sessionId), JSON.stringify(record), ttl);
-    return { customerId, sessionId, refreshToken: `${sessionId}.${secret}`, refreshExpiresInSec: ttl };
+    return { customerId, sessionId, refreshToken: this.token(sessionId, record, 0), refreshExpiresInSec: ttl };
   }
 
   /** Access токены sid бодитоор идэвхтэй, тухайн харилцагчийнх эсэх (logout/reuse дараа токен тэр дор хүчингүй). */
@@ -60,8 +64,11 @@ export class SessionService {
   }
 
   async rotate(refreshToken: string): Promise<RotateOutcome> {
-    const [sessionId, secret, ...extra] = refreshToken.split('.');
-    if (extra.length || !SESSION_ID.test(sessionId ?? '') || !REFRESH_SECRET.test(secret ?? '')) throw new PortalError('UNAUTHENTICATED');
+    const [sessionId, genRaw, secret, ...extra] = refreshToken.split('.');
+    if (extra.length || !SESSION_ID.test(sessionId ?? '') || !GENERATION.test(genRaw ?? '') || !REFRESH_SECRET.test(secret ?? '')) {
+      throw new PortalError('UNAUTHENTICATED');
+    }
+    const gen = Number(genRaw);
 
     // Зэрэгцээ rotate-ыг цуваа болгоно: хоёр хүсэлт ижил токеныг зэрэг «зөв» гэж үзэхээс сэргийлнэ.
     const lock = `refresh-lock:${sessionId}`;
@@ -70,14 +77,12 @@ export class SessionService {
       const raw = await this.store.get(sessionKey(sessionId));
       if (!raw) throw new PortalError('UNAUTHENTICATED');
       const record = JSON.parse(raw) as SessionRecord;
-      const presented = sha256Hex(secret);
 
-      if (!safeEqual(presented, record.refreshHash)) {
-        if (record.prevRefreshHash && safeEqual(presented, record.prevRefreshHash)) {
-          await this.revoke(sessionId);
-          return { kind: 'REUSE_DETECTED', customerId: record.customerId, sessionId };
-        }
-        throw new PortalError('UNAUTHENTICATED');
+      // Үе нь хэзээ ч олгогдоогүй эсвэл нууц нь таарахгүй бол хуурамч: session-д хүрэхгүй.
+      if (gen > record.gen || !safeEqual(secret, this.secret(sessionId, record.seed, gen))) throw new PortalError('UNAUTHENTICATED');
+      if (gen < record.gen) {
+        await this.revoke(sessionId);
+        return { kind: 'REUSE_DETECTED', customerId: record.customerId, sessionId };
       }
 
       const ageSec = Math.floor((this.clock.now().getTime() - record.createdAt) / 1000);
@@ -86,13 +91,21 @@ export class SessionService {
         await this.revoke(sessionId);
         throw new PortalError('UNAUTHENTICATED');
       }
-      const nextSecret = randomToken(32);
-      const next: SessionRecord = { ...record, prevRefreshHash: record.refreshHash, refreshHash: sha256Hex(nextSecret) };
-      await this.store.set(sessionKey(sessionId), JSON.stringify(next), ttl);
-      return { kind: 'ROTATED', customerId: record.customerId, sessionId, refreshToken: `${sessionId}.${nextSecret}`, refreshExpiresInSec: ttl };
+      const next: SessionRecord = { ...record, gen: record.gen + 1 };
+      // Зөвхөн session одоо ч байгаа үед бичнэ: rotate-ын завсар logout орвол session дахин «амилахгүй».
+      if (!(await this.store.setIfExists(sessionKey(sessionId), JSON.stringify(next), ttl))) throw new PortalError('UNAUTHENTICATED');
+      return { kind: 'ROTATED', customerId: record.customerId, sessionId, refreshToken: this.token(sessionId, next, next.gen), refreshExpiresInSec: ttl };
     } finally {
       await this.store.del(lock).catch(() => undefined);
     }
+  }
+
+  private secret(sessionId: string, seed: string, gen: number): string {
+    return hmacHex(this.cfg.auth.hashSecret, `refresh:${sessionId}:${seed}:${gen}`);
+  }
+
+  private token(sessionId: string, record: SessionRecord, gen: number): string {
+    return `${sessionId}.${gen}.${this.secret(sessionId, record.seed, gen)}`;
   }
 }
 
