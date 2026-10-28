@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { CommonModule } from '@los/nest-common';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -14,7 +15,7 @@ let ctx: ReturnType<typeof build>;
 
 beforeAll(async () => {
   ctx = build();
-  const mod = await Test.createTestingModule({ controllers: [MakerCheckerController], providers: [{ provide: MakerCheckerService, useFactory: () => ctx.svc }] }).compile();
+  const mod = await Test.createTestingModule({ imports: [CommonModule.forRoot()], controllers: [MakerCheckerController], providers: [{ provide: MakerCheckerService, useFactory: () => ctx.svc }] }).compile();
   app = mod.createNestApplication();
   app.useLogger(false);
   app.setGlobalPrefix('api');
@@ -29,7 +30,7 @@ describe('maker-checker REST', () => {
   it('401 without identity', async () => {
     const res = await http().get('/api/maker-checker/requests');
     expect(res.status).toBe(401);
-    expect(res.body).toMatchObject({ statusCode: 401, code: 'UNAUTHENTICATED' });
+    expect(res.body).toMatchObject({ code: 'UNAUTHENTICATED' }); // CommonModule-ийн ContextAuthGuard
   });
 
   it('POST /requests → 202 PENDING; validation errors → 400; unknown handler → 422; wrong maker role → 403', async () => {
@@ -121,6 +122,7 @@ describe('maker-checker REST', () => {
     const res = await http().get('/api/maker-checker/requests/summary').set(H('a', 'ADMIN'));
     ctx.svc.summary = original;
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ statusCode: 500, code: 'INTERNAL', message: 'Системийн алдаа гарлаа' });
+    expect(res.body).toMatchObject({ code: 'INTERNAL', message: 'Системийн алдаа гарлаа' });
+    expect(JSON.stringify(res.body)).not.toContain('secret');
   });
 });

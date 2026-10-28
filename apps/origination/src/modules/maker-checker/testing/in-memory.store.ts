@@ -1,4 +1,5 @@
 import type { DomainEvent } from '@los/contracts';
+import type { AuditInput } from '@los/database';
 import {
   PendingConflictError,
   type ChangeRequestRow, type ChangeRequestStore, type ChangeRequestTx, type DecisionPatch, type HistoryEntry, type HistoryRow,
@@ -14,17 +15,19 @@ interface State {
   history: Map<string, HistoryRow[]>;
   policies: Map<string, PolicyRow>;
   outbox: DomainEvent[];
+  audit: AuditInput[];
   db: FakeDb;
 }
 const clone = <T>(v: T): T => structuredClone(v);
 
 /** Бодит Prisma store-той ижил гэрээтэй санах ойн хэрэгжүүлэлт: tx serialize + rollback + нэг-PENDING-нэг-зорилт. */
 export class InMemoryChangeRequestStore implements ChangeRequestStore {
-  state: State = { rows: new Map(), history: new Map(), policies: new Map(), outbox: [], db: { records: {} } };
+  state: State = { rows: new Map(), history: new Map(), policies: new Map(), outbox: [], audit: [], db: { records: {} } };
   private chain: Promise<unknown> = Promise.resolve();
 
   get db(): FakeDb { return this.state.db; }
   get outbox(): DomainEvent[] { return this.state.outbox; }
+  get audit(): AuditInput[] { return this.state.audit; }
   rows(): ChangeRequestRow[] { return [...this.state.rows.values()]; }
 
   transaction<T>(fn: (tx: ChangeRequestTx) => Promise<T>): Promise<T> {
@@ -110,6 +113,7 @@ class MemTx implements ChangeRequestTx {
   }
 
   async enqueue(event: DomainEvent) { this.s.outbox.push(clone(event)); }
+  async audit(entry: AuditInput) { this.s.audit.push(clone(entry)); }
 
   async lockOverdue(now: Date, limit: number, orgId?: string) {
     return [...this.s.rows.values()].filter((r) => r.status === 'PENDING' && r.expiresAt.getTime() <= now.getTime() && (!orgId || r.orgId === orgId))

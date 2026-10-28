@@ -61,15 +61,15 @@ stateDiagram-v2
 | MC-FR-5 | Харах эрх: maker, шийдсэн checker, дүр/салбараар checker болох хүн, ADMIN. Бусдад 404 (байгаа эсэхийг ил болгохгүй) | M |
 | MC-FR-6 | Maker өөрийн PENDING хүсэлтийг цуцлах | M |
 | MC-FR-7 | Event (transactional outbox): `ChangeRequestSubmitted`, `ChangeRequestDecided` (APPLIED / APPLIED_DIRECT / REJECTED / CANCELLED / EXPIRED / FAILED) → DWH, мэдэгдэл | M |
-| MC-FR-8 | Алдаа нэг хэлбэртэй `{statusCode, code, message, details?}`; `code` тогтмол, `message` монгол | M |
+| MC-FR-8 | Алдаа foundation-ийн нэг хэлбэртэй `{code, message, details?, correlationId}` (`AllExceptionsFilter`); `code` тогтмол, `message` монгол | M |
 | MC-FR-9 | Admin: policy-н жагсаалт (`GET /policies`), өөрчлөлт (`PUT`, 4 нүдтэй) | M |
 | MC-FR-10 | UI `/los/maker-checker`: Миний батлах / Миний илгээсэн / Шийдвэрлэсэн / Бүгд / Бодлого табууд, өмнө→дараа diff, аудитын timeline | M |
 | MC-FR-11 | Мэдэгдэл (хонх, имэйл/SMS): `ChangeRequestSubmitted`/`Decided`-ийг мэдэгдлийн модуль сонсож `NotificationType`-д холбоно | S |
 | MC-FR-12 | N-of-M (олон checker), delegation/эзгүйд орлох, SLA-ийн сануулга | C |
 
-## 6. REST (gateway → origination `/api/maker-checker`)
+## 6. REST (gateway `/api/origination/maker-checker/*` → origination `/api/maker-checker/*`)
 
-Хэрэглэгчийг gateway толгойгоор дамжуулна (CLAUDE.md §3.2.9): `X-User-Id` (заавал), `X-Roles`, `X-Branch-Id`, `X-Org-Id`, `X-Correlation-Id`. Gateway-д `/api/maker-checker/*`-ийг нэвтэрсэн бүх хэрэглэгчид нээлттэй (эрхийг service шалгана), `PUT /policies/*`-ийг ADMIN-д хязгаарлахыг зөвлөнө (service давхар шалгана).
+Хэрэглэгчийг gateway толгойгоор дамжуулна (CLAUDE.md §3.2.9, foundation-ийн `RequestContext`): `X-User-Id` (заавал), `X-Roles`, `X-Branch-Id`, `X-Org-Id` (эсвэл `DEFAULT_ORG_ID`), `X-Correlation-Id`. Gateway-д (`route-policy.ts`) `/api/origination/maker-checker/*` нь `change-request:read` эрхтэй (4 дүрд бүгдэд) нэвтэрсэн хэрэглэгчид нээлттэй — хүсэлт тус бүрийн эрхийг service шалгана; `PUT /policies/*` нь `settings:manage` (ADMIN)-д хязгаарлагдсан (service давхар шалгана). UI цэс: `Баталгаажуулалт` → `/los/maker-checker`.
 
 | Method | Зам | Үр дүн |
 | --- | --- | --- |
@@ -83,11 +83,11 @@ stateDiagram-v2
 | GET | `/policies` | ADMIN/APPROVER; бүртгэлтэй handler бүрийн хүчинтэй policy |
 | PUT | `/policies/:targetType/:action` `{enabled,checkerRoles,expiresInHours,reason}` | 202 (өөр админ батлах хүртэл PENDING) |
 
-Алдааны кодууд: `UNAUTHENTICATED 401` · `SELF_APPROVAL_FORBIDDEN / CHECKER_ROLE_FORBIDDEN / CHECKER_BRANCH_FORBIDDEN / MAKER_ROLE_FORBIDDEN / ONLY_MAKER_CAN_CANCEL / FORBIDDEN 403` · `NOT_FOUND 404` · `ALREADY_DECIDED / EXPIRED / TARGET_HAS_PENDING_CHANGE / STALE_TARGET / DECISION_IN_PROGRESS 409` · `VALIDATION_FAILED 400` · `HANDLER_NOT_FOUND / PAYLOAD_INVALID / TARGET_ID_MISMATCH / POLICY_LOCKED 422`. Жагсаалт нь `@los/contracts`-ийн `MakerCheckerErrorCode` (backend-ийн статусын хүснэгт болон UI-н монгол текстийн тест хоёулаа үүнтэй тулгагдана).
+Алдааны кодууд (HTTP статус нь хариуны `status`, биет нь `{code, message}`): `UNAUTHENTICATED 401` · `SELF_APPROVAL_FORBIDDEN / CHECKER_ROLE_FORBIDDEN / CHECKER_BRANCH_FORBIDDEN / MAKER_ROLE_FORBIDDEN / ONLY_MAKER_CAN_CANCEL / FORBIDDEN 403` · `NOT_FOUND 404` · `ALREADY_DECIDED / EXPIRED / TARGET_HAS_PENDING_CHANGE / STALE_TARGET / DECISION_IN_PROGRESS 409` · `VALIDATION_FAILED 400` · `HANDLER_NOT_FOUND / PAYLOAD_INVALID / TARGET_ID_MISMATCH / POLICY_LOCKED 422`. Жагсаалт нь `@los/contracts`-ийн `MakerCheckerErrorCode` (backend-ийн статусын хүснэгт болон UI-н монгол текстийн тест хоёулаа үүнтэй тулгагдана).
 
 `DECISION_IN_PROGRESS` — мөр/зорилтын түгжээг `MAKER_CHECKER_LOCK_TIMEOUT_MS` (анхдагч 3000 мс) дотор авч чадаагүй (өөр хэрэглэгч шийдэж байна); өөрчлөлт хийгдээгүй, дахин оролдоно. `MAKER_CHECKER_SWEEP_SECONDS` (анхдагч 60; `0` = зориуд унтраана; буруу утга анхдагч руу буцаж анхааруулга бичнэ; 1…3600-д хязгаарлана) — хугацаа дууссан хүсэлтийг хаах давтамж.
 
-`MakerCheckerError` нь Nest-ийн `HttpException` тул домэйн модулийн контроллер `makerChecker.submit()`-ийг шууд дуудахад ч дээрх статус/`{statusCode, code, message, details?}` хэлбэрээр хариулна (filter залгах шаардлагагүй; `maker-checker.module.test.ts`-д шалгагдсан). `validate()`-аас `ChangeValidationError`-оос өөр алдаа (DB, сүлжээ, програмын алдаа) 422 болгон хувиргагдахгүй — 500 болж, дэлгэрэнгүй нь зөвхөн лог-д орно.
+`MakerCheckerError` нь foundation-ийн `DomainError`-ийг өргөтгөдөг тул домэйн модулийн контроллер `makerChecker.submit()`-ийг шууд дуудахад ч global `AllExceptionsFilter` дээрх статус/`{code, message, details?, correlationId}` хэлбэрээр хариулна (filter залгах шаардлагагүй; `maker-checker.module.test.ts`-д шалгагдсан). `validate()`-аас `ChangeValidationError`-оос өөр алдаа (DB, сүлжээ, програмын алдаа) 422 болгон хувиргагдахгүй — 500 болж, дэлгэрэнгүй нь зөвхөн лог-д орно.
 
 ## 7. Өгөгдлийн загвар (origination schema; docs/03-д нэмэгдэнэ)
 
@@ -97,7 +97,7 @@ stateDiagram-v2
 | `change_request_history` | append-only: seq, event, from/to status, actor_id/roles, comment, data, at |
 | `maker_checker_policy` | org, target_type, action, enabled, checker_roles[], expires_in_hours |
 
-Migration-ууд: `20261028090000_baseline` (`origination` schema + `outbox`; `prisma migrate diff --from-empty`-ээр үүссэн) → `20261028100000_maker_checker`. Хоосон DB дээр `prisma migrate deploy` ажиллана. Docker initdb (`packages/database/init/00-schemas.sql`) нь `outbox`-ийг өөр төрлөөр (uuid/timestamptz) урьдчилан үүсгэдэг тул тийм DB дээр `pnpm db:migrate` (`prisma migrate dev`) нэг удаа `origination` schema-г дахин үүсгэхийг асууна — зөвшөөрнө (зөвхөн dev DB; interaktiv биш орчинд `prisma migrate reset --force`). Миграци нь Prisma schema-тай ижил (`prisma migrate diff --from-url <db> --to-schema-datamodel prisma/schema.prisma --exit-code`).
+Migration: foundation-ийн `20261028000000_init` (`origination` schema + `outbox` + `audit_log`)-ийн дараах нэмэлт `20261028100000_maker_checker` (baseline нэмээгүй — `docs/00-foundation.md`). Хоосон DB дээр `prisma migrate deploy` ажиллана. Миграци нь Prisma schema-тай ижил (`prisma migrate diff --from-url <db> --to-schema-datamodel prisma/schema.prisma --exit-code`).
 
 `20261028100000_maker_checker/migration.sql`-д Prisma илэрхийлж чадахгүй хамгаалалтууд: CHECK (maker≠checker, шалтгаан/тайлбар, DIRECT, PENDING-д шийдвэр байхгүй), partial unique index (нэг зорилтод нэг PENDING), `change_request_guard` trigger (устгахгүй, терминалаас буцахгүй, илгээсэн агуулга өөрчлөгдөхгүй), history/хүснэгтийн append-only trigger (UPDATE, DELETE, TRUNCATE). Дүрийн `TEXT[]` багана бүр `NOT NULL` (NULL нь CHECK-үүдийг тойрдог тул). Дүрийн жагсаалт (`OFFICER/BRANCH_MANAGER/APPROVER/ADMIN`) SQL CHECK-д давтагдсан — `UserRole`-д дүр нэмбэл шинэ migration-аар `maker_checker_policy_roles`-ийг шинэчилнэ.
 
@@ -132,29 +132,29 @@ export class BlacklistUpdateHandler implements ChangeHandler<BlacklistUpdate> {
 
 - **Алдаа**: `validate()`-д бизнес шалгалт бүтэлбэл `ChangeValidationError(mongolianMessage)` шидэнэ → maker-т 422 `PAYLOAD_INVALID` + тэр мессеж. `MakerCheckerError`-ийг шууд шидэж болно. Бусад алдаа 500 болно (түүхий мессеж хэрэглэгчид гарахгүй). Зорилт хуучирсан бол `apply()`-аас (эсвэл `validate()`-аас) `ChangeConflictError` → 409 `STALE_TARGET`.
 - **`baseVersion`**: `snapshot()` буцаасан утгыг (эсвэл maker-ийн заасан хоосон биш утгыг) `apply()` дээр `request.baseVersion !== null && request.baseVersion !== одоогийн` хэлбэрээр харьцуулна (хоосон string-ийг contract хориглоно).
-- **PII (CLAUDE.md §6.5)**: `change_request.target_id/payload/before/reason` болон history/event нь **ил текст, өөрчлөх боломжгүй (immutable)**. Иймд handler **регистр, дансны дугаар, ИҮ зураг зэрэг хувийн мэдээллийг эдгээрт хийж болохгүй** — ил биш ID (`customerId`, `blacklistEntryId`, регистрийн hash) заагаад бодит утгыг `snapshot`/`apply` дотор tx-ээр уншина. `encryptedField` (M00) хэрэгжсэний дараа шифрлэх/далдлах hook-ийг эхний PII handler-тай хамт нэмнэ.
+- **PII (CLAUDE.md §6.5)**: `change_request.target_id/payload/before/reason` болон history/event нь **ил текст, өөрчлөх боломжгүй (immutable)**. Иймд handler **регистр, дансны дугаар, ИҮ зураг зэрэг хувийн мэдээллийг эдгээрт хийж болохгүй** — ил биш ID (`customerId`, `blacklistEntryId`, регистрийн hash) заагаад бодит утгыг `snapshot`/`apply` дотор tx-ээр уншина. `encryptedField` (`@los/database`) байгаа ч change request-ийн багана immutable тул шифрлэх/далдлах hook-ийг эхний PII handler-тай хамт нэмнэ.
 - Handler-ийн `makerRoles` нь REST-ийн ерөнхий `POST /requests`-ийг ч хамгаална — domain controller-ийн шалгалтыг тойруулахгүйн тулд handler-д мөн адил шалгалтыг `validate`-д тавина.
 
 Санал болгож буй handler-ууд (тухайн модуль хийгдэхэд): `BLACKLIST_ENTRY/{CREATE,UPDATE,DELETE}` (FR-13.1) · `SETTING/UPDATE` ба `PRODUCT/UPDATE` (модуль 12, BR босго) · `APPROVAL_LEVEL/UPDATE` · `CALCULATION/OVERRIDE_METHOD` (FR-8.2 гар сонголт) · `COLLATERAL/OVERRIDE_VALUATION` (FR-14.2 override_reason) · `CUSTOMER/UPDATE_KYC` (регистр, PEP) · `LOAN_APPLICATION/EDIT_AFTER_SUBMIT`.
 
 ## 9. Хязгаарлалт, дараагийн алхам
 
-- **PII ил текстээр хадгалагдана** (§8): `target_id`, `payload`, `before`, `reason`, түүхийн `comment/data` болон outbox event-д. Хүсэлт өөрчлөгдөхгүй тул дараа нь далдлах боломжгүй — `encryptedField` хэрэгжтэл handler PII-г ил ID-аар солих ёстой.
+- **PII ил текстээр хадгалагдана** (§8): `target_id`, `payload`, `before`, `reason`, түүхийн `comment/data` болон outbox event-д. Хүсэлт өөрчлөгдөхгүй тул дараа нь далдлах боломжгүй — энэ hook нэмэгдтэл handler PII-г ил ID-аар солих ёстой.
 - Байгууллагад зөвхөн нэг ADMIN байвал policy өөрчлөх хүсэлтийг APPROVER л батлана (анхдагч `checkerRoles`).
 - Сервис нь gateway-ийн толгойд (`X-User-Id`, `X-Roles`, `X-Branch-Id`, `X-Org-Id`) шууд итгэдэг (CLAUDE.md §3.2.9) — origination-ы порт интернэтэд нээлттэй байж болохгүй; gateway толгойг өөрөө тавьж, клиентийнхийг дарж бичих ёстой.
 - Хэрэглэгчийн лавлах (IAM) gateway-д тул "батлах боломжтой өөр хүн байгаа эсэх"-ийг шалгахгүй; хүсэлт хугацаа дуусаж EXPIRED болно.
-- `enqueueOutbox` (`@los/database`) хэрэгжсэний дараа store-ын шууд outbox бичилтийг солино.
-- Мэдэгдэл (MC-FR-11) ба `audit_log` хүснэгт хэрэгжихэд `ChangeRequest*` event-ийг сонсож холбоно.
+- Event нь `enqueueOutbox`/`buildEvent`, аудит нь `recordAudit` (`@los/database`)-ээр бизнес транзакцтай нэг tx-д бичигдэнэ (`audit_log`-д `CHANGE_REQUEST_*`, PII-гүй: зөвхөн төлөв, target type/id).
+- Мэдэгдэл (MC-FR-11) хэрэгжихэд мэдэгдлийн модуль `ChangeRequest*` event-ийг сонсож холбоно.
+- Web shell-д нэвтрэлт/Bearer токен хараахан байхгүй тул maker-checker UI-ийн fetch нь `credentials: 'include'`-ээр л дуудна; auth холболтыг web shell хийнэ.
 
 ## 10. Тест
 
 ```
-pnpm --filter @los/contracts build                                    # origination/web тест contracts-ийн dist-ийг ашиглана
+pnpm db:generate && pnpm build                                        # contracts/database/nest-common-ийн dist
 pnpm --filter @los/origination test                                   # unit + HTTP + модулийн wiring (санах ойн store)
-# бодит PostgreSQL (хоосон DB дээр migration хэрэглээд):
-DATABASE_URL=postgresql://los:los@localhost:5432/los_test pnpm --filter @los/origination exec prisma migrate deploy
+# бодит PostgreSQL: foundation-ийн test/global-setup.ts өөрөө migrate + seed хийнэ
 TEST_DATABASE_URL=postgresql://los:los@localhost:5432/los_test pnpm --filter @los/origination test
 ```
-`TEST_DATABASE_URL` байхгүй бол PostgreSQL suite бүхэлдээ **алгасагдана** (turbo-д энэ хувьсагч `test` task-ийн cache түлхүүр тул алгассан үр дүн жинхэнэ ажиллагааг далдлахгүй). MC-BR-3/5 болон DB-ийн invariant-уудын жинхэнэ нотолгоо зөвхөн энэ suite — CI-д заавал `TEST_DATABASE_URL`-тэй ажиллуул. Тест бүр өвөрмөц `org_id`-тай; харин ажиллаж буй origination app-ын `ExpirySweeper` org-оос үл хамааран хугацаа дууссан бүх хүсэлтийг хаадаг тул тухайн DB дээр app-г `MAKER_CHECKER_SWEEP_SECONDS=0`-тэй эсвэл тусдаа DB ашигла.
+`TEST_DATABASE_URL`-ийн DB нэр `test`-ээр төгсөх ёстой — foundation-ийн globalSetup `origination` schema-г **устгаж** дахин `migrate deploy` хийдэг (CI-д Postgres service `los_test`). `TEST_DATABASE_URL` байхгүй бол PostgreSQL suite бүхэлдээ **алгасагдана**. MC-BR-3/5 болон DB-ийн invariant-уудын жинхэнэ нотолгоо зөвхөн энэ suite — CI-д `TEST_DATABASE_URL`-тэй ажиллана. Тест бүр өвөрмөц `org_id`-тай; харин ажиллаж буй origination app-ын `ExpirySweeper` org-оос үл хамааран хугацаа дууссан бүх хүсэлтийг хаадаг тул тухайн DB дээр app-г `MAKER_CHECKER_SWEEP_SECONDS=0`-тэй эсвэл тусдаа DB ашигла.
 
 Unit/HTTP: self-approval, дүр/салбар (салбаргүй хүсэлт), зэрэг батлалт, хугацаа (түгжээний дараах цаг, sweeper-ийн дараах `EXPIRED`), хуучирсан өгөгдөл, rollback, policy 4 нүд, scope-ууд, оролтын гэрээ (NUL/emoji/`baseVersion`), домэйн контроллерын алдааны статус. PostgreSQL: зэрэг батлалт (8 checker → 1), нэг зорилтод зэрэг илгээлт, илгээлт ба батлалтын уралдаан (snapshot түгжээний дараа), DIRECT-ийн цуваалал ба PENDING-ийг гүйцэхгүй байх, хугацаа дууссан хүсэлтийн lazy expiry, `lock_timeout`, tx rollback, SKIP LOCKED sweep, store шүүлт ба домэйн дүрмийн parity, DB trigger/CHECK/NOT NULL.

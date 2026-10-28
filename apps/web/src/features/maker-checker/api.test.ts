@@ -14,7 +14,7 @@ import {
 } from './api';
 import { ApiError } from './errors';
 
-const BASE = `${API}/maker-checker`;
+const BASE = `${API}/origination/maker-checker`;
 const ID = '0b9a6d5e-3c1f-4c0e-9a4e-7a1f2f1c9d11';
 const ISO = '2026-10-28T06:00:00.000Z';
 

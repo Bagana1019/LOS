@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { UserRole } from '@los/contracts';
 import type { Actor } from '../actor';
 import { ChangeConflictError, ChangeHandlerRegistry, ChangeValidationError, type ChangeHandler } from '../change-handler';
-import type { Clock } from '../clock';
+import { Clock } from '@los/nest-common';
 import { PolicyChangeHandler } from '../handlers/policy-change.handler';
 import { MakerCheckerService } from '../maker-checker.service';
 import { InMemoryChangeRequestStore, type FakeDb } from './in-memory.store';
@@ -18,8 +18,8 @@ export const approver = actor('approver', ['APPROVER'], null);
 export const adminA = actor('adminA', ['ADMIN'], null);
 export const adminB = actor('adminB', ['ADMIN'], null);
 
-export class TestClock implements Clock {
-  constructor(public t = new Date('2026-10-28T09:00:00.000Z')) {}
+export class TestClock extends Clock {
+  constructor(public t = new Date('2026-10-28T09:00:00.000Z')) { super(); }
   now() { return new Date(this.t); }
   advanceHours(h: number) { this.t = new Date(this.t.getTime() + h * 3_600_000); }
 }

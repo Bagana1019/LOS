@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ChangeHandlerRegistry } from './change-handler';
 import { CHANGE_REQUEST_STORE } from './change-request.store';
-import { CLOCK, systemClock } from './clock';
 import { ExpirySweeper } from './expiry.sweeper';
 import { PolicyChangeHandler } from './handlers/policy-change.handler';
-import { makerCheckerPrismaFactory } from './infra/prisma-client.provider';
 import { PrismaChangeRequestStore } from './infra/prisma-change-request.store';
 import { MakerCheckerController } from './maker-checker.controller';
 import { MakerCheckerService } from './maker-checker.service';
@@ -17,9 +15,7 @@ import { MakerCheckerService } from './maker-checker.service';
 @Module({
   controllers: [MakerCheckerController],
   providers: [
-    makerCheckerPrismaFactory,
     { provide: CHANGE_REQUEST_STORE, useClass: PrismaChangeRequestStore },
-    { provide: CLOCK, useValue: systemClock },
     ChangeHandlerRegistry,
     MakerCheckerService,
     PolicyChangeHandler,

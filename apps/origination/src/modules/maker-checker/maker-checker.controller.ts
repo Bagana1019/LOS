@@ -1,35 +1,33 @@
-import { Body, Controller, Get, HttpCode, Inject, Param, Post, Put, Query, Res, UseFilters } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { z } from 'zod';
 import {
   ApproveChangeRequest, CancelChangeRequest, ListChangeRequestsQuery, MakerCheckerPolicy, RejectChangeRequest, SubmitChangeRequest,
 } from '@los/contracts';
+import { ZodValidationPipe } from '@los/nest-common';
 import { CurrentActor, type Actor } from './actor';
-import { MakerCheckerExceptionFilter } from './maker-checker.filter';
 import { MakerCheckerService } from './maker-checker.service';
-import { ZodPipe } from './zod.pipe';
 
-const Id = new ZodPipe(z.string().uuid());
+const Id = new ZodValidationPipe(z.string().uuid());
 const PolicyParams = z.object({ targetType: MakerCheckerPolicy.shape.targetType, action: MakerCheckerPolicy.shape.action });
 const PolicyBody = MakerCheckerPolicy.omit({ targetType: true, action: true }).extend({ reason: z.string().trim().min(3).max(2000) });
 
 interface StatusRes { status(code: number): unknown }
 
-/** Gateway `/api/maker-checker/*`-ийг origination руу дамжуулна. Хэрэглэгч: X-User-Id, X-Roles, X-Branch-Id, X-Org-Id, X-Correlation-Id. */
+/** Gateway-ээр `/api/origination/maker-checker/*`. Хэрэглэгч: gateway-ийн баталгаажуулсан X-* толгой (@los/nest-common RequestContext). */
 @Controller('maker-checker')
-@UseFilters(MakerCheckerExceptionFilter)
 export class MakerCheckerController {
   constructor(@Inject(MakerCheckerService) private readonly svc: MakerCheckerService) {}
 
   /** 202 — checker хүлээж байна; 201 — policy идэвхгүй тул шууд хэрэгжиж аудитлагдсан */
   @Post('requests')
-  async submit(@CurrentActor() actor: Actor, @Body(new ZodPipe(SubmitChangeRequest)) body: SubmitChangeRequest, @Res({ passthrough: true }) res: StatusRes) {
+  async submit(@CurrentActor() actor: Actor, @Body(new ZodValidationPipe(SubmitChangeRequest)) body: SubmitChangeRequest, @Res({ passthrough: true }) res: StatusRes) {
     const result = await this.svc.submit(actor, body);
     res.status(result.outcome === 'PENDING' ? 202 : 201);
     return result;
   }
 
   @Get('requests')
-  list(@CurrentActor() actor: Actor, @Query(new ZodPipe(ListChangeRequestsQuery)) query: ListChangeRequestsQuery) { return this.svc.list(actor, query); }
+  list(@CurrentActor() actor: Actor, @Query(new ZodValidationPipe(ListChangeRequestsQuery)) query: ListChangeRequestsQuery) { return this.svc.list(actor, query); }
 
   @Get('requests/summary')
   summary(@CurrentActor() actor: Actor) { return this.svc.summary(actor); }
@@ -39,19 +37,19 @@ export class MakerCheckerController {
 
   @Post('requests/:id/approve')
   @HttpCode(200)
-  approve(@CurrentActor() actor: Actor, @Param('id', Id) id: string, @Body(new ZodPipe(ApproveChangeRequest)) body: ApproveChangeRequest) {
+  approve(@CurrentActor() actor: Actor, @Param('id', Id) id: string, @Body(new ZodValidationPipe(ApproveChangeRequest)) body: ApproveChangeRequest) {
     return this.svc.approve(actor, id, body.comment);
   }
 
   @Post('requests/:id/reject')
   @HttpCode(200)
-  reject(@CurrentActor() actor: Actor, @Param('id', Id) id: string, @Body(new ZodPipe(RejectChangeRequest)) body: RejectChangeRequest) {
+  reject(@CurrentActor() actor: Actor, @Param('id', Id) id: string, @Body(new ZodValidationPipe(RejectChangeRequest)) body: RejectChangeRequest) {
     return this.svc.reject(actor, id, body.comment);
   }
 
   @Post('requests/:id/cancel')
   @HttpCode(200)
-  cancel(@CurrentActor() actor: Actor, @Param('id', Id) id: string, @Body(new ZodPipe(CancelChangeRequest)) body: CancelChangeRequest) {
+  cancel(@CurrentActor() actor: Actor, @Param('id', Id) id: string, @Body(new ZodValidationPipe(CancelChangeRequest)) body: CancelChangeRequest) {
     return this.svc.cancel(actor, id, body.comment);
   }
 
@@ -61,8 +59,8 @@ export class MakerCheckerController {
   /** Policy өөрчлөх нь өөрөө 4 нүдтэй хүсэлт (MC-BR-8) → 202 */
   @Put('policies/:targetType/:action')
   async changePolicy(
-    @CurrentActor() actor: Actor, @Param(new ZodPipe(PolicyParams)) params: z.infer<typeof PolicyParams>,
-    @Body(new ZodPipe(PolicyBody)) body: z.infer<typeof PolicyBody>, @Res({ passthrough: true }) res: StatusRes,
+    @CurrentActor() actor: Actor, @Param(new ZodValidationPipe(PolicyParams)) params: z.infer<typeof PolicyParams>,
+    @Body(new ZodValidationPipe(PolicyBody)) body: z.infer<typeof PolicyBody>, @Res({ passthrough: true }) res: StatusRes,
   ) {
     const { reason, ...rest } = body;
     const result = await this.svc.submitPolicyChange(actor, { ...params, ...rest }, reason);

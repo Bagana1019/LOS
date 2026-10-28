@@ -1,4 +1,4 @@
-// Typed fetch wrapper for `${API}/maker-checker` (gateway only - CLAUDE.md §3.2 rule 1).
+// Typed fetch wrapper for `${API}/origination/maker-checker` (gateway only - CLAUDE.md §3.2 rule 1; gateway: /api/<service>/<path>).
 // Every response is parsed with the @los/contracts zod schemas; failures throw ApiError.
 import { z } from 'zod';
 import {
@@ -15,7 +15,7 @@ import { mn } from '@los/ui';
 import { API } from '../../lib/api';
 import { ApiError, buildApiError } from './errors';
 
-const BASE = `${API}/maker-checker`;
+const BASE = `${API}/origination/maker-checker`;
 
 /** The one method of a zod schema we need; avoids coupling to a zod version. */
 interface Parser<T> {

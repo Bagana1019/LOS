@@ -48,7 +48,7 @@ describe('submit (MC-FR-1)', () => {
 
   it('rejects unknown targetType/action with the supported list', async () => {
     const { svc } = build();
-    await expect(svc.submit(officerA, { ...submitInput(), targetType: 'NOPE' })).rejects.toMatchObject({ code: 'HANDLER_NOT_FOUND', httpStatus: 422 });
+    await expect(svc.submit(officerA, { ...submitInput(), targetType: 'NOPE' })).rejects.toMatchObject({ code: 'HANDLER_NOT_FOUND', status: 422 });
   });
 
   it('enforces the handler makerRoles', async () => {

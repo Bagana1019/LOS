@@ -1,15 +1,16 @@
-import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
-import type { Prisma, PrismaClient } from '.prisma/client-origination';
+import { Inject, Injectable } from '@nestjs/common';
+import { Prisma } from '.prisma/client-origination';
 import type { DomainEvent } from '@los/contracts';
+import { enqueueOutbox, recordAudit, type AuditInput } from '@los/database';
+import { PrismaService } from '../../../prisma.service';
 import {
   LockTimeoutError, PendingConflictError,
   type ChangeRequestRow, type ChangeRequestStore, type ChangeRequestTx, type DecisionPatch, type HistoryEntry, type HistoryRow,
   type ListFilter, type NewChangeRequest, type PolicyRow,
 } from '../change-request.store';
 import { inboxCriteria } from '../maker-checker.domain';
-import { MAKER_CHECKER_PRISMA, prismaRuntime } from './prisma-client.provider';
 
-const { sql, empty } = prismaRuntime.Prisma;
+const { sql, empty } = Prisma;
 
 /** Мөр/зорилтын түгжээг хүлээх дээд хугацаа: гацсан tx connection pool-ыг бүгдийг нь барьж болохгүй. MAKER_CHECKER_LOCK_TIMEOUT_MS-ээр өөрчилнө. */
 const lockTimeoutMs = (): number => {
@@ -18,7 +19,7 @@ const lockTimeoutMs = (): number => {
 };
 /** Postgres 55P03 (lock_not_available). Prisma интерактив tx дотор P2010 + meta.code хэлбэрээр ирдэг. */
 const isLockTimeout = (e: unknown): boolean => {
-  if (!(e instanceof prismaRuntime.Prisma.PrismaClientKnownRequestError)) return false;
+  if (!(e instanceof Prisma.PrismaClientKnownRequestError)) return false;
   return (e.meta as { code?: string } | undefined)?.code === '55P03' || /55P03|lock timeout/i.test(e.message);
 };
 
@@ -91,7 +92,7 @@ class PrismaTx implements ChangeRequestTx {
       return toRow(created);
     } catch (e) {
       // change_request_one_pending_per_target (partial unique index) → P2002
-      if (e instanceof prismaRuntime.Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new PendingConflictError();
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') throw new PendingConflictError();
       throw e;
     }
   }
@@ -112,10 +113,9 @@ class PrismaTx implements ChangeRequestTx {
     });
   }
 
-  // TODO(M00): @los/database enqueueOutbox хэрэгжсэний дараа түүгээр солино
-  async enqueue(event: DomainEvent) {
-    await this.db.outbox.create({ data: { id: event.eventId, type: event.type, payload: event as unknown as Prisma.InputJsonValue } });
-  }
+  enqueue(event: DomainEvent) { return enqueueOutbox(this.db, event); }
+
+  audit(entry: AuditInput) { return recordAudit(this.db, entry); }
 
   async lockOverdue(now: Date, limit: number, orgId?: string) {
     const ids = await this.db.$queryRaw<{ id: string }[]>(sql`
@@ -141,10 +141,8 @@ class PrismaTx implements ChangeRequestTx {
 }
 
 @Injectable()
-export class PrismaChangeRequestStore implements ChangeRequestStore, OnModuleDestroy {
-  constructor(@Inject(MAKER_CHECKER_PRISMA) private readonly prisma: PrismaClient) {}
-
-  onModuleDestroy() { return this.prisma.$disconnect(); }
+export class PrismaChangeRequestStore implements ChangeRequestStore {
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async transaction<T>(fn: (tx: ChangeRequestTx) => Promise<T>): Promise<T> {
     try {

@@ -1,14 +1,14 @@
 // Бодит PostgreSQL дээрх integration тест — MC-BR-3 (нэг tx), MC-BR-5 (нэг зорилтод нэг PENDING / цуваа илгээлт) болон DB-ийн
 // invariant-уудын цорын ганц жинхэнэ нотолгоо (санах ойн store нь зөвхөн дүрмийн unit тестэд). Ажиллуулах:
-//   TEST_DATABASE_URL=postgresql://los:los@localhost:5432/los pnpm --filter @los/origination exec prisma migrate deploy
-//   TEST_DATABASE_URL=… pnpm --filter @los/origination test            (turbo-д `TEST_DATABASE_URL` дамжина)
+//   TEST_DATABASE_URL=postgresql://los:los@localhost:5432/los_test pnpm --filter @los/origination test
+// (нэр нь `test`-ээр төгссөн DB; test/global-setup.ts `origination` schema-г шинээр үүсгэж migrate + seed хийнэ — docs/00-foundation.md §4)
 // Хувьсагч байхгүй бол БҮГД алгасагдана. Тест бүр өвөрмөц org_id-тай (append-only хүснэгтийг TRUNCATE хийх боломжгүй), харин
 // ажилладаг origination app-ын ExpirySweeper нь org хамаарахгүй тул тухайн DB дээр `MAKER_CHECKER_SWEEP_SECONDS=0` эсвэл тусдаа DB ашиглана.
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PrismaClient } from '.prisma/client-origination';
-import { prismaRuntime } from './infra/prisma-client.provider';
+import { PrismaService } from '../../prisma.service';
 import { ChangeConflictError, ChangeHandlerRegistry, type ApplyContext, type ChangeHandler } from './change-handler';
 import { canDecideNow } from './maker-checker.domain';
 import { MakerCheckerError } from './maker-checker.errors';
@@ -16,7 +16,7 @@ import { MakerCheckerService } from './maker-checker.service';
 import { PrismaChangeRequestStore } from './infra/prisma-change-request.store';
 import { actor, TestClock } from './testing/fixtures';
 
-const URL = process.env.TEST_DATABASE_URL ?? process.env.ORIGINATION_TEST_DATABASE_URL;
+const URL = process.env.TEST_DATABASE_URL;
 const code = async (p: Promise<unknown>) => { try { await p; } catch (e) { if (e instanceof MakerCheckerError) return e.code; throw e; } return 'NO_ERROR'; };
 
 /** Зорилт = origination.outbox-д бичигдэх мөр (бодит tx-ийн хэсэг болохыг харуулна) */
@@ -70,7 +70,7 @@ class SerialHandler implements ChangeHandler<{ n: number }> {
 }
 
 describe.skipIf(!URL)('maker-checker on PostgreSQL', () => {
-  let prisma: PrismaClient;
+  let prisma: PrismaService;
   let svc: MakerCheckerService;
   let clock: TestClock;
   const org = `it-${randomUUID().slice(0, 8)}`;
@@ -81,7 +81,7 @@ describe.skipIf(!URL)('maker-checker on PostgreSQL', () => {
   const events = (id: string) => prisma.outbox.findMany({ where: { payload: { path: ['changeRequestId'], equals: id } }, orderBy: { createdAt: 'asc' } });
 
   beforeAll(async () => {
-    prisma = new prismaRuntime.PrismaClient({ datasources: { db: { url: URL! } } });
+    prisma = new PrismaService({ datasources: { db: { url: URL! } } });
     const registry = new ChangeHandlerRegistry();
     registry.register(new ProbeHandler());
     registry.register(new GateHandler());

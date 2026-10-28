@@ -1,4 +1,5 @@
 import type { ChangeRequestEvent, ChangeRequestMode, ChangeRequestScope, ChangeRequestStatus, DomainEvent } from '@los/contracts';
+import type { AuditInput } from '@los/database';
 import type { Actor } from './actor';
 
 /** Persistence port. Prisma хэрэгжүүлэлт: infra/prisma-change-request.store.ts; тестийн: testing/in-memory.store.ts */
@@ -56,6 +57,8 @@ export interface ChangeRequestTx {
   appendHistory(requestId: string, entry: HistoryEntry): Promise<void>;
   /** Transactional outbox (CLAUDE.md §3.2.4) */
   enqueue(event: DomainEvent): Promise<void>;
+  /** Системийн нэгдсэн `audit_log` (NFR-4, @los/database recordAudit). Ил PII-гүй: төлөв, зорилтын төрөл/ID л */
+  audit(entry: AuditInput): Promise<void>;
   /** Хугацаа дууссан PENDING мөрүүдийг түгжинэ (SKIP LOCKED); `orgId` өгвөл зөвхөн тухайн байгууллагынх */
   lockOverdue(now: Date, limit: number, orgId?: string): Promise<ChangeRequestRow[]>;
   getPolicy(orgId: string, targetType: string, action: string): Promise<PolicyRow | null>;

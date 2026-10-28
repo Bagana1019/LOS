@@ -1,5 +1,5 @@
-import { HttpException } from '@nestjs/common';
 import type { MakerCheckerErrorCode } from '@los/contracts';
+import { DomainError } from '@los/nest-common';
 
 // MC-FR-8: алдааны код тогтмол (UI mn.json-д орчуулагдана), message нь монгол.
 export type { MakerCheckerErrorCode };
@@ -25,15 +25,13 @@ export const ERROR_STATUS = {
 } as const satisfies Record<MakerCheckerErrorCode, number>; // @los/contracts-ийн кодын жагсаалттай бүрэн тохирно (дутуу/илүү түлхүүр = compile алдаа)
 
 /**
- * HttpException тул домэйн модулийн контроллер `makerChecker.submit()`-ийг дуудахад ч Nest өөрөө 401/403/404/409/422 болгон
- * хөрвүүлнэ (filter-ийг контроллер бүрт залгах шаардлагагүй). Хариуны бие: {statusCode, code, message, details?}.
+ * Foundation-ийн `DomainError` (HttpException) — домэйн модулийн контроллер `makerChecker.submit()`-ийг дуудахад ч
+ * `AllExceptionsFilter` өөрөө 401/403/404/409/422 болгож `{code, message, details?, correlationId}` хэлбэрээр хариулна.
  */
-export class MakerCheckerError extends HttpException {
-  readonly httpStatus: number;
-  constructor(readonly code: MakerCheckerErrorCode, message: string, readonly details?: unknown) {
-    const httpStatus = ERROR_STATUS[code];
-    super({ statusCode: httpStatus, code, message, ...(details === undefined ? {} : { details }) }, httpStatus);
-    this.httpStatus = httpStatus;
+export class MakerCheckerError extends DomainError {
+  declare readonly code: MakerCheckerErrorCode;
+  constructor(code: MakerCheckerErrorCode, message: string, details?: unknown) {
+    super(code, message, ERROR_STATUS[code], details);
   }
 }
 

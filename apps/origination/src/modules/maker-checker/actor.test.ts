@@ -1,21 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { parseActor } from './actor';
+import type { RequestContext } from '@los/contracts';
+import { actorFrom } from './actor';
 
-describe('parseActor', () => {
-  it('requires X-User-Id', () => {
-    expect(() => parseActor({})).toThrowError(expect.objectContaining({ code: 'UNAUTHENTICATED', httpStatus: 401 }));
-    expect(() => parseActor({ 'x-user-id': '  ' })).toThrow();
+const ctx = (over: Partial<RequestContext> = {}): RequestContext => ({
+  userId: 'u1', roles: ['OFFICER'], branchId: 'B1', orgId: 'org1', customerId: null, correlationId: 'c1', ...over,
+});
+
+describe('actorFrom', () => {
+  it('maps the gateway context to an actor', () => {
+    expect(actorFrom(ctx())).toEqual({ userId: 'u1', roles: ['OFFICER'], branchId: 'B1', orgId: 'org1', correlationId: 'c1' });
   });
-  it('parses roles case-insensitively, drops unknown/duplicate roles', () => {
-    const a = parseActor({ 'x-user-id': 'u1', 'x-roles': 'officer, Approver ,GOD,officer', 'x-branch-id': 'B1', 'x-org-id': 'o1', 'x-correlation-id': 'c1' });
-    expect(a).toEqual({ userId: 'u1', roles: ['OFFICER', 'APPROVER'], branchId: 'B1', orgId: 'o1', correlationId: 'c1' });
+  it('requires a staff user (no userId → 401, also for customer self-service contexts)', () => {
+    expect(() => actorFrom(ctx({ userId: null }))).toThrowError(expect.objectContaining({ code: 'UNAUTHENTICATED' }));
+    expect(() => actorFrom(ctx({ userId: null, customerId: 'cust1' }))).toThrowError(expect.objectContaining({ code: 'UNAUTHENTICATED' }));
   });
-  it('defaults: no roles, no branch, default org, generated correlation id', () => {
-    const a = parseActor({ 'x-user-id': 'u1' }, 'acme');
-    expect(a).toMatchObject({ roles: [], branchId: null, orgId: 'acme' });
-    expect(a.correlationId).toMatch(/^[0-9a-f-]{36}$/);
-  });
-  it('takes the first value of repeated headers', () => {
-    expect(parseActor({ 'x-user-id': ['a', 'b'] }).userId).toBe('a');
+  it('drops unknown roles and keeps a null branch', () => {
+    expect(actorFrom(ctx({ roles: ['APPROVER', 'GOD', 'CUSTOMER'], branchId: null }))).toMatchObject({ roles: ['APPROVER'], branchId: null });
   });
 });

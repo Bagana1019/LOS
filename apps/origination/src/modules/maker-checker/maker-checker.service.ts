@@ -1,17 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  ApproveChangeRequest, ChangeRequestDecided, ChangeRequestSubmitted, POLICY_ACTION_UPDATE, POLICY_TARGET_TYPE, RejectChangeRequest, SubmitChangeRequest,
+  ApproveChangeRequest, POLICY_ACTION_UPDATE, POLICY_TARGET_TYPE, RejectChangeRequest, SubmitChangeRequest,
   type ChangeRequestDto, type ChangeRequestHistoryDto, type ChangeRequestPage, type ChangeRequestSummary,
   type ListChangeRequestsQuery, type MakerCheckerPolicyDto, type SubmitChangeResult,
 } from '@los/contracts';
+import { buildEvent } from '@los/database';
+import { Clock } from '@los/nest-common';
 import type { Actor } from './actor';
 import { ChangeConflictError, ChangeHandlerRegistry, ChangeValidationError, type ChangeHandler } from './change-handler';
 import {
   CHANGE_REQUEST_STORE, LockTimeoutError, PendingConflictError,
   type ChangeRequestRow, type ChangeRequestStore, type ChangeRequestTx, type HistoryRow,
 } from './change-request.store';
-import { CLOCK, type Clock } from './clock';
 import {
   canCancelNow, canDecideNow, canView, decideDenial, effectivePolicy, expiryFrom, isOverdue,
 } from './maker-checker.domain';
@@ -29,7 +30,7 @@ export class MakerCheckerService {
   constructor(
     @Inject(CHANGE_REQUEST_STORE) private readonly store: ChangeRequestStore,
     @Inject(ChangeHandlerRegistry) private readonly registry: ChangeHandlerRegistry,
-    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(Clock) private readonly clock: Clock,
   ) {}
 
   // ── Илгээх (maker) ─────────────────────────────────────────────────────────────
@@ -83,10 +84,9 @@ export class MakerCheckerService {
           await tx.enqueue(this.decidedEvent(inserted, 'APPLIED_DIRECT', actor, null, now));
         } else {
           await this.record(tx, inserted, 'SUBMITTED', null, actor, input.reason, now);
-          await tx.enqueue(ChangeRequestSubmitted.parse({
-            ...this.eventBase('ChangeRequestSubmitted', inserted, actor, now), ...this.ref(inserted),
-            requiredCheckerRoles: inserted.requiredCheckerRoles, branchId: inserted.branchId, expiresAt: inserted.expiresAt.toISOString(),
-          }));
+          await tx.enqueue(buildEvent(this.eventCtx(inserted, actor), 'ChangeRequestSubmitted', {
+            ...this.ref(inserted), requiredCheckerRoles: inserted.requiredCheckerRoles, branchId: inserted.branchId, expiresAt: inserted.expiresAt.toISOString(),
+          }, now));
         }
         return { row: inserted, now };
       });
@@ -258,16 +258,23 @@ export class MakerCheckerService {
     actor: Actor | null, comment: string | null, now: Date, data?: unknown,
   ) {
     await tx.appendHistory(row.id, { event, fromStatus: from, toStatus: row.status, actorId: actor?.userId ?? null, actorRoles: actor?.roles ?? [], comment, data, at: now });
+    // NFR-4: нэгдсэн audit_log. Агуулга (payload, шалтгаан, тайлбар) ЭНД орохгүй — зөвхөн төлөв ба зорилтын төрөл/ID (PII-гүй, docs/05 §8)
+    await tx.audit({
+      orgId: row.orgId, entity: 'CHANGE_REQUEST', entityId: row.id, action: `CHANGE_REQUEST_${event}`, actorId: actor?.userId ?? null,
+      beforeJson: from ? { status: from } : null,
+      afterJson: { status: row.status, mode: row.mode, targetType: row.targetType, targetId: row.targetId, targetAction: row.action },
+      applicationId: row.applicationId, correlationId: actor?.correlationId ?? row.correlationId,
+    });
   }
 
-  private eventBase<T extends string>(type: T, row: ChangeRequestRow, actor: Actor | null, now: Date) {
-    return { type, eventId: randomUUID(), occurredAt: now.toISOString(), version: 1 as const, orgId: row.orgId, actorId: actor?.userId ?? null, correlationId: actor?.correlationId ?? row.correlationId };
+  private eventCtx(row: ChangeRequestRow, actor: Actor | null) {
+    return { orgId: row.orgId, userId: actor?.userId ?? null, correlationId: actor?.correlationId ?? row.correlationId };
   }
   private ref(row: ChangeRequestRow) {
     return { changeRequestId: row.id, targetType: row.targetType, targetId: row.targetId, action: row.action, applicationId: row.applicationId, makerId: row.makerId };
   }
   private decidedEvent(row: ChangeRequestRow, outcome: Outcome, actor: Actor | null, checkerId: string | null, now: Date) {
-    return ChangeRequestDecided.parse({ ...this.eventBase('ChangeRequestDecided', row, actor, now), ...this.ref(row), outcome, checkerId });
+    return buildEvent(this.eventCtx(row, actor), 'ChangeRequestDecided', { ...this.ref(row), outcome, checkerId }, now);
   }
 
   private translate(e: unknown): unknown {

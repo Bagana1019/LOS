@@ -1,14 +1,14 @@
 // Модулийн бодит wiring + plug-in гэрээ (docs/05 §8): домэйн модуль MakerCheckerModule-ийг import хийж, өөрийн контроллероос
-// makerChecker.submit()-ийг дуудахад алдаа HTTP статус болж хөрвөх ёстой (filter-ийг контроллер бүрт залгахгүй).
+// makerChecker.submit()-ийг дуудахад алдаа HTTP статус болж хөрвөх ёстой (foundation-ийн AllExceptionsFilter; filter-ийг контроллер бүрт залгахгүй).
 import { Body, Controller, Inject, Injectable, Module, Param, Patch, type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { CommonModule } from '@los/nest-common';
 import request from 'supertest';
 import { z } from 'zod';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CurrentActor, type Actor } from './actor';
 import { ChangeHandlerRegistry, ChangeValidationError, type ApplyContext, type ChangeHandler } from './change-handler';
 import { CHANGE_REQUEST_STORE } from './change-request.store';
-import { MAKER_CHECKER_PRISMA } from './infra/prisma-client.provider';
 import { MakerCheckerModule } from './maker-checker.module';
 import { MakerCheckerService } from './maker-checker.service';
 import { InMemoryChangeRequestStore } from './testing/in-memory.store';
@@ -48,9 +48,8 @@ const http = () => request(app.getHttpServer());
 
 beforeAll(async () => {
   process.env.MAKER_CHECKER_SWEEP_SECONDS = '0'; // sweeper-ийг ажиллуулахгүй
-  const mod = await Test.createTestingModule({ imports: [DemoModule] })
+  const mod = await Test.createTestingModule({ imports: [CommonModule.forRoot(), DemoModule] })
     .overrideProvider(CHANGE_REQUEST_STORE).useValue(new InMemoryChangeRequestStore())
-    .overrideProvider(MAKER_CHECKER_PRISMA).useValue({})
     .compile();
   app = mod.createNestApplication();
   app.useLogger(false);
@@ -97,7 +96,7 @@ describe('plug-in contract: a domain controller calling submit() gets proper HTT
   ])('%s', async (_title, id, who, body, status, errCode) => {
     const res = await patch(id, who, body);
     expect(res.status).toBe(status);
-    expect(res.body).toMatchObject({ statusCode: status, code: errCode });
+    expect(res.body).toMatchObject({ code: errCode });
     expect(typeof res.body.message).toBe('string');
   });
 
