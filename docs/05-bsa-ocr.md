@@ -115,15 +115,17 @@ sequenceDiagram
 ### 3.2 Тооцоолол
 
 - `dtiIncome = verifiedMonthlyIncome × (1 − ББӨ)`; `DTI = (санал болгосон төлбөр + одоогийн өр) / dtiIncome` (томьёо, босго: `@los/calc`).
+- Орлогын найдвар (BSA-BR-4) = 100 × (0.4·давтамж + 0.4·тогтвортой байдал + 0.2·цэвэр байдал) — `@los/calc` `incomeReliability`. Давтамж/тогтвортой байдлыг **бүтэн календарийн саруудаар** (хэсэгчилсэн эхний/сүүлийн сар хасагдана; бүтэн сар 2-оос цөөн бол бүх сар) үнэлнэ — эс бөгөөс сарын 25-нд цалин авдаг тогтмол орлого ~80 оноо авч буруу шийтгэгдэнэ. Жин `BSA_RELIABILITY_WEIGHT_*` `[ТААМАГ]`.
 - Өөрийн дансны хоорондын шилжүүлэг (BSA-BR-5) орлого/зарлагаас хасагдана; «Бусад» ангиллын хувь `otherShareThreshold`-оос хэтэрвэл анхааруулга (BSA-BR-7).
 - `details` (орлого/зарлагын задаргаа, аргачлал) **хадгалагдахгүй**: хадгалсан ангилалаас хүсэлт бүрт дахин тооцоолно (`summary_json`-ийн схем үл мэдэгдэх түлхүүр хасдаг).
 - Postgres `jsonb` түлхүүрийн дарааллыг хадгалдаггүй тул хадгалсан/шинэ хураангуйг `canonicalJson`-оор (түлхүүр эрэмбэлсэн) харьцуулна (`summaryStale`).
 
 ## 4. REST API
 
-Бүх зам `/api` угтвартай (`configureBsaApp`: `main.ts` ба e2e тест хоёр ижил). Gateway-ийн proxy маршрут энэ PR-д **ороогүй** (§11).
-Хэрэглэгчийн контекст gateway-ийн толгойгоор: `X-User-Id` (заавал; байхгүй/буруу -> 401), `X-Roles` (таслалаар; хоосон/үл мэдэгдэх -> 403),
-`X-Org-Id` (байхгүй бол `DEFAULT_ORG_ID`, анхдагч `org-default`), `X-Branch-Id`, `X-Correlation-Id`. Хариу бүрт `X-Correlation-Id` буцна.
+Бүх зам `/api` угтвартай (`bootstrapService` + `configureBsaApp`: `main.ts` ба e2e тест хоёр ижил). Gateway Модуль 0-ийн ерөнхий proxy-гоор дамжуулна: `/api/scoring/bsa/**` -> `/api/bsa/**`,
+`/api/dms/ocr/**` -> `/api/ocr/**` (шинэ route нэмэх шаардлагагүй; `/api/scoring/bsa/categories|rules` бичих хүсэлт `settings:manage`-д хязгаарлагдсан).
+Хэрэглэгчийн контекст gateway-ийн толгойгоор: `X-User-Id` (заавал; байхгүй -> 401 `UNAUTHENTICATED`, глобал `CommonModule` guard), `X-Roles` (таслалаар; хоосон/үл мэдэгдэх -> 403),
+`X-Org-Id` (байхгүй бол `DEFAULT_ORG_ID`; хоёулаа байхгүй бол 401 `MISSING_ORG`), `X-Branch-Id`, `X-Correlation-Id`, `X-Internal-Token` (`INTERNAL_AUTH_SECRET` тохируулсан үед). Хариу бүрт `X-Correlation-Id` буцна.
 
 ### 4.1 Маршрут ба үүрэг
 
@@ -188,7 +190,7 @@ APPROVER зөвхөн **уншина**. Хандалтын хүрээ (service �
 ```json
 {
   "statusCode": 422,
-  "errorCode": "NO_COMPLETED_IMPORT",
+  "code": "NO_COMPLETED_IMPORT",
   "message": "Амжилттай импортлогдсон хуулга байхгүй тул системрүү татах боломжгүй.",
   "details": { },
   "issues": [{ "path": "periodMonths", "code": "invalid_type" }],
@@ -208,16 +210,16 @@ APPROVER зөвхөн **уншина**. Хандалтын хүрээ (service �
 ## 5. Тохиргоо ба орчны хувьсагч
 
 Анхдагч утга **кодонд нэг газар**; бизнесийн босго `BsaSettings`-ээс (кодонд хатуу бичихгүй). Буруу утга процесс **асахад** нэртэйгээр унана (fail fast).
-`NODE_ENV=production` үед `PII_ENCRYPTION_KEY`, `MINIO_ENDPOINT`, `REDIS_URL` заавал.
+`NODE_ENV=production` үед `DATA_ENCRYPTION_KEY[S]`, `DATA_INDEX_KEY`, `MINIO_ENDPOINT`, `REDIS_URL` заавал.
 
 | Бүлэг | Хувьсагч | Анхдагч | Тайлбар |
 | --- | --- | --- | --- |
 | Үндсэн | `DATABASE_URL` | — | PostgreSQL, schema `scoring` (Prisma) |
 | | `SCORING_PORT` | 4003 | HTTP порт |
-| | `DEFAULT_ORG_ID` | `org-default` | `X-Org-Id` толгойгүй үед |
-| PII | `PII_ENCRYPTION_KEY` | — (заавал) | base64, яг 32 байт: `openssl rand -base64 32`. AES-256-GCM + HMAC-SHA256 (HKDF дэд түлхүүр) |
-| | `PII_ENCRYPTION_KEY_PREVIOUS` | — | Түлхүүр солих үед хуучин түлхүүр (зөвхөн тайлахад) |
-| Файлын сан | `MINIO_ENDPOINT` | — | `host:port`. **Байхгүй бол in-memory store + анхааруулга: upload алга болно (зөвхөн dev)** |
+| | `DEFAULT_ORG_ID` | — | `X-Org-Id` толгойгүй үед (Модуль 0 `.env.example`) |
+| Шифрлэлт (Модуль 0) | `DATA_ENCRYPTION_KEY` / `DATA_ENCRYPTION_KEYS` + `DATA_ENCRYPTION_KEY_ID` | — (заавал; `NODE_ENV=test`-д тестийн түлхүүр) | base64, яг 32 байт: `openssl rand -base64 32`. Түлхүүрийн цуглуулга = rotation. Файлын bytes-д мөн адил түлхүүрээс HKDF дэд түлхүүр |
+| | `DATA_INDEX_KEY` | — (заавал) | `hash()` / blind index-ийн HMAC түлхүүр (base64, 32 байт) |
+| Файлын сан | `MINIO_ENDPOINT` (+ `MINIO_PORT`) | — | `host:port` эсвэл Модуль 0-ийн `.env.example`-ийн адил `host` + `MINIO_PORT` (порт байхгүй `host` хэлбэрт л хэрэглэнэ). **Байхгүй бол in-memory store + анхааруулга: upload алга болно (зөвхөн dev)** |
 | | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | |
 | | `MINIO_USE_SSL`, `MINIO_REGION` | `false`, — | |
 | | `BSA_BUCKET` | `bsa-statements` | Анхны хэрэглээнд автоматаар үүснэ |
@@ -256,15 +258,10 @@ Parser-ийн `REGISTRY_DEFAULTS`, `COVERAGE_DEFAULTS`, `VERIFY_DEFAULTS`-ийн
 ### Орчин асаах
 
 ```bash
-# PostgreSQL schema + migration + seed (ангилал, дүрэм): apps/scoring/prisma/README.md «Migration»
-# (init script + baseline; scoring.outbox аль хэдийн байгаа үед `migrate deploy` шууд ажиллахгүй байж болно)
-psql "$DATABASE_URL" -f packages/database/init/00-schemas.sql
-cd apps/scoring
-npx prisma db execute --file prisma/migrations/20261028113329_bsa_init/migration.sql --schema prisma/schema.prisma
-npx prisma migrate resolve --applied 20261028113329_bsa_init --schema prisma/schema.prisma
-DATABASE_URL=… npx tsx prisma/seed.ts
+cp .env.example .env && docker compose up -d && pnpm install      # CLAUDE.md §7
+pnpm db:generate && pnpm db:migrate && pnpm db:seed               # baseline (M00) + 20261028150000_bsa_statement_analysis + seed (apps/scoring/prisma/README.md)
 pnpm exec turbo run build --filter=@los/scoring
-DATABASE_URL=… REDIS_URL=redis://… PII_ENCRYPTION_KEY=$(openssl rand -base64 32) INTEGRATION_MODE=real node apps/scoring/dist/main.js
+REDIS_URL=redis://… MINIO_ENDPOINT=localhost:9000 INTEGRATION_MODE=real node apps/scoring/dist/main.js   # түлхүүрүүд .env-ээс
 curl localhost:4003/api/health
 ```
 
@@ -326,7 +323,7 @@ curl -X POST http://dms:PORT/api/ocr/extract -F file=@id-card.jpg -F docType=AUT
 
 ## 9. Аюулгүй байдал ба PII (NFR-3)
 
-- DB дахь PII багана `v1:` AES-GCM envelope: тайлбар, харьцсан нэр/данс, файлын нэр, данс/IBAN/эзэмшигч, харилцагчийн snapshot, өөрийн дансууд. Хайлтын hash (`register_no_hash`, `sha256`, `statement_key`, `dedupe_key`) нь түлхүүртэй HMAC.
+- DB дахь PII багана Модуль 0-ийн `@los/database` crypto-ийн `v1.<keyId>.<iv>.<tag>.<ct>` (AES-256-GCM, AAD `scoring.bsa`): тайлбар, харьцсан нэр/данс, файлын нэр, данс/IBAN/эзэмшигч, харилцагчийн snapshot, өөрийн дансууд. Хайлтын hash (`register_no_hash`, `statement_key`, `dedupe_key`) нь foundation-ий `blindIndex` (түлхүүртэй HMAC, `DATA_INDEX_KEY`); `sha256` нь файлын агуулгын hash.
 - Object store-д файл **шифрлэгдэж** очно (объектын түлхүүр AAD-д холбогдсон); объектын түлхүүрт PII байхгүй (`bsa/<org>/<analysisId>/<jobId>`).
 - Лог/алдаа/анхааруулга/event/түүхэнд нэр, регистр, данс, тайлбар, OCR текст **орохгүй** (зөвхөн код, тоо, id, мөрийн дугаар). `pii.test.ts`, e2e лог шалгалт.
 - Хариуд регистр/данс/утас далдлагдсан (`******0203`; `counterpartyAccount` мөн).
@@ -336,9 +333,8 @@ curl -X POST http://dms:PORT/api/ocr/extract -F file=@id-card.jpg -F docType=AUT
 ## 10. Хязгаарлалт ба мэдэгдэж буй асуудал
 
 1. **Parser-ууд баталгаажаагүй** (§7). Бодит хуулгад ажиллана гэсэн баталгаа байхгүй.
-2. **PDF + зураг хоёрыг нэг шинжилгээнд оруулбал давхар тоологдоно.** `dedupe_key` нь (данс, огноо, цаг, чиглэл, дүн, үлдэгдэл, **нормчилсон тайлбар**, n)-ийг hash хийдэг;
-   OCR тайлбар PDF-ийнхээс өөр болмогц ижил гүйлгээ дахин хадгалагдана (туршилтаар 27 гүйлгээний оронд 33). `STATEMENT_OVERLAP` анхааруулга гарна (мессеж нь «автоматаар нэг болгосон» гэж хэлдэг ч зөвхөн яв-яг ижил мөрийн хувьд үнэн), OCR-ээр өөр болсон мөр хасагдахгүй.
-   Засвар нь persistence/pipeline дотор (тайлбарыг hash-ээс хасах эсвэл OCR-д fuzzy match) — энэ PR-ийн хүрээнээс гадуур.
+2. **PDF + зураг хоёрыг нэг шинжилгээнд оруулах:** `dedupe_key` нь (данс, огноо, цаг, чиглэл, дүн, үлдэгдэл)-ийг hash хийж, **үлдэгдэл БАЙХГҮЙ мөрөнд л** нормчилсон тайлбарыг нэмнэ — тиймээс OCR-ээр тайлбар нь өөр болсон ч
+   үлдэгдэлтэй мөр PDF-тэй давхцаж нэг болно. Үлдэгдэлгүй мөр (зарим банк/CSV) OCR тайлбар өөр бол давхар хадгалагдаж болно; `STATEMENT_OVERLAP` анхааруулга гарна.
 3. OCR тайлбар алдаатай (`O`/`0`, холимог үсэг) -> ангилал буруу болох эрсдэл; `OCR_LOW_CONFIDENCE` ба гараар засварыг ашигла.
 4. `MINIO_ENDPOINT` үгүй бол in-memory store (дахин асахад файл алдагдана, `retry` боломжгүй). Production-д заавал MinIO.
 5. `details` (задаргаа) хадгалагдахгүй -> уншихад (тойм, задаргаа) бүр дахин тооцоолно (том шинжилгээнд зардал).
@@ -356,7 +352,7 @@ curl -X POST http://dms:PORT/api/ocr/extract -F file=@id-card.jpg -F docType=AUT
 | --- | --- | --- |
 | Сэжигтэй гүйлгээний detector 8 дохио, review дэлгэц, бөөнөөр шийдвэрлэх (M12c, BSA-FR-5) | Тусдаа unit | `bsa/suspicion` модуль `SUSPICION_COUNTER`-ийг `BsaModule.register({ suspicionCounter })`-аар өгнө; `pendingSuspiciousCount` -> `finalize` BLOCK бодлого, INT-4 хураангуй |
 | UI (React: upload, тойм, задаргаа, reclassify дэлгэц) | Backend PR | `apps/web`; энэ баримтын §4 API-г дуудна |
-| Gateway proxy маршрут (`/api/bsa/**`, `/api/ocr/**`), JWT -> `X-*` толгой, query-string лог хориг | Gateway stub | `apps/gateway/src/modules/proxy`; толгойн гэрээ §4 |
+| Gateway-д query-string (`registerNo`) лог хориг | Gateway-ийн ерөнхий лог тохиргоо | `apps/gateway`; зөвхөн лог-д query-г хасах (route нэмэх шаардлагагүй) |
 | Хамтран зээлдэгчийн нэгтгэл (BSA-BR-9, BSA-FR-4.10) | Хүсэлтийн түвшний нэгтгэл M12c | Хүсэлтийн түвшний нэгтгэл `FinalizeService`/`RecalculationService` дээр (одоо шинжилгээ бүр тусдаа; нэг хүсэлтэд нэг хувилбар INT-7) |
 | QR баталгаажуулалт | Банк бүрийн endpoint/эрх мэдэгдэхгүй | `parsers/verifier/qr-verifier.ts` `QrVerifier` порт, `QR_VERIFIER` token-д банк тус бүрийн адаптер |
 | XLSX | Шийдвэр: CSV/PDF | `parsers/text-extraction/` шинэ `xlsx-text.extractor.ts` + `file-kind.ts` дахь `XLSX` салаа |
@@ -372,11 +368,11 @@ cd apps/scoring
 npx vitest run src/modules/bsa                 # DB/Redis шаардахгүй (интеграцийн тест skip)
 npx vitest run src/modules/bsa/import/e2e      # HTTP e2e (in-memory repository + inline queue, supertest)
 npx eslint src
-# Бодит Postgres + Redis (заавал биш; DB-ийн нэрэнд `test` байх ёстой, TRUNCATE хийнэ):
-TEST_DATABASE_URL=postgresql://…/los_scoring_test REDIS_URL_TEST=redis://… PII_ENCRYPTION_KEY=$(openssl rand -base64 32) \
-  npx vitest run --no-file-parallelism src/modules/bsa
+# Бодит Postgres + Redis (заавал биш; DB-ийн нэр `test`-ээр төгснө; globalSetup `scoring` schema-г шинээр migrate + seed хийнэ, тест TRUNCATE хийнэ):
+TEST_DATABASE_URL=postgresql://…/los_scoring_test REDIS_URL_TEST=redis://… npx vitest run
 ```
 
+- `test/bsa.e2e.test.ts`: жинхэнэ `AppModule` (Модуль 0-ийн guard/filter/events + BSA) — gateway толгойгоор 401/403/201/400 (`TEST_DATABASE_URL` шаардана).
 - `import/e2e/bsa-api.e2e.test.ts`: бүтэн урсгал (үүсгэх -> upload 2 PDF -> ажлууд -> тойм -> шүүлт -> reclassify -> recalculate -> задаргаа -> finalize -> summary -> scoring-input),
   хандалтын матриц, upload ба алдааны замууд, retry, BLOCK/WARN, retention, PII-гүй лог.
 - `import/e2e/bsa-api.integration.e2e.test.ts` (`TEST_DATABASE_URL` + `REDIS_URL_TEST`): ижил урсгал бодит Prisma + BullMQ + AES-GCM дээр; DB-ийн түүхий мөрөнд PII ил байхгүйг шалгана.
