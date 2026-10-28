@@ -4,6 +4,26 @@
 бичих `BsaSummary` ба тооцооллын `BsaScoringInput`-ийг бүрдүүлнэ. Бүгд цэвэр функц (I/O-гүй) + нимгэн Nest wrapper.
 DTI-ийн томьёо/босго энд БАЙХГҮЙ — зөвхөн `@los/calc`-д (нэг эх сурвалж).
 
+> Бүх тоо **зохиомол** хуулга дээр гараар тооцож шалгагдсан. Бодит банкны хуулгаар баталгаажаагүй (parser-ууд `verified: false`);
+> бүтэн баримт: `docs/05-bsa-ocr.md`.
+
+## Хэн дууддаг (REST -> DTI)
+
+`DtiModule` нь `BsaModule`-д холбогдсон. `import/recalculation.service.ts` нь `DtiAnalysisService.analyze` -> `buildBsaSummary` / `buildScoringInput`-ийг дуудна:
+
+| REST | Юу тооцогдох |
+| --- | --- |
+| импорт дуусах (`ImportPipelineService`) | мөр хадгалах, ангилах, DTI, `DRAFT` хураангуй хадгалах (нэг транзакц) |
+| `POST /bsa/analyses/:id/recalculate` `{proposedMonthlyPayment?, periodMonths?, costOfGoodsRate?}` | зөвхөн DTI (`DtiRunInput` өөрчлөгдөнө; `null` = анхдагч руу) |
+| `POST /bsa/analyses/:id/recalculate` (бие хоосон) | ангилал + DTI бүгд |
+| `POST /bsa/analyses/:id/reclassify`, `POST /bsa/rules {analysisId}` | өөрчлөгдсөн гүйлгээ + DTI |
+| `POST /bsa/analyses/:id/finalize` | `BsaSummary` (INT-4) -> LOS; `ANALYZED` |
+| `GET /bsa/analyses/:id/scoring-input` | `BsaScoringInput` (INT-5; зөвхөн ANALYZED) |
+| `GET /bsa/analyses/:id/breakdown` | `details` (ангилал x сар, аргачлал): хадгалагдахгүй, ангилалаас дахин тооцоолно |
+
+`BsaSettings`-ээс (`toDtiParams`): ББӨ (`costOfGoodsRate`), `maxDti`, Бага/Дунд/Өндөр завсар, `otherShareThreshold`, найдварын жин.
+Кодонд хатуу бичсэн бизнес утга байхгүй.
+
 ## Шаардлагын хамаарал
 
 | Шаардлага | Хаана |
@@ -65,12 +85,18 @@ const out = dtiAnalysisService.analyze({ classified, categories, params, otherSh
 cd apps/scoring && npx vitest run src/modules/bsa/dti
 ```
 
-`dti-integration.test.ts` — `computeBsaDti`-г ҮНЭХЭЭР дуудах цорын ганц файл (гараар тооцсон тоо: нийт сарын орлого 4,666,666.67,
+HTTP e2e (`import/e2e/bsa-api.e2e.test.ts`, бодит Postgres дээр мөн) нь `computeBsaDti`-г бүтэн урсгалаар дууддаг, гараар тооцсон утгатай:
+суурь 27 гүйлгээ, баталгаажсан орлого 1,350,000, DTI орлого 1,215,000, 41.2% MEDIUM; «Борлуулалт» `BUSINESS_INCOME` болгоход 27.4% LOW;
+төлбөр 700,000 үед 60.4% HIGH.
+
+`dti-integration.test.ts` — `computeBsaDti`-г unit түвшинд ҮНЭХЭЭР дуудах файл (гараар тооцсон тоо: нийт сарын орлого 4,666,666.67,
 баталгаажсан 2,700,000, DTI орлого 2,430,000, цэвэр мөнгөн урсгал 1,200,000, өр төлөлт 200,000, өрхийн зардал 100,000, DTI 20.6% LOW).
 Бусад тест `computeBsaDti`-г дууддаггүй. Тестийн өгөгдөл зохиомол.
 
 ## Нээлттэй асуудал
 
-- `BsaSummary` схемд `householdExpenseMonthly` байхгүй (зөвхөн `BsaScoringInput`-д).
+- `BsaSummary` схемд `householdExpenseMonthly` байхгүй (зөвхөн `BsaScoringInput`, мөн `details.dti`-д).
 - `@los/contracts` нь `BsaStatus` төрөл биш зөвхөн const tuple экспортолдог — энд локал төрөл тодорхойлсон.
-- `DtiModule`/`ClassifyModule`-ийг app/BsaModule-д холбох нь энэ unit-ийн гадна.
+- `details` хадгалагдахгүй (`summary_json`-ийн схем үл мэдэгдэх түлхүүр хасдаг): задаргаа авах бүрд ангилсан гүйлгээнээс дахин тооцоолно.
+- `pendingSuspiciousCount` нь `SUSPICION_COUNTER` портоос (M12c хүртэл `NullSuspicionCounter` = 0).
+- Хамтран зээлдэгчийн хүсэлтийн түвшний нэгтгэл (BSA-BR-9) энд ороогүй: шинжилгээ бүр нэг зээлдэгчийн.
