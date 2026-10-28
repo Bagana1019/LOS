@@ -17,6 +17,8 @@ export const ValuationCompleted = base.extend({ type: z.literal('ValuationComple
 export const DocumentUploaded = base.extend({ type: z.literal('DocumentUploaded'), documentId: z.string(), applicationId: z.string().nullable(), kind: z.string() });
 // CLAUDE.md §3.2.8: нийтлэг тохиргоо өөрчлөгдөхөд бусад сервис projection-аа шинэчилнэ
 export const SettingsChanged = base.extend({ type: z.literal('SettingsChanged'), key: z.string(), productId: z.string().nullable() });
-export const DomainEvent = z.discriminatedUnion('type', [ApplicationSubmitted, ApplicationApproved, ApplicationReturned, ApplicationStatusChanged, DisbursementApproved, KycCompleted, StatementImported, ScoringCompleted, ValuationCompleted, DocumentUploaded, SettingsChanged, ...MakerCheckerEvents]);
+export const BorrowersChanged = base.extend({ type: z.literal('BorrowersChanged'), applicationId: z.string(), change: z.enum(['ADDED','UPDATED','REMOVED','PRIMARY_CHANGED']), customerId: z.string(), role: z.enum(['PRIMARY','CO_BORROWER','GUARANTOR','PLEDGOR']), borrowers: z.array(z.object({ customerId: z.string(), role: z.enum(['PRIMARY','CO_BORROWER','GUARANTOR','PLEDGOR']), incomeIncluded: z.boolean() })) });
+export const PaymentReceived = base.extend({ type: z.literal('PaymentReceived'), paymentId: z.string(), applicationId: z.string(), provider: z.enum(['QPAY','SOCIALPAY','BANK_TRANSFER']), amount: z.number(), currency: z.string(), paidAt: z.string().datetime(), unallocatedAmount: z.number(), scheduleRowIds: z.array(z.string()) });
+export const DomainEvent = z.discriminatedUnion('type', [ApplicationSubmitted, ApplicationApproved, ApplicationReturned, ApplicationStatusChanged, DisbursementApproved, KycCompleted, StatementImported, ScoringCompleted, ValuationCompleted, DocumentUploaded, SettingsChanged, BorrowersChanged, PaymentReceived, ...MakerCheckerEvents]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export const EVENT_STREAM = 'los:events';

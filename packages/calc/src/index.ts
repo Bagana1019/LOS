@@ -4,3 +4,6 @@ export * from './dti';
 export * from './ltv';
 export * from './sosco-score';
 export * from './risk-pricing';
+export * from './aging';
+export * from './payment-allocation';
+export * from './reminders';
