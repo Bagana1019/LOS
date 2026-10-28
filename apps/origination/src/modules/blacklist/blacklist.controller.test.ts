@@ -141,7 +141,7 @@ describe('BlacklistController (HTTP)', () => {
       await api().get('/api/blacklist').set(as(roles)).expect(200);
     });
 
-    it.each(['OFFICER', 'APPROVER', 'BOGUS', ''])('forbids writes and import for role "%s"', async (roles) => {
+    it.each(['OFFICER', 'APPROVER', 'BRANCH_MANAGER', 'BOGUS', ''])('forbids writes and import for role "%s"', async (roles) => {
       const { body } = await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(201);
       await api().post('/api/blacklist').set(as(roles)).send(entryInput({ registerNo: 'АА87654321' })).expect(403);
       await api().patch(`/api/blacklist/${body.id}`).set(as(roles)).send({ name: 'x' }).expect(403);
@@ -150,7 +150,7 @@ describe('BlacklistController (HTTP)', () => {
       await api().post('/api/blacklist/import').set(as(roles, { 'Content-Type': 'text/csv' })).send(`${CSV_HEADER}\n`).expect(403);
     });
 
-    it.each(['BRANCH_MANAGER', 'ADMIN', 'OFFICER,BRANCH_MANAGER', 'officer, admin'])('lets "%s" write', async (roles) => {
+    it.each(['ADMIN', 'OFFICER,ADMIN', 'officer, admin'])('lets "%s" write', async (roles) => {
       await api().post('/api/blacklist').set(as(roles)).send(entryInput()).expect(201);
     });
 
@@ -161,7 +161,7 @@ describe('BlacklistController (HTTP)', () => {
 
   describe('POST /api/blacklist', () => {
     it('creates an entry (201) that matches the contract and leaks neither hash nor ciphertext', async () => {
-      const res = await api().post('/api/blacklist').set(as('BRANCH_MANAGER', { 'X-Branch-Id': 'branch-9' })).send(entryInput()).expect(201);
+      const res = await api().post('/api/blacklist').set(as('ADMIN', { 'X-Branch-Id': 'branch-9' })).send(entryInput()).expect(201);
 
       expect(BlacklistEntry.parse(res.body)).toMatchObject({ registerNo: REGISTER, orgId: 'org-1', registeredBy: 'user-1', isActive: true, listType: 'DELINQUENT' });
       expect(JSON.stringify(res.body)).not.toMatch(/registerNoHash|registerNoEncrypted|fake:/);
