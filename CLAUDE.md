@@ -5,7 +5,7 @@
 ## 1. Баримтууд
 | Файл | Агуулга |
 | --- | --- |
-| `docs/01-los-requirements.md` | 12 модуль, төлвийн мөчлөг, процесс, FR-1…FR-14, BR-1…BR-13, NFR, шийдвэрүүд |
+| `docs/01-los-requirements.md` | 12 модуль, төлвийн мөчлөг, процесс, FR-1…FR-14, BR-1…BR-14, NFR, шийдвэрүүд |
 | `docs/02-bsa-requirements.md` | BSA: дэлгэц, 7 алхам, ангилал/DTI, 8 дохио, INT-1…10 |
 | `docs/03-data-model.md` | Enum, хүснэгт, талбар (§5-д сервис бүрт хуваарилсан) |
 | `docs/04-build-plan.md` | Модуль 0–14 дараалал, acceptance criteria |
@@ -112,7 +112,7 @@ flowchart LR
 | Сервис | Хүснэгтүүд |
 | --- | --- |
 | gateway (`iam`) | org, branch, user, role, session, audit_log (нэвтрэлт) |
-| origination | customer, customer_contact, customer_bank_account, loan_application, _borrower, _step, income_*, product, approval_level(_member), contract_number_template, setting, approval_request, approval_vote, decision_record, contract (meta), official_letter (meta), disbursement_request, repayment_schedule(_row), blacklist, notification, comment, audit_log |
+| origination | customer, customer_contact, customer_bank_account, loan_application, _borrower, _step, income_*, product, approval_level(_member), contract_number_template, setting, pricing_tier, approval_request, approval_vote, decision_record, contract (meta), official_letter (meta), disbursement_request, repayment_schedule(_row), blacklist, notification, comment, audit_log |
 | kyc | inquiry, unregistered_loan, kyc_check, aml_screening |
 | scoring | calculation, sosco_model, sosco_result, bsa_analysis, bsa_import_job, bsa_transaction, bsa_category, bsa_rule, bsa_suspicion |
 | valuation | collateral (үнэлгээний тал), collateral_valuation, base_price, haircut_rule |
