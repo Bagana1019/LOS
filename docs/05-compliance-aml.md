@@ -272,7 +272,6 @@ Web → зөвхөн gateway (CLAUDE.md §3.2.1): gateway ерөнхий proxy-�
 - origination → kyc `POST /aml/screen` дуудагч, G1 хаалт; `AmlScreeningCompleted`/`AmlHitReviewed`-ийн сонсогч (origination, dwh-sync); хар жагсаалтын UI (`/los/loan-application/blacklist` одоо хоосон scaffold), харилцагчийн картын AML хэсэг, шийдвэрлэх дэлгэц.
 - Gateway: `/api/kyc/aml/…` ерөнхий proxy-оор дамжина, AML-д зориулсан route-policy мөр, rate limit нэмээгүй.
 - Rescreen-ийг cron/BullMQ-ээр автоматаар дуудах wiring (одоо ADMIN `POST /aml/rescreen` гараар).
-- Repository нь outbox мөрийг `tx.outbox.create`-ээр шууд бичдэг, `enqueueOutbox` (`DomainEvent.parse`-тай) ашигладаггүй. Relay нийтлэхдээ `DomainEvent.parse` хийж, алдаатай мөр дээр зогсдог тул схемд нийцэхгүй нэг event outbox-ийн дараагийн мөрүүдийг гацаана. Event бүр тестэд `DomainEvent.parse`-аар шалгагддаг.
 - Maker-checker (өөр thread) бэлэн болоход hit шийдвэрлэлт, хар жагсаалтын өөрчлөлтийг 4 нүдний урсгалд холбоно; одоо `requireSeparateReviewer` хамгаалалт.
 - **Хар жагсаалтын аудит (FR-13.5, who/when/before/after)**: origination-ийн blacklist модуль `audit_log` бичихгүй (суурь `recordAudit` бэлэн болсон ч холбоогүй). Үүсгэх/засах/идэвхгүй болгох бүрийн цорын ганц ул мөр нь `BlacklistEntryChanged` outbox event бөгөөд түүнд `actorId` байгаа ч `reasonText`, өмнөх төлөв (before) байхгүй.
 - **Алдааны биеийн `issues`**: глобал `AllExceptionsFilter` zod-ийн `issues`-ийг дамжуулдаггүй (§7) — клиент аль талбар буруу байгааг хариунаас олохгүй. Filter-ийг (nest-common) `issues`/`details`-ээр өргөтгөх шаардлагатай.

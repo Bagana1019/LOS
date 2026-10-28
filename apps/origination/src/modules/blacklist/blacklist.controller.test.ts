@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import type { ServerResponse } from 'node:http';
 import { connect } from 'node:net';
 import type { AddressInfo } from 'node:net';
 import type { INestApplication, LoggerService } from '@nestjs/common';
@@ -436,7 +437,11 @@ describe('BlacklistController (HTTP)', () => {
 
   // [18]/[31] csv-body.middleware нь guard-аас өмнө ажилладаг: нэвтрэлт/дүр/хэмжээг body-г уншихаас ӨМНӨ шалгана.
   describe('CSV import is authorised and size-checked before the body is read', () => {
+    /** Сервер өөрийн явуулсан статусууд. Клиент зөвхөн тасралтын дараа уншдаг тул (сервер body-г уншихгүйгээр хаахад RST ирнэ) status нь null болж болно. */
+    const served: number[] = [];
     const listen = async () => {
+      served.length = 0;
+      app.getHttpServer().prependListener('request', (_req: unknown, res: ServerResponse) => { res.once('finish', () => served.push(res.statusCode)); });
       await app.listen(0, '127.0.0.1');
       return (app.getHttpServer().address() as AddressInfo).port;
     };
@@ -471,7 +476,8 @@ describe('BlacklistController (HTTP)', () => {
     it('stops accepting a chunked stream once the cap is exceeded: 413 and the connection is closed, not drained', async () => {
       const port = await listen();
       const res = await streamChunked(port, raw({}), 64 * 1024 * 1024);
-      expect(res.status).toBe(413);
+      // Статусыг серверийн талаас шалгана: клиент 413-ыг уншихаас өмнө RST (EPIPE) авч болох тул res.status тогтворгүй.
+      expect(served).toEqual([413]);
       expect(res.closed).toBe(true);
       // Сервер дуустал нь уншдаг (drain) байсан бол 64 MB бүгд явна; socket-ийн буфер (~10 MB) хүртэл л зөвшөөрнө.
       expect(res.sent).toBeLessThan(32 * 1024 * 1024);
@@ -481,7 +487,7 @@ describe('BlacklistController (HTTP)', () => {
       const port = await listen();
       const anon = await streamChunked(port, { 'X-Org-Id': 'org-1' }, 64 * 1024 * 1024);
       const officer = await streamChunked(port, raw({ 'X-Roles': 'OFFICER' }), 64 * 1024 * 1024);
-      expect([anon.status, officer.status]).toEqual([401, 403]);
+      expect(served).toEqual([401, 403]);
       expect(anon.sent).toBeLessThan(32 * 1024 * 1024);
       expect(officer.sent).toBeLessThan(32 * 1024 * 1024);
       expect(repo.events).toHaveLength(0);
