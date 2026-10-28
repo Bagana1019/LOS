@@ -37,6 +37,8 @@ export const ReviewAction = ['APPROVE','RECLASSIFY','EXCLUDE'] as const;
 export type ReviewAction = typeof ReviewAction[number];
 export const NotificationType = ['APPROVAL_REQUESTED','RETURNED','APPROVED','DISBURSEMENT_APPROVED','SLA_BREACH','MENTION'] as const;
 export type NotificationType = typeof NotificationType[number];
+export const RiskBand = ['GREEN','YELLOW','RED'] as const;
+export type RiskBand = typeof RiskBand[number];
 export const UserRole = ['OFFICER','BRANCH_MANAGER','APPROVER','ADMIN'] as const;
 export type UserRole = typeof UserRole[number];
 
