@@ -1,4 +1,6 @@
 // Schema-per-service: зөвхөн `kyc` schema. Өөр schema-ийн хүснэгт рүү FK хориотой — ID-г string-ээр хадгална.
+// Эзэмшил: inquiry, unregistered_loan, kyc_check, aml_screening (CLAUDE.md §4). application_id/customer_id нь origination-ийн ID (string).
+// Дүрэм: docs/03-data-model.md (мөнгө Decimal(18,2), харьцаа Decimal(7,4) бутархай, enum-шиг талбар String — утгыг @los/contracts шалгана).
 generator client {
   provider        = "prisma-client-js"
   output          = "../node_modules/.prisma/client-kyc"
@@ -11,7 +13,6 @@ datasource db {
   schemas  = ["kyc"]
 }
 
-// TODO(M00): docs/03-data-model.md-ийн энэ сервист хамаарах хүснэгтүүдийг энд нэм. @@schema("kyc") заавал.
 model Outbox {
   id          String    @id @default(uuid())
   type        String
@@ -19,6 +20,107 @@ model Outbox {
   createdAt   DateTime  @default(now()) @map("created_at")
   publishedAt DateTime? @map("published_at")
 
+  @@index([publishedAt, createdAt])
   @@map("outbox")
+  @@schema("kyc")
+}
+
+model ProcessedEvent {
+  consumer    String
+  eventId     String   @map("event_id")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@id([consumer, eventId])
+  @@map("processed_events")
+  @@schema("kyc")
+}
+
+/// FR-3: ЗМС, FICO, ХУР гэх мэт лавлагаа. fetched_at/expires_at → хуучралтын анхааруулга (setting inquiry.stale_days).
+/// raw_json нь гадаад системийн хариуг хэвээр агуулдаг (хувийн мэдээлэлтэй) — M3-д шифрлэх эсэхийг шийднэ (DECISIONS.md).
+model Inquiry {
+  id            String    @id @default(uuid())
+  orgId         String    @map("org_id")
+  applicationId String    @map("application_id")
+  customerId    String    @map("customer_id")
+  source        String // InquirySource
+  fetchedAt     DateTime  @default(now()) @map("fetched_at")
+  fetchedBy     String?   @map("fetched_by")
+  expiresAt     DateTime? @map("expires_at")
+  rawJson       Json?     @map("raw_json")
+  summaryJson   Json?     @map("summary_json") // active_loan_count, total_disbursed, outstanding, monthly_payment, fico_score, dti…
+  warningLevel  String?   @map("warning_level")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdBy     String?   @map("created_by")
+  updatedBy     String?   @map("updated_by")
+
+  @@index([applicationId, customerId, source, fetchedAt])
+  @@index([customerId])
+  @@map("inquiry")
+  @@schema("kyc")
+}
+
+/// ЗМС-д бүртгэлгүй зээл (гараар).
+model UnregisteredLoan {
+  id             String   @id @default(uuid())
+  orgId          String   @map("org_id")
+  applicationId  String   @map("application_id")
+  customerId     String   @map("customer_id")
+  lenderName     String   @map("lender_name")
+  amount         Decimal  @db.Decimal(18, 2)
+  monthlyPayment Decimal  @map("monthly_payment") @db.Decimal(18, 2)
+  note           String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdBy      String?  @map("created_by")
+  updatedBy      String?  @map("updated_by")
+
+  @@index([applicationId, customerId])
+  @@map("unregistered_loan")
+  @@schema("kyc")
+}
+
+/// KYC шалгалтын үр дүн (хар жагсаалт, PEP, хамааралтай этгээд, барьцааны өмчлөл). BR-9: result=WARNING нь хориг биш.
+model KycCheck {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  applicationId String?  @map("application_id")
+  customerId    String   @map("customer_id")
+  checkType     String   @map("check_type") // BLACKLIST | PEP | RELATED_PARTY | OWNERSHIP
+  result        String // CLEAR | WARNING | HIT
+  detailsJson   Json?    @map("details_json")
+  checkedAt     DateTime @default(now()) @map("checked_at")
+  checkedBy     String?  @map("checked_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdBy     String?  @map("created_by")
+  updatedBy     String?  @map("updated_by")
+
+  @@index([customerId, checkType, checkedAt])
+  @@index([applicationId])
+  @@map("kyc_check")
+  @@schema("kyc")
+}
+
+/// Мөнгө угаахын эсрэг (AML) шалгалт: хориглох жагсаалтын тулгалт, эрсдэлийн оноо (customer.aml_risk_score-ийн эх сурвалж).
+model AmlScreening {
+  id         String    @id @default(uuid())
+  orgId      String    @map("org_id")
+  customerId String    @map("customer_id")
+  listName   String    @map("list_name")
+  matchScore Decimal?  @map("match_score") @db.Decimal(5, 2) // 0–100
+  riskScore  Int?      @map("risk_score")
+  status     String    @default("CLEAR") // CLEAR | POTENTIAL_MATCH | CONFIRMED | DISMISSED
+  rawJson    Json?     @map("raw_json")
+  screenedAt DateTime  @default(now()) @map("screened_at")
+  reviewedBy String?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  createdBy  String?   @map("created_by")
+  updatedBy  String?   @map("updated_by")
+
+  @@index([customerId, screenedAt])
+  @@map("aml_screening")
   @@schema("kyc")
 }

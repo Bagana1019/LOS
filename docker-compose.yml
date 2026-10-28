@@ -1,21 +1,32 @@
+# Хөгжүүлэлтийн дэд бүтэц: `docker compose up -d`, дараа нь `pnpm dev` (CLAUDE.md §7). Апп-ууд хост дээр ажиллана.
 services:
   postgres:
     image: postgres:16
     environment: { POSTGRES_USER: los, POSTGRES_PASSWORD: los, POSTGRES_DB: los }
     ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data", "./packages/database/init:/docker-entrypoint-initdb.d"]
+    volumes: ["pgdata:/var/lib/postgresql/data", "./packages/database/init:/docker-entrypoint-initdb.d:ro"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U los -d los"], interval: 5s, timeout: 3s, retries: 20 }
   dwh:
     image: postgres:16
     environment: { POSTGRES_USER: dwh, POSTGRES_PASSWORD: dwh, POSTGRES_DB: dwh }
     ports: ["5433:5432"]
-    volumes: ["dwhdata:/var/lib/postgresql/data"]
+    volumes: ["dwhdata:/var/lib/postgresql/data", "./packages/database/dwh/init:/docker-entrypoint-initdb.d:ro"]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U dwh -d dwh"], interval: 5s, timeout: 3s, retries: 20 }
   redis:
     image: redis:7
     ports: ["6379:6379"]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 20 }
   minio:
     image: minio/minio
     command: server /data --console-address ":9001"
     environment: { MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: minio12345 }
     ports: ["9000:9000", "9001:9001"]
     volumes: ["miniodata:/data"]
+    healthcheck: { test: ["CMD", "mc", "ready", "local"], interval: 5s, timeout: 3s, retries: 20 }
+  # Bucket урьдчилан үүсгэнэ (dms мөн эхлэхдээ ensureBucket хийдэг — давхардсан ч аюулгүй)
+  minio-init:
+    image: minio/mc
+    depends_on: { minio: { condition: service_healthy } }
+    entrypoint: ["/bin/sh", "-c", "mc alias set local http://minio:9000 minio minio12345 && mc mb --ignore-existing local/los-files"]
+    restart: "no"
 volumes: { pgdata: {}, dwhdata: {}, miniodata: {} }

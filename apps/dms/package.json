@@ -7,9 +7,10 @@
     "build": "nest build",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:generate": "node ../../scripts/prisma.mjs dms generate",
+    "db:migrate": "node ../../scripts/prisma.mjs dms migrate deploy",
+    "db:migrate:dev": "node ../../scripts/prisma.mjs dms migrate dev",
+    "db:seed": "node ../../scripts/prisma.mjs dms seed"
   },
   "dependencies": {
     "@los/contracts": "workspace:*",
@@ -22,7 +23,9 @@
     "rxjs": "^7.8.0",
     "zod": "^3.23.0",
     "bullmq": "^5.12.0",
-    "@prisma/client": "^5.20.0"
+    "@prisma/client": "^5.20.0",
+    "@los/nest-common": "workspace:*",
+    "minio": "^8.0.2"
   },
   "devDependencies": {
     "@los/config": "workspace:*",
@@ -31,6 +34,8 @@
     "vitest": "^2.1.0",
     "supertest": "^7.0.0",
     "tsx": "^4.19.0",
-    "prisma": "^5.20.0"
+    "prisma": "^5.20.0",
+    "@types/multer": "^1.4.12",
+    "@types/express": "^4.17.21"
   }
 }

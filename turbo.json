@@ -7,6 +7,23 @@
     "JWT_SECRET",
     "INTEGRATION_MODE"
   ],
+  "globalPassThroughEnv": [
+    "TEST_DATABASE_URL",
+    "DWH_DATABASE_URL",
+    "ORIGINATION_DATABASE_URL",
+    "KYC_DATABASE_URL",
+    "SCORING_DATABASE_URL",
+    "VALUATION_DATABASE_URL",
+    "DMS_DATABASE_URL",
+    "GATEWAY_DATABASE_URL",
+    "NODE_ENV",
+    "OUTBOX_RELAY",
+    "STORAGE_DRIVER",
+    "MINIO_*",
+    "DATA_*",
+    "INTERNAL_AUTH_SECRET",
+    "SEED_PASSWORD"
+  ],
   "tasks": {
     "build": {
       "dependsOn": [

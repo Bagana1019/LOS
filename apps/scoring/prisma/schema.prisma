@@ -1,4 +1,6 @@
 // Schema-per-service: зөвхөн `scoring` schema. Өөр schema-ийн хүснэгт рүү FK хориотой — ID-г string-ээр хадгална.
+// Эзэмшил: calculation, sosco_model, sosco_result, bsa_* (CLAUDE.md §4). application_id/customer_id нь origination-ийн ID (string).
+// Дүрэм: docs/03-data-model.md (мөнгө Decimal(18,2), харьцаа Decimal(7,4) бутархай, enum-шиг талбар String — утгыг @los/contracts шалгана).
 generator client {
   provider        = "prisma-client-js"
   output          = "../node_modules/.prisma/client-scoring"
@@ -11,7 +13,6 @@ datasource db {
   schemas  = ["scoring"]
 }
 
-// TODO(M00): docs/03-data-model.md-ийн энэ сервист хамаарах хүснэгтүүдийг энд нэм. @@schema("scoring") заавал.
 model Outbox {
   id          String    @id @default(uuid())
   type        String
@@ -19,6 +20,254 @@ model Outbox {
   createdAt   DateTime  @default(now()) @map("created_at")
   publishedAt DateTime? @map("published_at")
 
+  @@index([publishedAt, createdAt])
   @@map("outbox")
+  @@schema("scoring")
+}
+
+model ProcessedEvent {
+  consumer    String
+  eventId     String   @map("event_id")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@id([consumer, eventId])
+  @@map("processed_events")
+  @@schema("scoring")
+}
+
+// ═══ Тооцоолол (FR-8) ═══
+
+model Calculation {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  applicationId      String   @map("application_id")
+  computedAt         DateTime @default(now()) @map("computed_at")
+  inputsJson         Json     @map("inputs_json")
+  methodAJson        Json?    @map("method_a_json")
+  methodBJson        Json?    @map("method_b_json")
+  methodCJson        Json?    @map("method_c_json")
+  autoSelectedMethod String?  @map("auto_selected_method") // CalcMethod
+  selectedMethod     String?  @map("selected_method")
+  selectedBy         String?  @map("selected_by")
+  policyCheckJson    Json?    @map("policy_check_json") // dti, dscr, ltv: value, limit, pass
+  stressJson         Json?    @map("stress_json")
+  isStale            Boolean  @default(false) @map("is_stale")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  createdBy          String?  @map("created_by")
+  updatedBy          String?  @map("updated_by")
+
+  @@index([applicationId, computedAt])
+  @@map("calculation")
+  @@schema("scoring")
+}
+
+/// Дотоод Sosco Score-ийн загвар (admin): жин, босго, хувилбар.
+model SoscoModel {
+  id                  String   @id @default(uuid())
+  orgId               String   @map("org_id")
+  version             Int
+  weightsJson         Json     @map("weights_json")
+  gradeThresholdsJson Json     @map("grade_thresholds_json") // A–E
+  isActive            Boolean  @default(false) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  createdBy           String?  @map("created_by")
+  updatedBy           String?  @map("updated_by")
+
+  results SoscoResult[]
+
+  @@unique([orgId, version])
+  @@map("sosco_model")
+  @@schema("scoring")
+}
+
+model SoscoResult {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  applicationId String   @map("application_id")
+  customerId    String   @map("customer_id")
+  modelId       String   @map("model_id")
+  score         Int // 0–1000
+  grade         String // A–E
+  inputsJson    Json?    @map("inputs_json")
+  breakdownJson Json?    @map("breakdown_json")
+  computedAt    DateTime @default(now()) @map("computed_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdBy     String?  @map("created_by")
+  updatedBy     String?  @map("updated_by")
+
+  model SoscoModel @relation(fields: [modelId], references: [id])
+
+  @@index([applicationId, customerId, computedAt])
+  @@map("sosco_result")
+  @@schema("scoring")
+}
+
+// ═══ BSA (docs/02) ═══
+
+model BsaAnalysis {
+  id                     String    @id @default(uuid())
+  orgId                  String    @map("org_id")
+  branchId               String?   @map("branch_id")
+  applicationId          String    @map("application_id")
+  customerId             String    @map("customer_id")
+  officerId              String?   @map("officer_id") // сэжигтэй гүйлгээг шийдвэрлэх ЗЭЗ (BSA-FR-5.2)
+  source                 String    @default("LOS") // WEB | LOS | API
+  status                 String    @default("DRAFT") // BsaStatus
+  version                Int       @default(1)
+  periodFrom             DateTime? @map("period_from") @db.Date
+  periodTo               DateTime? @map("period_to") @db.Date
+  periodMonths           Int?      @map("period_months")
+  proposedMonthlyPayment Decimal?  @map("proposed_monthly_payment") @db.Decimal(18, 2)
+  costOfGoodsRate        Decimal?  @map("cost_of_goods_rate") @db.Decimal(7, 4)
+  summaryJson            Json?     @map("summary_json") // @los/contracts BsaSummary (INT-4)
+  analyzedAt             DateTime? @map("analyzed_at")
+  pushedToLosAt          DateTime? @map("pushed_to_los_at")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  createdBy              String?   @map("created_by")
+  updatedBy              String?   @map("updated_by")
+
+  importJobs   BsaImportJob[]
+  transactions BsaTransaction[]
+  suspicions   BsaSuspicion[]
+
+  @@unique([applicationId, customerId, version])
+  @@index([orgId, status])
+  @@map("bsa_analysis")
+  @@schema("scoring")
+}
+
+model BsaImportJob {
+  id                 String    @id @default(uuid())
+  orgId              String    @map("org_id")
+  analysisId         String    @map("analysis_id")
+  fileId             String    @map("file_id") // dms.file.id
+  bankCode           String?   @map("bank_code")
+  format             String?
+  accountNoEncrypted String?   @map("account_no_encrypted")
+  iban               String?
+  holderName         String?   @map("holder_name")
+  periodFrom         DateTime? @map("period_from") @db.Date
+  periodTo           DateTime? @map("period_to") @db.Date
+  status             String    @default("PENDING") // ImportStatus
+  rowsTotal          Int       @default(0) @map("rows_total")
+  rowsDone           Int       @default(0) @map("rows_done")
+  errorsJson         Json?     @map("errors_json")
+  parserOk           Boolean?  @map("parser_ok")
+  verifierOk         Boolean?  @map("verifier_ok")
+  qrVerified         Boolean?  @map("qr_verified")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  createdBy          String?   @map("created_by")
+  updatedBy          String?   @map("updated_by")
+
+  analysis     BsaAnalysis      @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  transactions BsaTransaction[]
+
+  @@index([analysisId])
+  @@index([status])
+  @@map("bsa_import_job")
+  @@schema("scoring")
+}
+
+model BsaTransaction {
+  id                           String   @id @default(uuid())
+  orgId                        String   @map("org_id")
+  analysisId                   String   @map("analysis_id")
+  importJobId                  String   @map("import_job_id")
+  txnDate                      DateTime @map("txn_date") @db.Date
+  txnTime                      String?  @map("txn_time") // HH:MM(:SS) — банк бүр цаг өгдөггүй (BSA-BR-5)
+  direction                    String // TxnDirection
+  amount                       Decimal  @db.Decimal(18, 2)
+  balanceAfter                 Decimal? @map("balance_after") @db.Decimal(18, 2)
+  description                  String?
+  counterpartyAccountEncrypted String?  @map("counterparty_account_encrypted")
+  counterpartyAccountHash      String?  @map("counterparty_account_hash") // blind index — өөрийн данс/харьцсан дансны бүлэглэлт
+  counterpartyName             String?  @map("counterparty_name")
+  channel                      String? // BsaChannel
+  categoryCode                 String?  @map("category_code")
+  categoryGroup                String?  @map("category_group")
+  confidence                   Decimal? @db.Decimal(5, 2) // 0–100
+  isOwnTransfer                Boolean  @default(false) @map("is_own_transfer")
+  manualOverride               Boolean  @default(false) @map("manual_override")
+  overrideBy                   String?  @map("override_by")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  analysis  BsaAnalysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  importJob BsaImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId, txnDate])
+  @@index([analysisId, categoryCode])
+  @@index([importJobId])
+  @@map("bsa_transaction")
+  @@schema("scoring")
+}
+
+model BsaCategory {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  code      String
+  direction String // TxnDirection
+  groupCode String   @map("group_code")
+  name      String
+  weight    Decimal  @db.Decimal(7, 4) // дайчлах хувь: 0.85 = 85%
+  dtiRole   String   @map("dti_role") // BsaDtiRole
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  @@unique([orgId, code])
+  @@map("bsa_category")
+  @@schema("scoring")
+}
+
+model BsaRule {
+  id           String   @id @default(uuid())
+  orgId        String   @map("org_id")
+  direction    String // TxnDirection
+  matchType    String   @map("match_type") // BsaRuleMatchType
+  pattern      String
+  categoryCode String   @map("category_code")
+  priority     Int      @default(100)
+  source       String   @default("ADMIN") // BsaRuleSource
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdBy    String?  @map("created_by")
+  updatedBy    String?  @map("updated_by")
+
+  @@index([orgId, direction, priority])
+  @@map("bsa_rule")
+  @@schema("scoring")
+}
+
+model BsaSuspicion {
+  id             String    @id @default(uuid())
+  orgId          String    @map("org_id")
+  analysisId     String    @map("analysis_id")
+  flag           String // SuspicionFlag
+  transactionIds String[]  @map("transaction_ids")
+  confidence     Decimal?  @db.Decimal(5, 2) // 0–100
+  status         String    @default("PENDING") // ReviewStatus
+  action         String? // ReviewAction
+  comment        String?
+  resolvedBy     String?   @map("resolved_by")
+  resolvedAt     DateTime? @map("resolved_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdBy      String?   @map("created_by")
+  updatedBy      String?   @map("updated_by")
+
+  analysis BsaAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId, status])
+  @@map("bsa_suspicion")
   @@schema("scoring")
 }

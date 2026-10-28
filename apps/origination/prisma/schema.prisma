@@ -1,4 +1,10 @@
-// Schema-per-service: зөвхөн `origination` schema. Өөр schema-ийн хүснэгт рүү FK хориотой — ID-г string-ээр хадгална.
+// Schema-per-service: зөвхөн `origination` schema. Өөр schema-ийн хүснэгт рүү FK хориотой — ID-г string-ээр хадгална
+// (org_id, branch_id, officer_id, *_by → iam; file_id → dms; хэрэглэгч/салбар гэх мэт).
+//
+// Дүрэм (docs/03-data-model.md): мөнгө Decimal(18,2); харьцаа/хувь (LTV, ӨОХ, haircut, жин) Decimal(7,4) бутархай 0.55 = 55%;
+// ГЭХДЭЭ зээлийн жилийн хүү (interest_rate, min_rate, max_rate) хувиар 23.99 = 23.99% (@los/calc annuityPayment-тэй ижил нэгж).
+// Enum шиг талбар String — утгыг @los/contracts (enums.ts) шалгана, энд давтахгүй (CLAUDE.md §2.2).
+// Баганы нэр docs/03-аар (snake_case @map); бүх хүснэгтэд org_id, created_at, updated_at, created_by, updated_by.
 generator client {
   provider        = "prisma-client-js"
   output          = "../node_modules/.prisma/client-origination"
@@ -11,7 +17,8 @@ datasource db {
   schemas  = ["origination"]
 }
 
-// TODO(M00): docs/03-data-model.md-ийн энэ сервист хамаарах хүснэгтүүдийг энд нэм. @@schema("origination") заавал.
+// ═══ Нийтлэг: outbox, processed_events, audit_log ═══
+
 model Outbox {
   id          String    @id @default(uuid())
   type        String
@@ -19,6 +26,734 @@ model Outbox {
   createdAt   DateTime  @default(now()) @map("created_at")
   publishedAt DateTime? @map("published_at")
 
+  @@index([publishedAt, createdAt])
   @@map("outbox")
+  @@schema("origination")
+}
+
+model ProcessedEvent {
+  consumer    String
+  eventId     String   @map("event_id")
+  processedAt DateTime @default(now()) @map("processed_at")
+
+  @@id([consumer, eventId])
+  @@map("processed_events")
+  @@schema("origination")
+}
+
+/// FR-13.5, NFR-4: хэн, хэзээ, юуг (өмнөх/шинэ). @los/database recordAudit-аар бичнэ.
+model AuditLog {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  entity        String
+  entityId      String   @map("entity_id")
+  action        String
+  actorId       String?  @map("actor_id")
+  at            DateTime @default(now())
+  beforeJson    Json?    @map("before_json")
+  afterJson     Json?    @map("after_json")
+  applicationId String?  @map("application_id")
+  correlationId String?  @map("correlation_id")
+
+  @@index([orgId, entity, entityId])
+  @@index([applicationId])
+  @@index([actorId, at])
+  @@map("audit_log")
+  @@schema("origination")
+}
+
+// ═══ Тохиргоо, бүтээгдэхүүн, батлах түвшин ═══
+
+/// BR-1…BR-13 болон бусад. Түлхүүр: @los/contracts SETTING_REGISTRY. Утга hardcode хийхгүй.
+model Setting {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  key       String
+  valueJson Json     @map("value_json")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  @@unique([orgId, key])
+  @@map("setting")
+  @@schema("origination")
+}
+
+model Product {
+  id                         String   @id @default(uuid())
+  orgId                      String   @map("org_id")
+  code                       String
+  name                       String
+  productType                String   @map("product_type")
+  currency                   String   @default("MNT")
+  minAmount                  Decimal  @map("min_amount") @db.Decimal(18, 2)
+  maxAmount                  Decimal  @map("max_amount") @db.Decimal(18, 2)
+  minTerm                    Int      @map("min_term")
+  maxTerm                    Int      @map("max_term")
+  minRate                    Decimal  @map("min_rate") @db.Decimal(7, 4)
+  maxRate                    Decimal  @map("max_rate") @db.Decimal(7, 4)
+  defaultFeeRate             Decimal? @map("default_fee_rate") @db.Decimal(7, 4)
+  requiresCollateral         Boolean  @default(true) @map("requires_collateral")
+  maxLtv                     Decimal? @map("max_ltv") @db.Decimal(7, 4)
+  maxDti                     Decimal? @map("max_dti") @db.Decimal(7, 4) // ӨОХ
+  minDscr                    Decimal? @map("min_dscr") @db.Decimal(7, 4) // ӨТЧХ
+  calcWeightThreshold        Decimal? @map("calc_weight_threshold") @db.Decimal(7, 4) // 0.70
+  contractTemplateId         String?  @map("contract_template_id") // dms.contract_template.id
+  documentChecklistJson      Json?    @map("document_checklist_json")
+  collateralChecklistJson    Json?    @map("collateral_checklist_json") // AssetType-аар
+  haircutJson                Json?    @map("haircut_json") // AssetType-аар
+  externalValuationThreshold Decimal? @map("external_valuation_threshold") @db.Decimal(18, 2)
+  costOfGoodsRate            Decimal? @map("cost_of_goods_rate") @db.Decimal(7, 4) // ББӨ
+  isActive                   Boolean  @default(true) @map("is_active")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+  createdBy                  String?  @map("created_by")
+  updatedBy                  String?  @map("updated_by")
+
+  applications LoanApplication[]
+  levels       ApprovalLevel[]
+
+  @@unique([orgId, code])
+  @@map("product")
+  @@schema("origination")
+}
+
+/// BR-13: дүнгээр шатласан түвшин. amount_to = null → дээд хязгааргүй. product_id = null → бүх бүтээгдэхүүн.
+model ApprovalLevel {
+  id         String   @id @default(uuid())
+  orgId      String   @map("org_id")
+  productId  String?  @map("product_id")
+  levelNo    Int      @map("level_no")
+  name       String
+  amountFrom Decimal  @map("amount_from") @db.Decimal(18, 2)
+  amountTo   Decimal? @map("amount_to") @db.Decimal(18, 2)
+  quorumType String   @default("MAJORITY") @map("quorum_type")
+  slaHours   Int      @map("sla_hours")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  createdBy  String?  @map("created_by")
+  updatedBy  String?  @map("updated_by")
+
+  product Product?              @relation(fields: [productId], references: [id])
+  members ApprovalLevelMember[]
+
+  @@unique([orgId, productId, levelNo])
+  @@index([orgId, levelNo])
+  @@map("approval_level")
+  @@schema("origination")
+}
+
+/// user_id эсвэл (role + branch scope). branch_id = null ба role өгсөн бол "хүсэлтийн салбар"-ын тухайн дүртэй хүн.
+model ApprovalLevelMember {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  approvalLevelId String   @map("approval_level_id")
+  userId          String?  @map("user_id") // iam.user.id
+  role            String?
+  branchId        String?  @map("branch_id") // iam.branch.id
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdBy       String?  @map("created_by")
+  updatedBy       String?  @map("updated_by")
+
+  level ApprovalLevel @relation(fields: [approvalLevelId], references: [id], onDelete: Cascade)
+
+  @@index([approvalLevelId])
+  @@index([userId])
+  @@map("approval_level_member")
+  @@schema("origination")
+}
+
+/// BR-11: гэрээний дугаарын загвар. Жишээ `{PREFIX}{BRANCH}{YYMMDD}{SEQ:2}` → B10026021501.
+model ContractNumberTemplate {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  pattern   String
+  prefix    String
+  seqScope  String   @map("seq_scope") // SeqScope: DAY | BRANCH | GLOBAL
+  nextSeq   Int      @default(1) @map("next_seq")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  @@index([orgId])
+  @@map("contract_number_template")
+  @@schema("origination")
+}
+
+// ═══ Харилцагч ═══
+
+model Customer {
+  id                   String    @id @default(uuid())
+  orgId                String    @map("org_id")
+  branchId             String?   @map("branch_id")
+  registerNoHash       String    @map("register_no_hash") // @los/database blindIndex — unique, хайлт
+  registerNoEncrypted  String    @map("register_no_encrypted") // @los/database encryptedField (NFR-5)
+  customerType         String    @map("customer_type") // CustomerType
+  lastName             String?   @map("last_name")
+  firstName            String    @map("first_name")
+  gender               String?
+  birthDate            DateTime? @map("birth_date") @db.Date
+  phone                String?
+  email                String?
+  photoFileId          String?   @map("photo_file_id") // dms.file.id (ИҮ-ийн зураг, шифрлэгдсэн storage)
+  familySize           Int?      @map("family_size")
+  activitySector       String?   @map("activity_sector")
+  maritalStatus        String?   @map("marital_status")
+  segment              String?
+  education            String?
+  isRelatedParty       Boolean   @default(false) @map("is_related_party") // KYC: ББСБ-д хамааралтай этгээд
+  isPep                Boolean   @default(false) @map("is_pep")
+  amlRiskScore         Int?      @map("aml_risk_score")
+  officialAddressJson  Json?     @map("official_address_json")
+  residenceAddressJson Json?     @map("residence_address_json")
+  employmentJson       Json?     @map("employment_json")
+  xypFetchedAt         DateTime? @map("xyp_fetched_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  createdBy            String?   @map("created_by")
+  updatedBy            String?   @map("updated_by")
+
+  contacts        CustomerContact[]
+  bankAccounts    CustomerBankAccount[]
+  borrowers       LoanApplicationBorrower[]
+  salaries        IncomeSalary[]
+  manualIncome    IncomeManual[]
+  incomeSummaries IncomeSummary[]
+
+  @@unique([orgId, registerNoHash])
+  @@index([orgId, lastName, firstName])
+  @@map("customer")
+  @@schema("origination")
+}
+
+model CustomerContact {
+  id                  String   @id @default(uuid())
+  orgId               String   @map("org_id")
+  customerId          String   @map("customer_id")
+  relation            String
+  registerNoEncrypted String?  @map("register_no_encrypted")
+  lastName            String?  @map("last_name")
+  firstName           String   @map("first_name")
+  phone               String?
+  employment          String?
+  homeAddress         String?  @map("home_address")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  createdBy           String?  @map("created_by")
+  updatedBy           String?  @map("updated_by")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_contact")
+  @@schema("origination")
+}
+
+model CustomerBankAccount {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  customerId         String   @map("customer_id")
+  bankCode           String   @map("bank_code")
+  accountNoEncrypted String   @map("account_no_encrypted")
+  accountNoHash      String   @map("account_no_hash") // давхар бүртгэл шалгах blind index
+  iban               String?
+  holderName         String?  @map("holder_name")
+  source             String   @default("MANUAL") // BankAccountSource: MANUAL | STATEMENT
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+  createdBy          String?  @map("created_by")
+  updatedBy          String?  @map("updated_by")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, bankCode, accountNoHash])
+  @@map("customer_bank_account")
+  @@schema("origination")
+}
+
+// ═══ Зээлийн хүсэлт ═══
+
+model LoanApplication {
+  id                  String    @id @default(uuid())
+  appNo               String    @map("app_no")
+  orgId               String    @map("org_id")
+  branchId            String    @map("branch_id")
+  officerId           String?   @map("officer_id") // iam.user.id; null → "Систем" (BR-12)
+  status              String    @default("DRAFT") // ApplicationStatus
+  productId           String?   @map("product_id")
+  purpose             String?
+  purposeDetail       String?   @map("purpose_detail")
+  cibPurposeCode      String?   @map("cib_purpose_code")
+  cibSubCode          String?   @map("cib_sub_code")
+  currency            String    @default("MNT")
+  amount              Decimal?  @db.Decimal(18, 2)
+  interestRate        Decimal?  @map("interest_rate") @db.Decimal(7, 4) // жилийн хувь: 23.99
+  termMonths          Int?      @map("term_months")
+  feeRate             Decimal?  @map("fee_rate") @db.Decimal(7, 4)
+  downPayment         Decimal?  @map("down_payment") @db.Decimal(18, 2)
+  charges             Decimal?  @db.Decimal(18, 2)
+  insurance           Decimal?  @db.Decimal(18, 2)
+  officerNote         String?   @map("officer_note")
+  contractNo          String?   @map("contract_no") // батлагдсаны дараа (BR-11)
+  decidedAt           DateTime? @map("decided_at")
+  submittedAt         DateTime? @map("submitted_at")
+  approvedAt          DateTime? @map("approved_at")
+  returnedAt          DateTime? @map("returned_at")
+  disbursedAt         DateTime? @map("disbursed_at")
+  selectedCalcMethod  String?   @map("selected_calc_method") // CalcMethod
+  calcSnapshotJson    Json?     @map("calc_snapshot_json")
+  bsaSummaryJson      Json?     @map("bsa_summary_json") // BsaSummary (INT-4)
+  source              String    @default("WEB") // ApplicationSource
+  version             Int       @default(1)
+  parentApplicationId String?   @map("parent_application_id") // дахин илгээлтийн хувилбар
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  createdBy           String?   @map("created_by")
+  updatedBy           String?   @map("updated_by")
+
+  product          Product?                  @relation(fields: [productId], references: [id])
+  parent           LoanApplication?          @relation("ApplicationVersions", fields: [parentApplicationId], references: [id])
+  versions         LoanApplication[]         @relation("ApplicationVersions")
+  borrowers        LoanApplicationBorrower[]
+  steps            LoanApplicationStep[]
+  salaries         IncomeSalary[]
+  manualIncome     IncomeManual[]
+  incomeSummaries  IncomeSummary[]
+  collaterals      Collateral[]
+  schedules        RepaymentSchedule[]
+  approvalRequests ApprovalRequest[]
+  decisions        DecisionRecord[]
+  contract         Contract?
+  letters          OfficialLetter[]
+  disbursements    DisbursementRequest[]
+  comments         Comment[]
+
+  @@unique([orgId, appNo])
+  @@unique([orgId, contractNo])
+  @@index([orgId, status])
+  @@index([officerId])
+  @@index([branchId])
+  @@index([productId])
+  @@map("loan_application")
+  @@schema("origination")
+}
+
+model LoanApplicationBorrower {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  applicationId String   @map("application_id")
+  customerId    String   @map("customer_id")
+  role          String // BorrowerRole
+  isPrimary     Boolean  @default(false) @map("is_primary")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdBy     String?  @map("created_by")
+  updatedBy     String?  @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  customer    Customer        @relation(fields: [customerId], references: [id])
+
+  @@unique([applicationId, customerId, role])
+  @@index([customerId])
+  @@map("loan_application_borrower")
+  @@schema("origination")
+}
+
+/// Хүсэлт бүрт 12 мөр урьдчилан үүснэ (docs/03 "Харилцааны гол дүрэм").
+model LoanApplicationStep {
+  id            String    @id @default(uuid())
+  orgId         String    @map("org_id")
+  applicationId String    @map("application_id")
+  stepKey       String    @map("step_key") // StepKey
+  status        String    @default("LOCKED") // StepStatus
+  completedAt   DateTime? @map("completed_at")
+  staleReason   String?   @map("stale_reason")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdBy     String?   @map("created_by")
+  updatedBy     String?   @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, stepKey])
+  @@map("loan_application_step")
+  @@schema("origination")
+}
+
+// ═══ Орлого ═══
+
+model IncomeSalary {
+  id               String   @id @default(uuid())
+  orgId            String   @map("org_id")
+  applicationId    String   @map("application_id")
+  customerId       String   @map("customer_id")
+  employer         String?
+  year             Int
+  month            Int
+  salary           Decimal  @db.Decimal(18, 2)
+  contributionPaid Decimal? @map("contribution_paid") @db.Decimal(18, 2)
+  source           String   @default("NDSH") // IncomeSalarySource
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  createdBy        String?  @map("created_by")
+  updatedBy        String?  @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  customer    Customer        @relation(fields: [customerId], references: [id])
+
+  @@index([applicationId, customerId])
+  @@map("income_salary")
+  @@schema("origination")
+}
+
+model IncomeManual {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  applicationId String   @map("application_id")
+  customerId    String   @map("customer_id")
+  type          String // ManualIncomeType
+  monthlyAmount Decimal  @map("monthly_amount") @db.Decimal(18, 2)
+  fileId        String?  @map("file_id") // dms.file.id
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdBy     String?  @map("created_by")
+  updatedBy     String?  @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  customer    Customer        @relation(fields: [customerId], references: [id])
+
+  @@index([applicationId, customerId])
+  @@map("income_manual")
+  @@schema("origination")
+}
+
+model IncomeSummary {
+  id                      String    @id @default(uuid())
+  orgId                   String    @map("org_id")
+  applicationId           String    @map("application_id")
+  customerId              String    @map("customer_id")
+  periodFrom              DateTime? @map("period_from") @db.Date
+  periodTo                DateTime? @map("period_to") @db.Date
+  avgSalaryMonthly        Decimal?  @map("avg_salary_monthly") @db.Decimal(18, 2)
+  businessNcfMonthly      Decimal?  @map("business_ncf_monthly") @db.Decimal(18, 2) // BSA-аас
+  householdExpenseMonthly Decimal?  @map("household_expense_monthly") @db.Decimal(18, 2)
+  businessExpenseMonthly  Decimal?  @map("business_expense_monthly") @db.Decimal(18, 2)
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+  createdBy               String?   @map("created_by")
+  updatedBy               String?   @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  customer    Customer        @relation(fields: [customerId], references: [id])
+
+  @@unique([applicationId, customerId])
+  @@map("income_summary")
+  @@schema("origination")
+}
+
+// ═══ Барьцаа (valuation үнэлгээний тал нь valuation schema-д, collateralId string-ээр холбогдоно) ═══
+
+model Collateral {
+  id                   String    @id @default(uuid())
+  orgId                String    @map("org_id")
+  applicationId        String    @map("application_id")
+  kind                 String // CollateralKind
+  assetType            String    @map("asset_type") // AssetType
+  ownerCustomerId      String?   @map("owner_customer_id") // барьцаалагч (customer.id)
+  descriptionJson      Json?     @map("description_json")
+  source               String    @default("MANUAL") // CollateralSource
+  marketValue          Decimal?  @map("market_value") @db.Decimal(18, 2)
+  haircutRate          Decimal?  @map("haircut_rate") @db.Decimal(7, 4)
+  collateralValue      Decimal?  @map("collateral_value") @db.Decimal(18, 2) // = market × haircut
+  ownershipVerified    Boolean   @default(false) @map("ownership_verified")
+  ownershipCheckJson   Json?     @map("ownership_check_json")
+  encumbranceCheckJson Json?     @map("encumbrance_check_json")
+  encumbranceStatus    String?   @map("encumbrance_status") // EncumbranceStatus
+  registryNo           String?   @map("registry_no")
+  registryDate         DateTime? @map("registry_date") @db.Date
+  releasedAt           DateTime? @map("released_at")
+  insuranceExpiresAt   DateTime? @map("insurance_expires_at") @db.Date
+  nextRevaluationAt    DateTime? @map("next_revaluation_at") @db.Date
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  createdBy            String?   @map("created_by")
+  updatedBy            String?   @map("updated_by")
+
+  application LoanApplication      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  documents   CollateralDocument[]
+
+  @@index([applicationId])
+  @@index([orgId, registryNo])
+  @@map("collateral")
+  @@schema("origination")
+}
+
+model CollateralDocument {
+  id           String   @id @default(uuid())
+  orgId        String   @map("org_id")
+  collateralId String   @map("collateral_id")
+  checklistKey String   @map("checklist_key")
+  fileId       String   @map("file_id") // dms.file.id
+  uploadedBy   String?  @map("uploaded_by")
+  uploadedAt   DateTime @default(now()) @map("uploaded_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdBy    String?  @map("created_by")
+  updatedBy    String?  @map("updated_by")
+
+  collateral Collateral @relation(fields: [collateralId], references: [id], onDelete: Cascade)
+
+  @@index([collateralId, checklistKey])
+  @@map("collateral_document")
+  @@schema("origination")
+}
+
+// ═══ ЭТХ ═══
+
+model RepaymentSchedule {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  applicationId String   @map("application_id")
+  paramsJson    Json     @map("params_json")
+  generatedAt   DateTime @default(now()) @map("generated_at")
+  isStale       Boolean  @default(false) @map("is_stale")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdBy     String?  @map("created_by")
+  updatedBy     String?  @map("updated_by")
+
+  application LoanApplication        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  rows        RepaymentScheduleRow[]
+
+  @@index([applicationId, generatedAt])
+  @@map("repayment_schedule")
+  @@schema("origination")
+}
+
+model RepaymentScheduleRow {
+  id           String   @id @default(uuid())
+  scheduleId   String   @map("schedule_id")
+  seq          Int
+  dueDate      DateTime @map("due_date") @db.Date
+  days         Int
+  disbursement Decimal  @default(0) @db.Decimal(18, 2)
+  principal    Decimal  @db.Decimal(18, 2)
+  interest     Decimal  @db.Decimal(18, 2)
+  total        Decimal  @db.Decimal(18, 2)
+  balance      Decimal  @db.Decimal(18, 2)
+
+  schedule RepaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@unique([scheduleId, seq])
+  @@index([dueDate])
+  @@map("repayment_schedule_row")
+  @@schema("origination")
+}
+
+// ═══ Шийдвэр, батлах урсгал ═══
+
+model ApprovalRequest {
+  id            String    @id @default(uuid())
+  orgId         String    @map("org_id")
+  applicationId String    @map("application_id")
+  version       Int
+  levelNo       Int       @map("level_no")
+  startedAt     DateTime  @default(now()) @map("started_at")
+  dueAt         DateTime? @map("due_at") // SLA (FR-10.2)
+  status        String    @default("PENDING") // ApprovalRequestStatus
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdBy     String?   @map("created_by")
+  updatedBy     String?   @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  votes       ApprovalVote[]
+
+  @@unique([applicationId, version, levelNo])
+  @@index([status, dueAt])
+  @@map("approval_request")
+  @@schema("origination")
+}
+
+model ApprovalVote {
+  id                String   @id @default(uuid())
+  orgId             String   @map("org_id")
+  approvalRequestId String   @map("approval_request_id")
+  approverId        String   @map("approver_id") // iam.user.id
+  decision          String // ApprovalDecision
+  comment           String?
+  decidedAt         DateTime @default(now()) @map("decided_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdBy         String?  @map("created_by")
+  updatedBy         String?  @map("updated_by")
+
+  request ApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+
+  @@unique([approvalRequestId, approverId]) // батлагч нэг түвшинд нэг санал
+  @@index([approverId])
+  @@map("approval_vote")
+  @@schema("origination")
+}
+
+model DecisionRecord {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  applicationId String   @map("application_id")
+  decisionNo    String   @map("decision_no")
+  decidedAt     DateTime @map("decided_at")
+  minutesText   String?  @map("minutes_text")
+  fileId        String?  @map("file_id") // dms.file.id
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdBy     String?  @map("created_by")
+  updatedBy     String?  @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, decisionNo])
+  @@index([applicationId])
+  @@map("decision_record")
+  @@schema("origination")
+}
+
+// ═══ Гэрээ, албан бичиг, олголт ═══
+
+model Contract {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  applicationId   String    @unique @map("application_id")
+  contractNo      String    @map("contract_no")
+  templateVersion Int?      @map("template_version")
+  generatedFileId String?   @map("generated_file_id") // dms.file.id
+  signedFileId    String?   @map("signed_file_id")
+  signedAt        DateTime? @map("signed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdBy       String?   @map("created_by")
+  updatedBy       String?   @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, contractNo])
+  @@map("contract")
+  @@schema("origination")
+}
+
+model OfficialLetter {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  applicationId   String    @map("application_id")
+  templateId      String    @map("template_id") // dms.contract_template.id
+  generatedFileId String?   @map("generated_file_id")
+  printedAt       DateTime? @map("printed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdBy       String?   @map("created_by")
+  updatedBy       String?   @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@map("official_letter")
+  @@schema("origination")
+}
+
+model DisbursementRequest {
+  id                 String    @id @default(uuid())
+  orgId              String    @map("org_id")
+  applicationId      String    @map("application_id")
+  approvedAmount     Decimal   @map("approved_amount") @db.Decimal(18, 2)
+  disburseAmount     Decimal   @map("disburse_amount") @db.Decimal(18, 2)
+  termMonths         Int       @map("term_months")
+  interestRate       Decimal   @map("interest_rate") @db.Decimal(7, 4)
+  repaymentType      String    @map("repayment_type") // RepaymentType
+  firstPaymentDate   DateTime? @map("first_payment_date") @db.Date
+  disburseDate       DateTime? @map("disburse_date") @db.Date
+  bankCode           String?   @map("bank_code")
+  accountNoEncrypted String?   @map("account_no_encrypted")
+  holderName         String?   @map("holder_name")
+  accountOwnerType   String?   @map("account_owner_type") // AccountOwnerType
+  nameCheckJson      Json?     @map("name_check_json")
+  reconciliationJson Json?     @map("reconciliation_json")
+  status             String    @default("DRAFT") // DisbursementStatus
+  coreLoanId         String?   @map("core_loan_id")
+  historyJson        Json?     @map("history_json")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  createdBy          String?   @map("created_by")
+  updatedBy          String?   @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([status, disburseDate])
+  @@map("disbursement_request")
+  @@schema("origination")
+}
+
+// ═══ Хар жагсаалт, мэдэгдэл, тайлбар ═══
+
+model Blacklist {
+  id                  String   @id @default(uuid())
+  orgId               String   @map("org_id")
+  registerNoHash      String   @map("register_no_hash") // blind index — customer.register_no_hash-тай тулгах (FR-3.4)
+  registerNoEncrypted String   @map("register_no_encrypted") // NFR-5
+  customerType        String   @map("customer_type")
+  name                String
+  listType            String   @map("list_type")
+  reasonCode          String   @map("reason_code")
+  reasonText          String?  @map("reason_text")
+  registeredBy        String?  @map("registered_by")
+  registeredAt        DateTime @default(now()) @map("registered_at")
+  isActive            Boolean  @default(true) @map("is_active")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  createdBy           String?  @map("created_by")
+  updatedBy           String?  @map("updated_by")
+
+  @@index([orgId, registerNoHash])
+  @@map("blacklist")
+  @@schema("origination")
+}
+
+model Notification {
+  id            String    @id @default(uuid())
+  orgId         String    @map("org_id")
+  userId        String    @map("user_id") // iam.user.id
+  type          String // NotificationType
+  applicationId String?   @map("application_id")
+  payloadJson   Json?     @map("payload_json")
+  readAt        DateTime? @map("read_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  createdBy     String?   @map("created_by")
+  updatedBy     String?   @map("updated_by")
+
+  @@index([userId, readAt, createdAt])
+  @@map("notification")
+  @@schema("origination")
+}
+
+model Comment {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  applicationId String   @map("application_id")
+  authorId      String   @map("author_id")
+  body          String
+  mentions      String[] // iam.user.id[]
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdBy     String?  @map("created_by")
+  updatedBy     String?  @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, createdAt])
+  @@map("comment")
   @@schema("origination")
 }
