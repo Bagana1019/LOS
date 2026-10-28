@@ -76,3 +76,9 @@ export interface OtherShareReport {
   share: number;
   exceeded: boolean;
 }
+
+/** ADDITIVE: гүйлгээ + түүний ангиллын үр дүн (aggregate, other-share, reclassify нийтээр ашиглана) */
+export interface ClassifiedTxn {
+  txn: ClassifiableTxn;
+  result: ClassificationResult;
+}
