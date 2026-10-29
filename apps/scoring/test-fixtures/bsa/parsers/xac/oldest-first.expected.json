@@ -1,0 +1,170 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC TEST DATA - NOT A REAL STATEMENT. assumed layout, oldest first, closing balance and row count printed at the end. Assumed XAC layout (TODO(samples)).",
+  "transactions": [
+    {
+      "seq": 1,
+      "txnDate": "2026-02-26",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 6300,
+      "balanceAfter": 2993700,
+      "description": "Supermarket purchase",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 2,
+      "txnDate": "2026-02-27",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 28200,
+      "balanceAfter": 3021900,
+      "description": "Цалин",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 3,
+      "txnDate": "2026-02-28",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 32400,
+      "balanceAfter": 2989500,
+      "description": "Зээлийн төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 4,
+      "txnDate": "2026-02-28",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 7900,
+      "balanceAfter": 2981600,
+      "description": "QPay төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 5,
+      "txnDate": "2026-02-28",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 7000,
+      "balanceAfter": 2974600,
+      "description": "Гэр бүлд шилжүүлэг",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 6,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 27700,
+      "balanceAfter": 2946900,
+      "description": "Supermarket purchase",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 7,
+      "txnDate": "2026-03-02",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 97000,
+      "balanceAfter": 3043900,
+      "description": "Salary",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 8,
+      "txnDate": "2026-03-03",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 20900,
+      "balanceAfter": 3023000,
+      "description": "Шилжүүлэг TDB",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 9,
+      "txnDate": "2026-03-03",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 32200,
+      "balanceAfter": 2990800,
+      "description": "Зээлийн төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 10,
+      "txnDate": "2026-03-04",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 321100,
+      "balanceAfter": 3311900,
+      "description": "Шилжүүлэг орлого",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 11,
+      "txnDate": "2026-03-05",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 35200,
+      "balanceAfter": 3276700,
+      "description": "ATM бэлэн авалт Khan Bank",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 12,
+      "txnDate": "2026-03-06",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 363900,
+      "balanceAfter": 3640600,
+      "description": "Тэтгэвэр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 13,
+      "txnDate": "2026-03-06",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 35400,
+      "balanceAfter": 3605200,
+      "description": "ATM бэлэн авалт Khan Bank",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 14,
+      "txnDate": "2026-03-06",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 20400,
+      "balanceAfter": 3584800,
+      "description": "Шилжүүлэг TDB",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    }
+  ],
+  "openingBalance": 3000000,
+  "closingBalance": 3584800,
+  "periodFrom": "2026-02-26",
+  "periodTo": "2026-03-06",
+  "declaredRowCount": 14,
+  "accountNo": "5011223344",
+  "iban": null,
+  "holderName": "Бат-Эрдэнэ Болд",
+  "holderRegisterNo": null,
+  "currency": "MNT"
+}

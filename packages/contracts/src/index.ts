@@ -3,4 +3,7 @@ export * from './events';
 export * from './auth';
 export * from './settings';
 export * from './dto';
+export * from './maker-checker';
+export * from './merchant';
+export * from './bsa';
 export * from './customer';

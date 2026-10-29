@@ -1,0 +1,10 @@
+{
+  // Зөвхөн төрөл шалгах (`tsc --noEmit -p scripts/tsconfig.json`); build-д орохгүй.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".."
+  },
+  // src/**/*.test.ts нь vitest-ээр дамжуулан @types/node-ийг татна (origination нь @types/node-г шууд хамааралгүй)
+  "include": ["./**/*.ts", "../src/**/*.ts"]
+}

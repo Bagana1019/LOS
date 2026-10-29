@@ -22,7 +22,10 @@
     "MINIO_*",
     "DATA_*",
     "INTERNAL_AUTH_SECRET",
-    "SEED_PASSWORD"
+    "SEED_PASSWORD",
+    "PII_HASH_KEY",
+    "KYC_BASE_URL",
+    "POS_*"
   ],
   "tasks": {
     "build": {
@@ -46,7 +49,8 @@
     },
     "test": {
       "dependsOn": [
-        "^build"
+        "^build",
+        "db:generate"
       ],
       "outputs": [
         "coverage/**"

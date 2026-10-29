@@ -10,6 +10,9 @@ export const CTX_HEADERS = {
   correlationId: 'x-correlation-id',
   /** Зөвхөн зээлдэгчийн self-service BFF (role=CUSTOMER). */
   customerId: 'x-customer-id',
+  /** Мерчант POS портал (docs/05-merchant-pos.md §6): gateway мерчант хэрэглэгчийн merchant/store-г нэмнэ (gateway талын холболт — follow-up). */
+  merchantId: 'x-merchant-id',
+  storeId: 'x-store-id',
   /** INTERNAL_AUTH_SECRET тохируулсан үед gateway нэмж, сервис шалгана (mTLS-ийн оронд хөгжүүлэлт/staging-д). */
   internalToken: 'x-internal-token',
 } as const;
@@ -36,17 +39,19 @@ export const Permission = [
   'settings:manage',
   'audit:read',
   'user:manage',
+  // Maker-Checker (docs/05): өөрийн илгээсэн/батлах хүсэлтүүдийг харах. Эрх бүрэн шалгалт service-д (дүр, салбар, maker≠checker).
+  'change-request:read',
 ] as const;
 export type Permission = typeof Permission[number];
 
 export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   // ЗЭЗ: хүсэлт үүсгэх/бүрдүүлэх/илгээх, олголтын хүсэлт, BSA-ийн сэжигтэй гүйлгээ. Харах хүрээ: зөвхөн өөрийн хүсэлт.
-  OFFICER: ['customer:read', 'customer:write', 'application:read', 'application:write', 'application:submit', 'disbursement:request', 'bsa:review', 'blacklist:read', 'report:read'],
+  OFFICER: ['customer:read', 'customer:write', 'application:read', 'application:write', 'application:submit', 'disbursement:request', 'bsa:review', 'blacklist:read', 'report:read', 'change-request:read'],
   // Салбарын захирал: салбарын хүсэлтийг харж, бага дүнгийн түвшинд батлана.
-  BRANCH_MANAGER: ['customer:read', 'application:read', 'approval:vote', 'blacklist:read', 'report:read'],
+  BRANCH_MANAGER: ['customer:read', 'application:read', 'approval:vote', 'blacklist:read', 'report:read', 'change-request:read'],
   // Батлагч: Батлах/Буцаах, олголт зөвшөөрөх; нөхцөл засах эрхгүй (FR-10.3).
-  APPROVER: ['customer:read', 'application:read', 'approval:vote', 'disbursement:approve', 'blacklist:read', 'report:read'],
-  ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage'],
+  APPROVER: ['customer:read', 'application:read', 'approval:vote', 'disbursement:approve', 'blacklist:read', 'report:read', 'change-request:read'],
+  ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage', 'change-request:read'],
 };
 
 export function permissionsFor(roles: readonly string[]): Permission[] {
@@ -75,6 +80,7 @@ export const MENU: readonly MenuItem[] = [
     { id: 'blacklist', labelKey: 'nav.blacklist', href: '/los/loan-application/blacklist', permission: 'blacklist:read' },
   ] },
   { id: 'loan', labelKey: 'nav.loan', href: '/los/loan/list', permission: 'application:read' },
+  { id: 'maker-checker', labelKey: 'nav.maker_checker', href: '/los/maker-checker', permission: 'change-request:read' },
   { id: 'report', labelKey: 'nav.report', href: '/los/report', permission: 'report:read' },
   { id: 'settings', labelKey: 'nav.settings', href: '/settings', permission: 'settings:manage' },
 ];

@@ -1,4 +1,4 @@
-import type { Address, Gender, MaritalStatus, XypCitizen } from '@los/contracts';
+import type { CustomerAddress, Gender, MaritalStatus, XypCitizen } from '@los/contracts';
 import { customerTypeOfRegister } from '@los/contracts';
 
 // Deterministic mock (CLAUDE.md §3.2.7): ижил регистрт үргэлж ижил хариу. БҮХ нэр, хаяг зохиомол — бодит хүн биш.
@@ -11,7 +11,7 @@ const MALE = ['Бат-Эрдэнэ', 'Ганбаатар', 'Тэмүүлэн', '
 const FEMALE = ['Сарнай', 'Оюунчимэг', 'Номин', 'Энхжин', 'Цэцэгмаа', 'Мөнхзул'];
 const COMPANIES = ['Тэнгэр', 'Алтан говь', 'Хөх тэнгэр', 'Монгол шуудан', 'Эрдэнэ трейд', 'Номин констракшн'];
 const SECTORS = ['Худалдаа', 'Барилга', 'Хөдөө аж ахуй', 'Тээвэр', 'Үйлчилгээ', 'Үйлдвэрлэл'];
-const ADDRESSES: Address[] = [
+const ADDRESSES: CustomerAddress[] = [
   { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'Хан-Уул хотхон, 12-р байр, 45 тоот' },
   { province: 'Улаанбаатар', district: 'Сүхбаатар', khoroo: '1-р хороо', detail: 'Бага тойруу, 8-р байр, 3 тоот' },
   { province: 'Улаанбаатар', district: 'Хан-Уул', khoroo: '11-р хороо', detail: 'Зайсан, 21-р байр, 17 тоот' },

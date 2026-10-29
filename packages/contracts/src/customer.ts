@@ -38,8 +38,8 @@ const IsoDate = z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Огноо YYYY-
 }, 'Огноо буруу эсвэл ирээдүйд байна');
 
 /** 4 түвшин: аймаг/хот → сум/дүүрэг → баг/хороо → дэлгэрэнгүй (FR-2.3). */
-export const Address = z.object({ province: text(100), district: text(100), khoroo: text(100), detail: text(300) });
-export type Address = z.infer<typeof Address>;
+export const CustomerAddress = z.object({ province: text(100), district: text(100), khoroo: text(100), detail: text(300) });
+export type CustomerAddress = z.infer<typeof CustomerAddress>;
 
 /** Хөдөлмөр эрхлэлт (FR-2.3): байгууллага, тушаал, хаяг, утас, сошиал. */
 export const Employment = z.object({ organization: text(200), position: text(200), address: optText(300), phone: OptPhone, social: optText(300) });
@@ -71,8 +71,8 @@ const CustomerFieldsShape = z.object({
   education: optText(100),
   isRelatedParty: z.boolean().default(false), // KYC (FR-2.5): ББСБ-д хамааралтай этгээд
   isPep: z.boolean().default(false), // KYC (FR-2.5): улс төрд нөлөө бүхий этгээд
-  officialAddress: Address.optional(),
-  residenceAddress: Address.optional(),
+  officialAddress: CustomerAddress.optional(),
+  residenceAddress: CustomerAddress.optional(),
   /** "Оршин суугаа хаяг = албан ёсны" чекбокс: true бол residenceAddress-ийг officialAddress-ээс хуулна. */
   residenceSameAsOfficial: z.boolean().default(false),
   employment: Employment.optional(),
@@ -127,7 +127,7 @@ export interface CustomerView {
   gender: Gender | null; birthDate: string | null; phone: string | null; email: string | null; photoFileId: string | null;
   familySize: number | null; activitySector: string | null; maritalStatus: MaritalStatus | null; segment: string | null; education: string | null;
   isRelatedParty: boolean; isPep: boolean; amlRiskScore: number | null;
-  officialAddress: Address | null; residenceAddress: Address | null; residenceSameAsOfficial: boolean; employment: Employment | null;
+  officialAddress: CustomerAddress | null; residenceAddress: CustomerAddress | null; residenceSameAsOfficial: boolean; employment: Employment | null;
   xypFetchedAt: string | null; branchId: string | null; createdAt: string; updatedAt: string;
   contacts: CustomerContactView[];
   warnings: BlacklistWarning[];
@@ -144,7 +144,7 @@ export const XypCitizen = z.object({
   lastName: z.string().nullable(), firstName: z.string(),
   gender: z.enum(Gender).nullable(), birthDate: z.string().nullable(),
   maritalStatus: z.enum(MaritalStatus).nullable(), familySize: z.number().int().nullable(),
-  activitySector: z.string().nullable(), address: Address.nullable(),
+  activitySector: z.string().nullable(), address: CustomerAddress.nullable(),
   fetchedAt: z.string().datetime(),
 });
 export type XypCitizen = z.infer<typeof XypCitizen>;

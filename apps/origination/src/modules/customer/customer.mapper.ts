@@ -1,4 +1,4 @@
-import { Address, Employment, type BlacklistWarning, type CustomerContactView, type CustomerInput, type CustomerInputRaw, type CustomerSummary, type CustomerView, type Gender, type MaritalStatus } from '@los/contracts';
+import { CustomerAddress, Employment, type BlacklistWarning, type CustomerContactView, type CustomerInput, type CustomerInputRaw, type CustomerSummary, type CustomerView, type Gender, type MaritalStatus } from '@los/contracts';
 import { decryptedField, maskRegisterNo } from '@los/database';
 import type { Customer, CustomerContact } from '.prisma/client-origination';
 
@@ -27,8 +27,8 @@ export function toSummary(c: Customer, blacklisted: boolean): CustomerSummary {
 }
 
 export function toView(c: Customer & { contacts: CustomerContact[] }, warnings: BlacklistWarning[]): CustomerView {
-  const official = parseJson(Address, c.officialAddressJson);
-  const residence = parseJson(Address, c.residenceAddressJson);
+  const official = parseJson(CustomerAddress, c.officialAddressJson);
+  const residence = parseJson(CustomerAddress, c.residenceAddressJson);
   return {
     id: c.id, customerType: c.customerType as CustomerView['customerType'], registerNo: customerRegisterNo(c), lastName: c.lastName, firstName: c.firstName,
     gender: c.gender as Gender | null, birthDate: isoDate(c.birthDate), phone: c.phone, email: c.email, photoFileId: c.photoFileId,
