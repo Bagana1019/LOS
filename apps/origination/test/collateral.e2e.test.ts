@@ -299,6 +299,16 @@ describe.skipIf(!hasTestDb)('collateral API (DB)', () => {
       expect(enc.collateral.encumbrance).toMatchObject({ status: 'CLEAR', method: 'DECLARED', sources: [] });
     });
 
+    it('тоног төхөөрөмж: серийн дугаартай бол ЗМС/ЭБ-ийн шалгалтыг DECLARED-ээр алгасахгүй (422); серийн дугааргүй бол DECLARED зөвшөөрнө', async () => {
+      const s = await seedScenario(prisma());
+      const withSerial = mutation(await post(url(s.app.id), { assetType: 'EQUIPMENT', ownerCustomerId: s.owner.id, description: { name: 'Экскаватор', serialNo: 'SN-0017' } }), 201).collateral;
+      const r1 = await post(url(s.app.id, withSerial.id, 'encumbrance-check'), { method: 'DECLARED' });
+      expect([r1.status, r1.body.code]).toEqual([422, 'DECLARED_NOT_ALLOWED']);
+      const noSerial = mutation(await post(url(s.app.id), { assetType: 'EQUIPMENT', ownerCustomerId: s.owner.id, description: { name: 'Багаж' } }), 201).collateral;
+      const enc = mutation(await post(url(s.app.id, noSerial.id, 'encumbrance-check'), { method: 'DECLARED' }));
+      expect(enc.collateral.encumbrance).toMatchObject({ status: 'CLEAR', method: 'DECLARED' });
+    });
+
     it('үл хөдлөхийн өмчлөл propertyId (certificateNo-гүй) байхгүй бол 422 PROPERTY_ID_REQUIRED; ХУР-д олдохгүй бол 422 REGISTRY_RECORD_NOT_FOUND', async () => {
       const s = await seedScenario(prisma());
       const noId = mutation(await post(url(s.app.id), { assetType: 'APARTMENT', ownerCustomerId: s.owner.id, description: { certificateNo: 'C-1', address: { province: 'УБ', district: 'СБД' }, areaM2: 40 } }), 201).collateral;

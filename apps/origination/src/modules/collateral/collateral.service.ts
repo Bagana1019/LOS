@@ -19,7 +19,7 @@ import { compareMonitoring, monitoringReasons } from './collateral-monitoring';
 import { assetLockKey, findCommittedPledges, lockAssetKeys, registryLockKey } from './collateral-pledge';
 import { CollateralTxService, TX_OPTIONS } from './collateral-tx.service';
 import { describeCollateral } from './collateral-view';
-import { MONITORED_STATUS, RULE_EDITABLE, RULE_REGISTRY, RULE_RELEASE } from './collateral.constants';
+import { COMMITTED_STATUSES, MONITORED_STATUS, RULE_EDITABLE, RULE_REGISTRY, RULE_RELEASE } from './collateral.constants';
 
 const MSG = {
   duplicate: 'Энэ хөрөнгө энэ хүсэлтэд аль хэдийн бүртгэгдсэн байна',
@@ -187,7 +187,8 @@ export class CollateralService {
       const registryNo = input.registryNo.trim();
       if (row.registryNo === registryNo && isoDate(row.registryDate) === input.registryDate) return this.tx.mutation(await this.tx.finish(db, ctx, app, { updateSteps: false }), row.id);
       await lockAssetKeys(db, app.orgId, [registryLockKey(registryNo)]);
-      const clash = await db.collateral.findFirst({ where: { orgId: app.orgId, registryNo, releasedAt: null, id: { not: row.id } }, select: { id: true } });
+      // Зөвхөн «хүлээн авсан» (эсвэл хаагдсан ч чөлөөлөгдөөгүй) хүсэлтийн барьцаатай давхцана — өөр ноорог дахь дугаар ЭБ бүртгэлийг хориглохгүй
+      const clash = await db.collateral.findFirst({ where: { orgId: app.orgId, registryNo, releasedAt: null, id: { not: row.id }, application: { status: { in: [...COMMITTED_STATUSES, 'CLOSED'] } } }, select: { id: true } });
       if (clash) throw new DomainError('REGISTRY_NO_IN_USE', MSG.registryInUse, 409);
       const updated = await db.collateral.update({ where: { id: row.id }, data: { registryNo, registryDate: dateOnly(input.registryDate), updatedBy: ctx.userId }, include: { documents: true } });
       const snap = await this.tx.finish(db, ctx, app, {
@@ -225,6 +226,7 @@ export class CollateralService {
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
     const ltvMax = await this.settings.get(ctx.orgId, 'br3.ltv_max');
+    const withinDays = query.withinDays ?? (await this.settings.get(ctx.orgId, 'collateral.insurance_reminder_days'));
     // LTV хүсэлт бүрээр (нэг хүсэлтийн бүх барьцааны нийлбэр); хүрээ нь хүсэлтээр тул хүсэлтийн бүх барьцаа цуг орно.
     const ltvByApp = new Map<string, { ltv: number | null; limit: number; pass: boolean | null }>();
     for (const appId of new Set(rows.map((r) => r.applicationId))) {
@@ -237,7 +239,7 @@ export class CollateralService {
     const items: CollateralMonitoringItem[] = [];
     for (const r of rows) {
       const ltv = ltvByApp.get(r.applicationId)!;
-      const reasons = monitoringReasons({ today, withinDays: query.withinDays, nextRevaluationAt: isoDate(r.nextRevaluationAt), insuranceExpiresAt: isoDate(r.insuranceExpiresAt), ltvPass: ltv.pass });
+      const reasons = monitoringReasons({ today, withinDays, nextRevaluationAt: isoDate(r.nextRevaluationAt), insuranceExpiresAt: isoDate(r.insuranceExpiresAt), ltvPass: ltv.pass });
       if (!reasons.length) continue;
       items.push({
         collateralId: r.id, applicationId: r.applicationId, appNo: r.application.appNo, assetType: r.assetType as AssetType, label: describeCollateral(r.assetType as AssetType, descriptionOf(r)),

@@ -171,8 +171,9 @@ export const isViolation = (v: unknown): v is Violation => typeof v === 'object'
 export function checkRemovable(target: BorrowerRow, rows: BorrowerRow[], ownsCollateral: boolean): Violation | null {
   if (target.role === 'PRIMARY' && rows.some((r) => r.id !== target.id))
     return violation(409, 'PRIMARY_REQUIRED', 'Үндсэн зээлдэгчийг хасахаас өмнө өөр хамтран зээлдэгчийг "Үндсэн болгох" эсвэл бусад оролцогчдыг эхлээд хасах шаардлагатай');
-  if (target.role === 'PLEDGOR' && ownsCollateral)
-    return violation(409, 'BORROWER_OWNS_COLLATERAL', 'Энэ барьцаалагч хүсэлтийн барьцаа хөрөнгийн өмчлөгч тул хасах боломжгүй. Эхлээд барьцаа хөрөнгийг хасна уу');
+  // Аль ч дүрийн оролцогч (барьцаалагч, хамтран зээлдэгч) барьцааны өмчлөгч бол хасахгүй — үгүй бол барьцаа хүсэлтэд байхгүй хүнд харъяалагдаж 5-р алхам бүрэн хэвээр үлдэнэ (FR-6.5).
+  if (ownsCollateral)
+    return violation(409, 'BORROWER_OWNS_COLLATERAL', 'Энэ оролцогч хүсэлтийн барьцаа хөрөнгийн өмчлөгч тул хасах боломжгүй. Эхлээд барьцаа хөрөнгийг хасна уу');
   return null;
 }
 

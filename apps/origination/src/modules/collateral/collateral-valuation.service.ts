@@ -13,7 +13,7 @@ import { auditSnapshot, collateralFingerprint, descriptionOf, num, valuationColu
 import { decideValuationEvent, type ValuationCompletedEvent } from './collateral-valuation-event';
 import { CollateralTxService, TX_OPTIONS } from './collateral-tx.service';
 import type { CollateralRow } from './collateral-view';
-import { EDITABLE_STATUSES, RULE_VALUATION } from './collateral.constants';
+import { EDITABLE_STATUSES, RULE_VALUATION, VALUATION_STATUSES } from './collateral.constants';
 import { FILE_PORT, type FilePort } from './ports/file.port';
 import { VALUATION_PORT, type ValuationPort } from './ports/valuation.port';
 
@@ -118,6 +118,8 @@ export class CollateralValuationService {
     if (!hit || hit.applicationId !== event.applicationId) return false;
     const ctx: RequestContext = { userId: null, roles: [], branchId: null, orgId: event.orgId, customerId: null, correlationId: event.correlationId };
     const app = await this.tx.lock(db, event.orgId, hit.applicationId);
+    // Үнэлгээ зөвхөн RULE_VALUATION төлөвт (ноорог/буцаасан/идэвхтэй) хадгалагддаг; илгээсэн/батлагдсан хүсэлтийн дүнг хоцорсон event чимээгүй өөрчлөхгүй.
+    if (!(VALUATION_STATUSES as readonly string[]).includes(app.status)) return false;
     const row = await db.collateral.findFirst({ where: { id: event.collateralId, applicationId: app.id }, include: { documents: true } });
     if (!row) return false;
     const decision = decideValuationEvent(row, event, await this.settings.get(event.orgId, 'collateral.revaluation_interval_days'));

@@ -2,6 +2,7 @@ import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { collateralValue, needsOverrideReason, requiresExternalValuation, round2, sameValue, validUntilFrom } from '@los/calc';
 import {
   isManualValueAsset,
+  COLLATERAL_DESCRIPTION_SCHEMAS,
   type AssetType,
   type CollateralValuationRecord,
   type HaircutResolution,
@@ -43,9 +44,17 @@ interface Persist {
 /** FR-14.1 — INVENTORY: the stocktake value is the valuation basis; EQUIPMENT/OTHER and every override are plain MANUAL. */
 const manualMethod = (assetType: AssetType): ValuationMethod => (assetType === 'INVENTORY' ? 'INVENTORY_STOCKTAKE' : 'MANUAL');
 
-/** Data minimisation: the valuation side keeps what re-valuation needs, not the street address or free-text locations. */
-function minimised(description: Record<string, unknown>): Prisma.InputJsonValue {
-  const { location: _location, ...rest } = description;
+/**
+ * Data minimisation: the valuation side keeps what re-valuation needs (structure, areas, year, district), not the street address, free-text
+ * locations or asset identifiers (plate, VIN, property/certificate id, serial no). Nothing in this service reads the projection back, and
+ * every call receives the full description again. Only schema-known keys are kept (unknown client keys are dropped).
+ */
+const IDENTIFIER_KEYS = ['plateNo', 'vin', 'propertyId', 'certificateNo', 'serialNo'] as const;
+function minimised(assetType: AssetType, description: Record<string, unknown>): Prisma.InputJsonValue {
+  // The description was already parsed by the suggestion step; a shape that still fails here is stored empty rather than as raw client JSON.
+  const parsed = COLLATERAL_DESCRIPTION_SCHEMAS[assetType].safeParse(description);
+  const { location: _location, ...rest } = (parsed.success ? parsed.data : {}) as Record<string, unknown>;
+  for (const k of IDENTIFIER_KEYS) delete rest[k];
   const address = rest.address;
   if (address && typeof address === 'object') {
     const { detail: _detail, ...place } = address as Record<string, unknown>;
@@ -81,6 +90,7 @@ export class CollateralValuationService {
       throw new DomainError('MARKET_VALUE_REQUIRED', 'Систем үнийн санал гаргах боломжгүй байна. Зах зээлийн үнийг оруулна уу', HttpStatus.UNPROCESSABLE_ENTITY, { unavailableReason: suggestion.unavailableReason });
     }
     const marketValue = round2(chosen);
+    if (marketValue <= 0) throw invalidField('marketValue', 'Зах зээлийн үнэ 0.01-ээс их байх ёстой');
     if (needsOverrideReason({ manualValueAsset: isManualValueAsset(req.assetType), suggestedValue: suggestion.marketValue, finalValue: marketValue }) && !req.overrideReason) {
       throw new DomainError(
         'OVERRIDE_REASON_REQUIRED',
@@ -122,6 +132,8 @@ export class CollateralValuationService {
     // An explicit "valid until" date holds for that whole day; the default is valuedAt + external validity days.
     const validUntil = req.validUntil === undefined ? validUntilFrom(valuedAt, req.validityDays) : ubDayEnd(req.validUntil);
 
+    const externalMarketValue = round2(req.marketValue);
+    if (externalMarketValue <= 0) throw invalidField('marketValue', 'Зах зээлийн үнэ 0.01-ээс их байх ёстой');
     const { suggestion, haircut } = await this.suggestions.suggest(ctx, req);
     const record = await this.persist(ctx, now, {
       subject: req,
@@ -131,7 +143,7 @@ export class CollateralValuationService {
       licenseNo: req.licenseNo ?? null,
       valuedAt,
       validUntil,
-      marketValue: round2(req.marketValue),
+      marketValue: externalMarketValue,
       suggestion,
       haircut,
       overrideReason: null,
@@ -151,7 +163,7 @@ export class CollateralValuationService {
     const { subject } = p;
     const value = collateralValue(p.marketValue, p.haircut.rate); // FR-14.2: market value × haircut
     const externalRequired = requiresExternalValuation(p.marketValue, subject.externalValuationThreshold);
-    const description = minimised(subject.description);
+    const description = minimised(subject.assetType, subject.description);
 
     const row = await this.repo.transaction(async (tx) => {
       await advisoryLock(tx, 'collateral_valuation', ctx.orgId, subject.collateralId); // one writer per collateral: projection upsert cannot race

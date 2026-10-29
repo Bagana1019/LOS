@@ -9,7 +9,12 @@ import { PlateNo, VehicleFuelType, normalizePlateNo } from './valuation';
 const text = (max: number) => z.string().trim().min(1).max(max);
 const optText = (max: number) => z.string().trim().min(1).max(max).optional();
 const money = z.number().finite().positive().max(1e12);
-export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Огноо YYYY-MM-DD хэлбэртэй байх ёстой');
+const isCalendarDate = (s: string): boolean => {
+  const d = new Date(`${s}T00:00:00.000Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s && d.getUTCFullYear() >= 1900;
+};
+/** YYYY-MM-DD хэлбэр БА бодит хуанлийн огноо (2026-13-45, 2026-02-30 татгалзана). */
+export const IsoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Огноо YYYY-MM-DD хэлбэртэй байх ёстой').refine(isCalendarDate, 'Огноо буруу байна');
 const year = z.number().int().min(1950).max(2100);
 
 // ── Хөрөнгийн төрлөөр тодорхойлолт (description_json) ────────────────────────────────────────────────────────────
@@ -250,8 +255,8 @@ export const RegisterPledgeRequest = z.object({ registryNo: text(100), registryD
 export type RegisterPledgeRequest = z.infer<typeof RegisterPledgeRequest>;
 
 export const CollateralMonitoringQuery = z.object({
-  /** Хэдэн хоногийн дотор хугацаа дуусах/дахин үнэлэх ёстойг харуулах. */
-  withinDays: z.coerce.number().int().min(0).max(3650).default(30),
+  /** Хэдэн хоногийн дотор хугацаа дуусах/дахин үнэлэх ёстойг харуулах. Өгөөгүй бол setting `collateral.insurance_reminder_days`. */
+  withinDays: z.coerce.number().int().min(0).max(3650).optional(),
 });
 export type CollateralMonitoringQuery = z.infer<typeof CollateralMonitoringQuery>;
 

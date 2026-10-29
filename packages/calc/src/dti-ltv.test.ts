@@ -26,6 +26,9 @@ describe('collateral value and LTV (FR-14.2, FR-14.4)', () => {
   it('collateral value = market value × haircut, rounded to 2 decimals', () => {
     expect(collateralValue(100_000_000, 0.7)).toBe(70_000_000);
     expect(collateralValue(12_345.67, 0.333)).toBe(4_111.11);
+    // хагас цент: бодит хагас дээрээ дээш бөөрөнхийлнө (float-оор .84/.17 гарч байсан)
+    expect(collateralValue(12_345_678.35, 0.7)).toBe(8_641_974.85);
+    expect(collateralValue(45_000_000.25, 0.7)).toBe(31_500_000.18);
   });
   it('LTV = loan / total collateral value; unbounded without collateral', () => {
     expect(ltv(35_000_000, 70_000_000)).toBe(0.5);

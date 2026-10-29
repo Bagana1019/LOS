@@ -16,8 +16,12 @@ export const ownershipRegistrySource = (assetType: AssetType): OwnershipSource |
 /** `method=DECLARED` (ЗЭЗ баталгаажуулна) нь өмчлөлийн бүртгэлгүй хөрөнгөд л зөвшөөрөгдөнө. */
 export const ownershipDeclaredAllowed = (assetType: AssetType): boolean => ownershipRegistrySource(assetType) === null;
 export const encumbranceRegistryAvailable = (assetType: AssetType): boolean => ENCUMBRANCE_REGISTRY.includes(assetType);
-/** Ачааллын DECLARED нь ЗМС/ЭБ-д шалгах боломжгүй төрөлд (мал, бараа, тоног төхөөрөмж, бусад); автомашин, үл хөдлөх заавал бүртгэлээр. */
-export const encumbranceDeclaredAllowed = (assetType: AssetType): boolean => !['VEHICLE', 'APARTMENT', 'HOUSE', 'LAND'].includes(assetType);
+/**
+ * Ачааллын DECLARED нь ЗМС/ЭБ-д шалгах боломжгүй төрөлд (мал, бараа, бусад); автомашин, үл хөдлөх заавал бүртгэлээр.
+ * Тоног төхөөрөмж: серийн дугаартай бол бүртгэлээр шалгана (DECLARED-ээр ЗМС/ЭБ-ийн шалгалтыг алгасахгүй), серийн дугааргүй үед л DECLARED.
+ */
+export const encumbranceDeclaredAllowed = (assetType: AssetType, description: Record<string, unknown> = {}): boolean =>
+  !['VEHICLE', 'APARTMENT', 'HOUSE', 'LAND'].includes(assetType) && (assetType !== 'EQUIPMENT' || encumbranceIdentifier(assetType, description) === null);
 
 const str = (d: Record<string, unknown>, k: string): string | null => (typeof d[k] === 'string' && (d[k] as string).trim() ? (d[k] as string).trim() : null);
 

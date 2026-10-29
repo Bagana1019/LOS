@@ -255,10 +255,11 @@ describe('checkRemovable (2, 10)', () => {
     expect(checkRemovable(pl, [row('PRIMARY'), pl], true)).toMatchObject({ status: 409, code: 'BORROWER_OWNS_COLLATERAL' });
     expect(checkRemovable(pl, [row('PRIMARY'), pl], false)).toBeNull();
   });
-  it('бусад дүр чөлөөтэй хасагдана', () => {
+  it('хамтран зээлдэгч барьцаа өмчилдөг бол мөн BORROWER_OWNS_COLLATERAL; барьцаагүй бол чөлөөтэй хасагдана', () => {
     const rows = [row('PRIMARY'), row('CO_BORROWER'), row('GUARANTOR')];
-    expect(checkRemovable(rows[1], rows, true)).toBeNull();
-    expect(checkRemovable(rows[2], rows, true)).toBeNull();
+    expect(checkRemovable(rows[1], rows, true)).toMatchObject({ status: 409, code: 'BORROWER_OWNS_COLLATERAL' });
+    expect(checkRemovable(rows[1], rows, false)).toBeNull();
+    expect(checkRemovable(rows[2], rows, false)).toBeNull();
   });
 });
 

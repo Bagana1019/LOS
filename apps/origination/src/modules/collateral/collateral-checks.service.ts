@@ -141,8 +141,8 @@ export class CollateralChecksService {
       }
       identifier = encumbranceIdentifier(assetType, description);
       if (!identifier) throw new DomainError('IDENTIFIER_REQUIRED', 'Ачаалал шалгахад хөрөнгийн тодорхойлогч (улсын дугаар, өмчлөх эрхийн дугаар, серийн дугаар) заавал шаардлагатай', 422);
-    } else if (!encumbranceDeclaredAllowed(assetType)) {
-      throw new DomainError('DECLARED_NOT_ALLOWED', 'Бүртгэлтэй хөрөнгийн (автомашин, үл хөдлөх) ачааллыг "Зарласан" аргаар баталгаажуулахгүй — ЗМС, ЭБ-ээс шалгана уу', 422);
+    } else if (!encumbranceDeclaredAllowed(assetType, description)) {
+      throw new DomainError('DECLARED_NOT_ALLOWED', 'Бүртгэлтэй хөрөнгийн (автомашин, үл хөдлөх, серийн дугаартай тоног төхөөрөмж) ачааллыг "Зарласан" аргаар баталгаажуулахгүй — ЗМС, ЭБ-ээс шалгана уу', 422);
     }
 
     const fingerprint = collateralFingerprint(row);

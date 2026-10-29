@@ -20,8 +20,10 @@ describe('isInternalOnly (staff proxy blocks internal sync paths)', () => {
     expect(isInternalOnly('/api/DMS/Documents/abc')).toBe(true);
     expect(isInternalOnly('/api/valuation/valuate/collateral/suggest')).toBe(true);
     expect(isInternalOnly('/api/valuation/valuate/collateral')).toBe(true);
+    // бусдын регистр/нэр буцаадаг лавлагаа: origination л дуудна
+    for (const p of ['/api/kyc/xyp/assets', '/api/kyc/xyp/property', '/api/kyc/collateral-checks/encumbrance', '/api/valuation/valuate/vehicle-lookup']) expect(isInternalOnly(p)).toBe(true);
   });
-  it('file upload and the existing auto-valuation lookups stay open to staff', () => {
+  it('file upload, base prices and the owner-less auto-valuation stay open to staff', () => {
     expect(isInternalOnly('/api/dms/files')).toBe(false);
     expect(isInternalOnly('/api/dms/files/abc/content')).toBe(false);
     expect(isInternalOnly('/api/dms/documents-x')).toBe(false);
