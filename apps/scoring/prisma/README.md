@@ -41,7 +41,7 @@ BSA (Bank Statement Analysis, модуль 10) хүснэгтүүд, migration/s
 
 ## docs/03-аас ялгаа (extras)
 
-Модуль 0-ийн baseline `docs/03-data-model.md` «BSA (модуль 10)»-ийн дагуу бүх `bsa_*` хүснэгтийг үүсгэсэн. `20261028150000_bsa_statement_analysis` migration дараахыг НЭМСЭН/ӨӨРЧИЛСӨН:
+Модуль 0-ийн baseline `docs/03-data-model.md` «BSA (модуль 10)»-ийн дагуу бүх `bsa_*` хүснэгтийг үүсгэсэн. `20261029030000_bsa_statement_analysis` migration дараахыг НЭМСЭН/ӨӨРЧИЛСӨН:
 
 | Нэмэлт / өөрчлөлт | Шалтгаан |
 | --- | --- |
@@ -64,7 +64,7 @@ BSA (Bank Statement Analysis, модуль 10) хүснэгтүүд, migration/s
 ## Migration
 
 Модуль 0-ийн зарчим (`docs/00-foundation.md` §5): baseline `20261028000000_init`-ийг ЗАСАХГҮЙ, зөвхөн шинэ migration нэмнэ.
-Энэ модулийн migration: `migrations/20261028150000_bsa_statement_analysis/migration.sql` — `prisma migrate diff --from-schema-datamodel <baseline-ийн schema> --to-schema-datamodel prisma/schema.prisma --script`-ээр үүсгэсэн.
+Энэ модулийн migration: `migrations/20261029030000_bsa_statement_analysis/migration.sql` — `prisma migrate diff --from-schema-datamodel <baseline-ийн schema> --to-schema-datamodel prisma/schema.prisma --script`-ээр үүсгэсэн.
 Baseline-ийн `bsa_import_job`, `bsa_transaction`, `bsa_analysis` хүснэгтэд энэ модулиас өмнө бичигдээгүй тул default-гүй NOT NULL багана нэмэх нь аюулгүй.
 
 ```bash

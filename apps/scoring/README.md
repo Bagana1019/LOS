@@ -21,7 +21,7 @@
 
 ```bash
 cp .env.example .env && docker compose up -d && pnpm install     # CLAUDE.md §7
-pnpm db:generate && pnpm db:migrate && pnpm db:seed              # schema `scoring`: baseline (M00) + 20261028150000_bsa_statement_analysis; seed: ангилал (23) + дүрэм (150) + Sosco загвар v1
+pnpm db:generate && pnpm db:migrate && pnpm db:seed              # schema `scoring`: baseline (M00) + 20261029030000_bsa_statement_analysis; seed: ангилал (23) + дүрэм (150) + Sosco загвар v1
 pnpm --filter @los/scoring dev                                   # эсвэл: turbo run build --filter=@los/scoring && node apps/scoring/dist/main.js
 curl localhost:4003/api/health
 ```

@@ -259,7 +259,7 @@ Parser-ийн `REGISTRY_DEFAULTS`, `COVERAGE_DEFAULTS`, `VERIFY_DEFAULTS`-ийн
 
 ```bash
 cp .env.example .env && docker compose up -d && pnpm install      # CLAUDE.md §7
-pnpm db:generate && pnpm db:migrate && pnpm db:seed               # baseline (M00) + 20261028150000_bsa_statement_analysis + seed (apps/scoring/prisma/README.md)
+pnpm db:generate && pnpm db:migrate && pnpm db:seed               # baseline (M00) + 20261029030000_bsa_statement_analysis + seed (apps/scoring/prisma/README.md)
 pnpm exec turbo run build --filter=@los/scoring
 REDIS_URL=redis://… MINIO_ENDPOINT=localhost:9000 INTEGRATION_MODE=real node apps/scoring/dist/main.js   # түлхүүрүүд .env-ээс
 curl localhost:4003/api/health
