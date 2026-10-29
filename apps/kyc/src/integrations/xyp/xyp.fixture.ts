@@ -21,12 +21,12 @@ const ADDRESSES: CustomerAddress[] = [
 const MARITAL: MaritalStatus[] = ['MARRIED', 'SINGLE', 'MARRIED', 'DIVORCED', 'MARRIED', 'WIDOWED'];
 
 /** FNV-1a: регистрээс тогтвортой тоо (Math.random/Date ашиглахгүй). */
-const hash = (s: string): number => {
+export const hash = (s: string): number => {
   let h = 0x811c9dc5;
   for (const ch of s) { h ^= ch.codePointAt(0)!; h = Math.imul(h, 0x01000193) >>> 0; }
   return h;
 };
-const pick = <T>(list: readonly T[], seed: number): T => list[seed % list.length]!;
+export const pick = <T>(list: readonly T[], seed: number): T => list[seed % list.length]!;
 
 /** Регистрийн 3–8-р цифр = ЖЖААОО (2000-оос хойш сар +20), сүүлийн цифр сондгой = эрэгтэй. Буруу огноо гарвал регистрээс тогтвортой огноо сонгоно. */
 function birthOf(register: string, seed: number): { birthDate: string; gender: Gender } {
@@ -39,7 +39,8 @@ function birthOf(register: string, seed: number): { birthDate: string; gender: G
   const month = mm > 20 ? mm - 20 : mm;
   const iso = `${year}-${String(month).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
   const valid = new Date(`${iso}T00:00:00Z`);
-  if (month >= 1 && month <= 12 && dd >= 1 && valid.toISOString().slice(0, 10) === iso && valid.getTime() < Date.now()) return { birthDate: iso, gender };
+  // `valid` нь Invalid Date байж болно (жишээ нь өдөр 56): toISOString() RangeError шидэх тул эхлээд шалгана.
+  if (month >= 1 && month <= 12 && dd >= 1 && !Number.isNaN(valid.getTime()) && valid.toISOString().slice(0, 10) === iso && valid.getTime() < Date.now()) return { birthDate: iso, gender };
   return { birthDate: `${1970 + (seed % 35)}-${String(1 + (seed % 12)).padStart(2, '0')}-${String(1 + (seed % 28)).padStart(2, '0')}`, gender };
 }
 
