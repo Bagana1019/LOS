@@ -41,6 +41,8 @@ export const Permission = [
   'user:manage',
   // Maker-Checker (docs/05): өөрийн илгээсэн/батлах хүсэлтүүдийг харах. Эрх бүрэн шалгалт service-д (дүр, салбар, maker≠checker).
   'change-request:read',
+  // ERP синк (FIN-SYNC): ERP рүү явах үйл явдлын илгээлтийг харах/дахин оролдуулах/хаах. Зөвхөн ADMIN.
+  'erp-sync:manage',
 ] as const;
 export type Permission = typeof Permission[number];
 
@@ -51,7 +53,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   BRANCH_MANAGER: ['customer:read', 'application:read', 'approval:vote', 'blacklist:read', 'report:read', 'change-request:read'],
   // Батлагч: Батлах/Буцаах, олголт зөвшөөрөх; нөхцөл засах эрхгүй (FR-10.3).
   APPROVER: ['customer:read', 'application:read', 'approval:vote', 'disbursement:approve', 'blacklist:read', 'report:read', 'change-request:read'],
-  ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage', 'change-request:read'],
+  ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage', 'change-request:read', 'erp-sync:manage'],
 };
 
 export function permissionsFor(roles: readonly string[]): Permission[] {

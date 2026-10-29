@@ -20,6 +20,7 @@ import { ReportModule } from './modules/report/report.module';
 import { MakerCheckerModule } from './modules/maker-checker/maker-checker.module';
 import { MerchantModule } from './modules/merchant/merchant.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { ErpSyncModule } from './modules/erp-sync/erp-sync.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     MakerCheckerModule,
     SettingsModule,
     MerchantModule.register(),
+    ErpSyncModule,
   ],
 })
 export class AppModule {}

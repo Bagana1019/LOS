@@ -1370,3 +1370,75 @@ model PosLeaseEvent {
 }
 
 // ===== Мерчант POS төгсгөл =====
+
+// ===== ERP синк (FIN-SYNC): ERP-д дамжуулах бизнес үйл явдлын outbox =====
+// ERP журналын эзэн (docs/DECISIONS.md): энд дансны код, дебит/кредит байхгүй — зөвхөн үйл явдал + дүн (`data`).
+model ErpEvent {
+  id             String    @id @default(uuid())
+  // Нэг application-ийн үйл явдлууд seq-ээр дараалан илгээгдэнэ (олголт → төлөлт)
+  seq            BigInt    @unique @default(autoincrement())
+  orgId          String    @map("org_id")
+  branchId       String?   @map("branch_id")
+  idempotencyKey String    @map("idempotency_key")
+  contentHash    String    @map("content_hash")
+  eventType      String    @map("event_type")
+  sourceId       String    @map("source_id")
+  applicationId  String    @map("application_id")
+  contractNo     String?   @map("contract_no")
+  coreLoanId     String?   @map("core_loan_id")
+  customerId     String?   @map("customer_id")
+  currency       String    @db.VarChar(3)
+  // Бизнес үйл явдал болсон огноо. Журналын огноо/мөчлөгийг ERP шийднэ
+  businessDate   DateTime  @map("business_date") @db.Date
+  correlationId  String    @map("correlation_id")
+  // Толгой дүн (олголт / шимтгэлийн нийлбэр / хүлээн авсан) — ops жагсаалтад. Задаргаа `data`-д
+  amount         Decimal   @db.Decimal(18, 2)
+  data           Json
+  status         String    @default("PENDING")
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lockedUntil    DateTime? @map("locked_until") @db.Timestamptz(3)
+  lockedBy       String?   @map("locked_by")
+  lastErrorCode  String?   @map("last_error_code")
+  lastError      String?   @map("last_error")
+  sentAt         DateTime? @map("sent_at") @db.Timestamptz(3)
+  externalRef    String?   @map("external_ref")
+  target         String?
+  resolutionNote String?   @map("resolution_note")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdBy      String?   @map("created_by")
+  updatedBy      String?   @map("updated_by")
+
+  deliveries ErpDeliveryAttempt[]
+
+  @@unique([orgId, idempotencyKey])
+  @@index([status, nextAttemptAt, seq])
+  @@index([applicationId, seq])
+  @@map("erp_event")
+  @@schema("origination")
+}
+
+// Илгээлтийн оролдлого бүр + гараар хийсэн requeue/cancel (actor_id-тай) — аудитын мөр
+model ErpDeliveryAttempt {
+  id           String    @id @default(uuid())
+  eventId      String    @map("event_id")
+  attemptNo    Int       @map("attempt_no")
+  outcome      String
+  errorCode    String?   @map("error_code")
+  errorMessage String?   @map("error_message")
+  httpStatus   Int?      @map("http_status")
+  durationMs   Int?      @map("duration_ms")
+  externalRef  String?   @map("external_ref")
+  target       String?
+  actorId      String?   @map("actor_id")
+  note         String?
+  startedAt    DateTime  @map("started_at") @db.Timestamptz(3)
+  finishedAt   DateTime? @map("finished_at") @db.Timestamptz(3)
+
+  event ErpEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([eventId, startedAt])
+  @@map("erp_delivery_attempt")
+  @@schema("origination")
+}
