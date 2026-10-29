@@ -10,6 +10,9 @@ export const CTX_HEADERS = {
   correlationId: 'x-correlation-id',
   /** Зөвхөн зээлдэгчийн self-service BFF (role=CUSTOMER). */
   customerId: 'x-customer-id',
+  /** Мерчант POS портал (docs/05-merchant-pos.md §6): gateway мерчант хэрэглэгчийн merchant/store-г нэмнэ (gateway талын холболт — follow-up). */
+  merchantId: 'x-merchant-id',
+  storeId: 'x-store-id',
   /** INTERNAL_AUTH_SECRET тохируулсан үед gateway нэмж, сервис шалгана (mTLS-ийн оронд хөгжүүлэлт/staging-д). */
   internalToken: 'x-internal-token',
 } as const;

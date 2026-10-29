@@ -17,6 +17,7 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { ReportModule } from './modules/report/report.module';
 import { MakerCheckerModule } from './modules/maker-checker/maker-checker.module';
+import { MerchantModule } from './modules/merchant/merchant.module';
 import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
@@ -41,6 +42,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     ReportModule,
     MakerCheckerModule,
     SettingsModule,
+    MerchantModule.register(),
   ],
 })
 export class AppModule {}

@@ -10,6 +10,7 @@
 | `docs/03-data-model.md` | Enum, хүснэгт, талбар (§5-д сервис бүрт хуваарилсан) |
 | `docs/04-build-plan.md` | Модуль 0–14 дараалал, acceptance criteria |
 | `docs/DECISIONS.md` | Таамгийн бүртгэл — тодорхойгүй зүйл дээр энд бичээд үргэлжлүүл |
+| `docs/05-merchant-pos.md` | Мерчант POS портал (B2B2C): роль, төлөв, POS-BR/POS-FR, API, өгөгдөл, seam |
 
 ## 2. Архитектурын зураглал
 
@@ -120,6 +121,8 @@ flowchart LR
 | dwh | fact_application, fact_disbursement, fact_bsa_analysis, dim_customer, dim_product, dim_branch, dim_date |
 
 Барьцаа (collateral) нь origination (хүсэлттэй холбоо, KYC, ачаалал, ЭБ) ба valuation (үнэ) хоёрт хуваагдана: origination `collateral` эзэмшинэ, valuation `collateral_valuation`-ийг `collateralId` string-ээр холбоно.
+
+Мерчант POS хүснэгтүүд (schema `origination`): merchant, merchant_store, pos_lease_plan, pos_lease, pos_lease_otp, pos_lease_event — docs/05 §7. Модуль: `apps/origination/src/modules/merchant`.
 
 ## 5. Технологийн стек
 Node 22, pnpm 9, Turborepo 2 · NestJS 10 + Prisma 5 (schema-per-service) · Next.js 15 + React 19 + Ant Design 5 + TanStack Query · PostgreSQL 16 (operational + DWH тусдаа instance) · Redis 7 (Streams + BullMQ) · MinIO · zod · Vitest, Supertest, Playwright · Docker Compose · GitHub Actions. Хэл: UI монгол кирилл (`packages/ui/src/i18n/mn.json`), код/commit англи.

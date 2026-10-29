@@ -1,4 +1,15 @@
 {
+  // `nest build`: тест/demo/e2e болон testing/ код dist-д орохгүй (typecheck-д tsconfig.json бүгдийг хамруулна).
   "extends": "./tsconfig.json",
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "src/test-utils/**", "src/**/testing/**"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "src/**/*.spec.ts",
+    "src/test-utils/**",
+    "src/**/testing/**",
+    "src/**/e2e/**",
+    "src/**/persistence/contract-fixtures.ts",
+    "src/**/persistence/repository.contract.ts"
+  ]
 }
