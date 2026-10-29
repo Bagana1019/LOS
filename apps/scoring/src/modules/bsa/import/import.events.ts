@@ -1,0 +1,14 @@
+// bsa_analysis_event.action нэрс (NFR-4 өөрчлөлтийн түүх). detail-д зөвхөн тоо, код, id — PII ОРОХГҮЙ.
+export const BSA_EVENT = {
+  ANALYSIS_CREATED: 'ANALYSIS_CREATED',
+  PARAMS_UPDATED: 'PARAMS_UPDATED',
+  FILE_UPLOADED: 'FILE_UPLOADED',
+  JOB_RETRY_REQUESTED: 'JOB_RETRY_REQUESTED',
+  IMPORT_COMPLETED: 'IMPORT_COMPLETED',
+  IMPORT_FAILED: 'IMPORT_FAILED',
+  RECALCULATED: 'RECALCULATED',
+  RECLASSIFIED: 'RECLASSIFIED',
+  RULE_CREATED: 'RULE_CREATED',
+  FINALIZED: 'FINALIZED',
+} as const;
+export type BsaEventAction = (typeof BSA_EVENT)[keyof typeof BSA_EVENT];

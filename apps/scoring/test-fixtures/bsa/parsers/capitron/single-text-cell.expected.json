@@ -1,0 +1,192 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC TEST DATA - NOT A REAL STATEMENT. every line is one text cell, columns separated by two spaces (plain-text dump). Assumed CAPITRON layout (TODO(samples)).",
+  "transactions": [
+    {
+      "seq": 1,
+      "txnDate": "2026-02-26",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 14800,
+      "balanceAfter": 2985200,
+      "description": "Зээлийн төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 2,
+      "txnDate": "2026-02-27",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 24200,
+      "balanceAfter": 2961000,
+      "description": "Шилжүүлэг TDB",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 3,
+      "txnDate": "2026-02-28",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 277600,
+      "balanceAfter": 3238600,
+      "description": "Худалдааны орлого POS",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 4,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 154500,
+      "balanceAfter": 3393100,
+      "description": "Цалин Salary March",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 5,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 40600,
+      "balanceAfter": 3352500,
+      "description": "Mobicom төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 6,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 34900,
+      "balanceAfter": 3387400,
+      "description": "Salary",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 7,
+      "txnDate": "2026-03-02",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 39400,
+      "balanceAfter": 3348000,
+      "description": "QPay төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 8,
+      "txnDate": "2026-03-02",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 26400,
+      "balanceAfter": 3321600,
+      "description": "Supermarket purchase",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 9,
+      "txnDate": "2026-03-02",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 35800,
+      "balanceAfter": 3285800,
+      "description": "Зээлийн төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 10,
+      "txnDate": "2026-03-02",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 3300,
+      "balanceAfter": 3282500,
+      "description": "Supermarket purchase",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 11,
+      "txnDate": "2026-03-03",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 1200,
+      "balanceAfter": 3281300,
+      "description": "Гэр бүлд шилжүүлэг",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 12,
+      "txnDate": "2026-03-04",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 386800,
+      "balanceAfter": 3668100,
+      "description": "Хүү олгосон",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 13,
+      "txnDate": "2026-03-05",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 21600,
+      "balanceAfter": 3646500,
+      "description": "Supermarket purchase",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 14,
+      "txnDate": "2026-03-05",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 144200,
+      "balanceAfter": 3790700,
+      "description": "Salary",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 15,
+      "txnDate": "2026-03-05",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 133500,
+      "balanceAfter": 3924200,
+      "description": "Шилжүүлэг орлого",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 16,
+      "txnDate": "2026-03-06",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 22100,
+      "balanceAfter": 3902100,
+      "description": "QPay төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    }
+  ],
+  "openingBalance": 3000000,
+  "closingBalance": 3902100,
+  "periodFrom": "2026-02-26",
+  "periodTo": "2026-03-06",
+  "declaredRowCount": 16,
+  "accountNo": "5011223344",
+  "iban": null,
+  "holderName": "Бат-Эрдэнэ Болд",
+  "holderRegisterNo": null,
+  "currency": "MNT"
+}

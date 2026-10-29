@@ -105,146 +105,245 @@ model SoscoResult {
   @@schema("scoring")
 }
 
-// ═══ BSA (docs/02) ═══
+// ═══════════════════════════════════════════════════════════════════════════════════════════
+// BSA (docs/03 «BSA (модуль 10)», docs/02). Нийтлэг баганууд (docs/03 preamble): id, created_at, updated_at, created_by, updated_by,
+// org_id, branch_id. Мөнгө numeric(18,2), хувь numeric(7,4). Cross-schema FK хориотой → application_id/customer_id/org_id/branch_id
+// нь string id (FK биш). status/direction/channel/dtiRole/matchType/source/format нь String — enum-ийн ЦОРЫН ГАНЦ эх сурвалж
+// @los/contracts (хадгалахад repository zod-оор баталгаажуулна). Шифрлэгдсэн (`*_encrypted`) баганыг зөвхөн PiiCipher уншина/бичнэ.
+// Нарийвчилсан тайлбар, docs/03-аас ялгаа: prisma/README.md
+// ═══════════════════════════════════════════════════════════════════════════════════════════
 
+/// bsa_analysis: LOS хүсэлтийн зээлдэгч бүрийн шинжилгээ. (org, application, customer, version) давтагдахгүй (INT-7).
 model BsaAnalysis {
-  id                     String    @id @default(uuid())
-  orgId                  String    @map("org_id")
-  branchId               String?   @map("branch_id")
-  applicationId          String    @map("application_id")
-  customerId             String    @map("customer_id")
-  officerId              String?   @map("officer_id") // сэжигтэй гүйлгээг шийдвэрлэх ЗЭЗ (BSA-FR-5.2)
-  source                 String    @default("LOS") // WEB | LOS | API
-  status                 String    @default("DRAFT") // BsaStatus
-  version                Int       @default(1)
-  periodFrom             DateTime? @map("period_from") @db.Date
-  periodTo               DateTime? @map("period_to") @db.Date
-  periodMonths           Int?      @map("period_months")
-  proposedMonthlyPayment Decimal?  @map("proposed_monthly_payment") @db.Decimal(18, 2)
-  costOfGoodsRate        Decimal?  @map("cost_of_goods_rate") @db.Decimal(7, 4)
-  summaryJson            Json?     @map("summary_json") // @los/contracts BsaSummary (INT-4)
-  analyzedAt             DateTime? @map("analyzed_at")
-  pushedToLosAt          DateTime? @map("pushed_to_los_at")
-  createdAt              DateTime  @default(now()) @map("created_at")
-  updatedAt              DateTime  @updatedAt @map("updated_at")
-  createdBy              String?   @map("created_by")
-  updatedBy              String?   @map("updated_by")
+  id                        String    @id @default(uuid())
+  applicationId             String    @map("application_id")
+  customerId                String    @map("customer_id")
+  /// EXTRA: INT-1 — LOS-ын borrower id (BsaSummary.borrowerId)
+  borrowerId                String?   @map("borrower_id")
+  /// ЗЭЗ — сэжигтэй гүйлгээг шийдвэрлэх (BSA-FR-5.2, M12c)
+  officerId                 String?   @map("officer_id")
+  /// WEB | LOS | API
+  source                    String    @default("LOS")
+  /// BsaStatus: DRAFT | ANALYZED
+  status                    String    @default("DRAFT")
+  version                   Int       @default(1)
+  periodFrom                DateTime? @map("period_from") @db.Date
+  periodTo                  DateTime? @map("period_to") @db.Date
+  periodMonths              Int?      @map("period_months")
+  proposedMonthlyPayment    Decimal?  @map("proposed_monthly_payment") @db.Decimal(18, 2)
+  costOfGoodsRate           Decimal?  @map("cost_of_goods_rate") @db.Decimal(7, 4)
+  /// INT-4 гэрээ (BsaSummary)
+  summaryJson               Json?     @map("summary_json")
+  analyzedAt                DateTime? @map("analyzed_at")
+  pushedToLosAt             DateTime? @map("pushed_to_los_at")
+  /// EXTRA: шифрлэгдсэн JSON — овог/нэр, регистр, утас, зарласан дансууд (BSA-FR-1.1)
+  customerSnapshotEncrypted String?   @map("customer_snapshot_encrypted")
+  /// EXTRA: PiiCipher.hash(регистр) — регистрээр хайх/давхардал шалгах (BSA-FR-1.2); регистр шууд хадгалагдахгүй
+  registerNoHash            String?   @map("register_no_hash")
+  /// EXTRA: шифрлэгдсэн JSON массив — өөрийн дансууд (BSA-BR-5)
+  ownAccountsEncrypted      String?   @map("own_accounts_encrypted")
+
+  orgId     String   @map("org_id")
+  branchId  String?  @map("branch_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
 
   importJobs   BsaImportJob[]
   transactions BsaTransaction[]
   suspicions   BsaSuspicion[]
+  events       BsaAnalysisEvent[]
 
-  @@unique([applicationId, customerId, version])
-  @@index([orgId, status])
+  @@unique([orgId, applicationId, customerId, version], map: "bsa_analysis_version_uq")
+  @@index([orgId, branchId, status], map: "bsa_analysis_list_idx")
+  @@index([orgId, applicationId], map: "bsa_analysis_application_idx")
+  @@index([orgId, registerNoHash], map: "bsa_analysis_register_idx")
+  @@index([orgId, createdAt], map: "bsa_analysis_retention_idx")
   @@map("bsa_analysis")
   @@schema("scoring")
 }
 
+/// bsa_import_job: хуулгын нэг файлын импорт (BullMQ ажил). (analysis, sha256) давтагдахгүй — ижил файлыг дахин оруулахаас хамгаална.
 model BsaImportJob {
-  id                 String    @id @default(uuid())
-  orgId              String    @map("org_id")
-  analysisId         String    @map("analysis_id")
-  fileId             String    @map("file_id") // dms.file.id
-  bankCode           String?   @map("bank_code")
-  format             String?
-  accountNoEncrypted String?   @map("account_no_encrypted")
-  iban               String?
-  holderName         String?   @map("holder_name")
-  periodFrom         DateTime? @map("period_from") @db.Date
-  periodTo           DateTime? @map("period_to") @db.Date
-  status             String    @default("PENDING") // ImportStatus
-  rowsTotal          Int       @default(0) @map("rows_total")
-  rowsDone           Int       @default(0) @map("rows_done")
-  errorsJson         Json?     @map("errors_json")
-  parserOk           Boolean?  @map("parser_ok")
-  verifierOk         Boolean?  @map("verifier_ok")
-  qrVerified         Boolean?  @map("qr_verified")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-  createdBy          String?   @map("created_by")
-  updatedBy          String?   @map("updated_by")
+  id                  String    @id @default(uuid())
+  analysisId          String    @map("analysis_id")
+  /// Object store (MinIO)-ийн түлхүүр; нэр/PII агуулахгүй
+  fileId              String    @map("file_id")
+  /// EXTRA (docs/03-д байхгүй): файлын нэр дансны дугаар/нэр агуулдаг тул шифрлэнэ
+  fileNameEncrypted   String    @map("file_name_encrypted")
+  mimeType            String    @map("mime_type")
+  sizeBytes           Int       @map("size_bytes")
+  sha256              String
+  bankCode            String?   @map("bank_code")
+  /// PDF | IMAGE | CSV | TEXT
+  format              String
+  accountNoEncrypted  String?   @map("account_no_encrypted")
+  ibanEncrypted       String?   @map("iban_encrypted")
+  holderNameEncrypted String?   @map("holder_name_encrypted")
+  periodFrom          DateTime? @map("period_from") @db.Date
+  periodTo            DateTime? @map("period_to") @db.Date
+  /// ImportStatus: PENDING | PROCESSING | COMPLETED | FAILED
+  status              String    @default("PENDING")
+  rowsTotal           Int       @default(0) @map("rows_total")
+  rowsDone            Int       @default(0) @map("rows_done")
+  /// [{code, message, severity?, page?, line?, seq?}] — PII агуулахгүй (зөвхөн код, мөр/хуудасны дугаар)
+  errorsJson          Json?     @map("errors_json")
+  warningsJson        Json?     @map("warnings_json")
+  parserOk            Boolean?  @map("parser_ok")
+  verifierOk          Boolean?  @map("verifier_ok")
+  /// null = шалгаагүй (QR байхгүй)
+  qrVerified          Boolean?  @map("qr_verified")
+  attempts            Int       @default(0)
+  startedAt           DateTime? @map("started_at")
+  finishedAt          DateTime? @map("finished_at")
+
+  orgId     String   @map("org_id")
+  branchId  String?  @map("branch_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
 
   analysis     BsaAnalysis      @relation(fields: [analysisId], references: [id], onDelete: Cascade)
   transactions BsaTransaction[]
 
-  @@index([analysisId])
-  @@index([status])
+  @@unique([analysisId, sha256], map: "bsa_import_job_file_uq")
+  @@index([orgId, branchId, status], map: "bsa_import_job_list_idx")
+  @@index([analysisId], map: "bsa_import_job_analysis_idx")
   @@map("bsa_import_job")
   @@schema("scoring")
 }
 
+/// bsa_transaction: хуулгын гүйлгээ. Утга, харьцсан данс/нэр шифрлэгдсэн. (analysis, dedupe_key) давтагдахгүй — давхцсан хуулгын мөр нэг л удаа.
 model BsaTransaction {
   id                           String   @id @default(uuid())
-  orgId                        String   @map("org_id")
   analysisId                   String   @map("analysis_id")
   importJobId                  String   @map("import_job_id")
+  /// Файл доторх 1-ээс эхэлсэн дараалал
+  seq                          Int
   txnDate                      DateTime @map("txn_date") @db.Date
-  txnTime                      String?  @map("txn_time") // HH:MM(:SS) — банк бүр цаг өгдөггүй (BSA-BR-5)
-  direction                    String // TxnDirection
+  /// HH:mm | HH:mm:ss
+  txnTime                      String?  @map("txn_time")
+  /// TxnDirection: INCOME | EXPENSE
+  direction                    String
+  /// Эерэг дүн
   amount                       Decimal  @db.Decimal(18, 2)
   balanceAfter                 Decimal? @map("balance_after") @db.Decimal(18, 2)
-  description                  String?
+  descriptionEncrypted         String   @map("description_encrypted")
   counterpartyAccountEncrypted String?  @map("counterparty_account_encrypted")
-  counterpartyAccountHash      String?  @map("counterparty_account_hash") // blind index — өөрийн данс/харьцсан дансны бүлэглэлт
-  counterpartyName             String?  @map("counterparty_name")
-  channel                      String? // BsaChannel
+  counterpartyNameEncrypted    String?  @map("counterparty_name_encrypted")
+  /// TxnChannel: QPAY | POS | ATM | TRANSFER | OTHER
+  channel                      String   @default("OTHER")
+  /// null = ангилаагүй (импортын дараа, ангилахаас өмнө)
   categoryCode                 String?  @map("category_code")
   categoryGroup                String?  @map("category_group")
-  confidence                   Decimal? @db.Decimal(5, 2) // 0–100
+  confidence                   Decimal  @default(0) @db.Decimal(5, 2)
   isOwnTransfer                Boolean  @default(false) @map("is_own_transfer")
   manualOverride               Boolean  @default(false) @map("manual_override")
   overrideBy                   String?  @map("override_by")
-  createdAt                    DateTime @default(now()) @map("created_at")
-  updatedAt                    DateTime @updatedAt @map("updated_at")
+  /// Харьцсан дансны blind index (PiiCipher.hash) — дансыг ил хадгалахгүй
+  counterpartyAccountHash      String?  @map("counterparty_account_hash")
+  /// Хуулга/дансны тодорхойлогч (PiiCipher.hash — дансны дугаар ил хадгалахгүй)
+  statementKey                 String   @map("statement_key")
+  /// Агуулгын hash (давхцсан хуулгын ижил мөрийг таних) — dedupe-key.ts
+  dedupeKey                    String   @map("dedupe_key")
+
+  orgId     String   @map("org_id")
+  branchId  String?  @map("branch_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
 
   analysis  BsaAnalysis  @relation(fields: [analysisId], references: [id], onDelete: Cascade)
   importJob BsaImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
 
-  @@index([analysisId, txnDate])
-  @@index([analysisId, categoryCode])
-  @@index([importJobId])
+  @@unique([analysisId, dedupeKey], map: "bsa_transaction_dedupe_uq")
+  @@index([analysisId, txnDate], map: "bsa_transaction_date_idx")
+  @@index([analysisId, categoryCode], map: "bsa_transaction_category_idx")
+  @@index([importJobId], map: "bsa_transaction_job_idx")
   @@map("bsa_transaction")
   @@schema("scoring")
 }
 
+/// bsa_category: ангилал (admin засна, NFR-6). (org, code) давтагдахгүй.
 model BsaCategory {
-  id        String   @id @default(uuid())
-  orgId     String   @map("org_id")
+  id        String  @id @default(uuid())
   code      String
-  direction String // TxnDirection
-  groupCode String   @map("group_code")
+  /// TxnDirection
+  direction String
+  groupCode String  @map("group_code")
   name      String
-  weight    Decimal  @db.Decimal(7, 4) // дайчлах хувь: 0.85 = 85%
-  dtiRole   String   @map("dti_role") // BsaDtiRole
-  sortOrder Int      @default(0) @map("sort_order")
-  isActive  Boolean  @default(true) @map("is_active")
+  /// Дайчлах хувь 0..1 (зарлагад 1)
+  weight    Decimal @db.Decimal(7, 4)
+  /// BsaDtiRole: INCOME | DEBT_SERVICE | HOUSEHOLD | BUSINESS_EXPENSE | EXCLUDE | INFO
+  dtiRole   String  @map("dti_role")
+  sortOrder Int     @default(0) @map("sort_order")
+  isActive  Boolean @default(true) @map("is_active")
+
+  orgId     String   @map("org_id")
+  branchId  String?  @map("branch_id")
   createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
   createdBy String?  @map("created_by")
   updatedBy String?  @map("updated_by")
 
-  @@unique([orgId, code])
+  @@unique([orgId, code], map: "bsa_category_code_uq")
   @@map("bsa_category")
   @@schema("scoring")
 }
 
+/// bsa_rule: ангиллын дүрэм. EXTRA unique: seed/хэрэглэгчийн санал давхар үүсгэхгүй (байгалийн түлхүүр). Ижил хэвтэй ДАРАХ дүрэм
+/// (өөр ангилал/priority/source) зөвшөөрөгдөнө.
 model BsaRule {
-  id           String   @id @default(uuid())
-  orgId        String   @map("org_id")
-  direction    String // TxnDirection
-  matchType    String   @map("match_type") // BsaRuleMatchType
+  id           String  @id @default(uuid())
+  direction    String
+  /// BsaRuleMatchType: KEYWORD | COUNTERPARTY | REGEX
+  matchType    String  @map("match_type")
   pattern      String
-  categoryCode String   @map("category_code")
-  priority     Int      @default(100)
-  source       String   @default("ADMIN") // BsaRuleSource
-  isActive     Boolean  @default(true) @map("is_active")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-  createdBy    String?  @map("created_by")
-  updatedBy    String?  @map("updated_by")
+  categoryCode String  @map("category_code")
+  /// Их утга түрүүлж шалгагдана
+  priority     Int
+  /// BsaRuleSource: ADMIN | FEEDBACK
+  source       String
+  isActive     Boolean @default(true) @map("is_active")
 
-  @@index([orgId, direction, priority])
+  orgId     String   @map("org_id")
+  branchId  String?  @map("branch_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  @@unique([orgId, direction, matchType, pattern, categoryCode, source], map: "bsa_rule_natural_uq")
+  @@index([orgId, direction, priority], map: "bsa_rule_priority_idx")
   @@map("bsa_rule")
+  @@schema("scoring")
+}
+
+/// bsa_analysis_event (EXTRA хүснэгт): шинжилгээний өөрчлөлтийн түүх — NFR-4 аудит + тойм дэлгэцийн «өөрчлөлтийн түүх».
+/// Бичилт нэмэгдэх л (append-only). detail_json PII агуулахгүй.
+model BsaAnalysisEvent {
+  id         String   @id @default(uuid())
+  analysisId String   @map("analysis_id")
+  at         DateTime @default(now())
+  actorId    String?  @map("actor_id")
+  /// Үйлдлийн код (жишээ: IMPORT_COMPLETED, RECLASSIFIED, RECALCULATED, PUSHED_TO_LOS)
+  action     String
+  detailJson Json?    @map("detail_json")
+
+  orgId     String   @map("org_id")
+  branchId  String?  @map("branch_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  analysis BsaAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId, at(sort: Desc)], map: "bsa_analysis_event_history_idx")
+  @@map("bsa_analysis_event")
   @@schema("scoring")
 }
 
