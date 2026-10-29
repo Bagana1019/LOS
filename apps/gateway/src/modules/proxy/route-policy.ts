@@ -37,7 +37,12 @@ export function requiredPermission(method: string, path: string): Permission | n
  * Зээлдэгчийн public e-sign нь тусдаа `/api/public/esign/**` (modules/public-esign); `dms/esign` нь origination-ийн урьдчилсан нөхцөлөөр
  * (гэрээний төлөв, хүрээ) хамгаалагддаг тул ажилтан өөрийн заасан signer/файлаар шууд хүсэлт үүсгэж болохгүй.
  */
-export const INTERNAL_ONLY_PREFIXES: readonly string[] = ['/api/dms/esign', '/api/dms/public', '/api/dms/dev'];
+// `dms/documents`: баримтыг origination (хүсэлтийн хүрээ/төлвийн шалгалттай) дамжуулан л үүсгэнэ. `valuation/valuate/collateral`: үнэлгээг origination л хадгална (хүрээ, төлөв, G0).
+// `kyc/xyp/{assets,property}`, `kyc/collateral-checks`, `valuation/valuate/vehicle-lookup`: бусдын регистр/нэр буцаадаг лавлагаа — хүсэлтийн хүрээгүйгээр ажилтан шууд дуудаж болохгүй, origination (FR-6.3, FR-6.5, FR-6.6) л дуудна.
+export const INTERNAL_ONLY_PREFIXES: readonly string[] = [
+  '/api/dms/esign', '/api/dms/public', '/api/dms/dev', '/api/dms/documents', '/api/valuation/valuate/collateral',
+  '/api/kyc/xyp/assets', '/api/kyc/xyp/property', '/api/kyc/collateral-checks', '/api/valuation/valuate/vehicle-lookup',
+];
 
 export function isInternalOnly(path: string): boolean {
   let p: string;

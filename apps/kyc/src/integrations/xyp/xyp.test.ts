@@ -29,6 +29,14 @@ describe('MockXypClient (deterministic fixture)', () => {
     expect(c).toEqual((await xyp.getCitizen('УБ12345678'))!);
   });
 
+  it('never crashes on a well-formed register whose date part is impossible (day 56, month 31): falls back to a stable valid date', async () => {
+    for (const reg of ['УБ90015699', 'УБ90013199', 'УБ00004599', 'УБ99999998']) {
+      const c = (await xyp.getCitizen(reg))!;
+      expect(new Date(`${c.birthDate}T00:00:00Z`).toISOString().slice(0, 10), reg).toBe(c.birthDate);
+      expect(c).toEqual((await xyp.getCitizen(reg))!);
+    }
+  });
+
   it('fills 10+ fields for an individual and the legal-entity subset for a company', async () => {
     const c = (await xyp.getCitizen('УБ90010112'))!;
     const filled = Object.values({ ...c, ...c.address }).filter((v) => v !== null && typeof v !== 'object');

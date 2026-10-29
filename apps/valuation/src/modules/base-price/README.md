@@ -1,5 +1,5 @@
 # base-price
 
-Барьцааны үнэлгээ: суурь үнэ, арга, haircut, гадны үнэлгээ, дахин үнэлгээ
-
-Шаардлага: docs/ — холбогдох FR-ийг README-д заа. TODO: module, controller, service, dto, tests.
+Суурь үнийн сан (FR-14.1, FR-14.5): хөрөнгийн төрөл + түлхүүр бүрт хувилбарт нэгж үнэ. Админ `POST /api/base-prices`, `POST /api/base-prices/import`
+(`settings:manage`); унших `GET /api/base-prices` (`application:read`). `BasePriceLookupService` нь санал бодоход ашиглагдана (үүсгэхгүй, зөвхөн уншина).
+Түлхүүрийн хэвийн болголт `base-price.keys.ts`. Дэлгэрэнгүй: `apps/valuation/README.md` "Суурь үнэ".

@@ -10,5 +10,7 @@ import { VALUATION_SETTINGS } from './valuation-settings.port';
   imports: [IntegrationsModule],
   controllers: [ValuationController],
   providers: [AutoValuationService, { provide: VALUATION_SETTINGS, useClass: DemoValuationSettings }],
+  // The collateral suggestion (CollateralValuationModule) reuses the vehicle auto-valuation instead of re-implementing it.
+  exports: [AutoValuationService, VALUATION_SETTINGS],
 })
 export class ValuationModule {}

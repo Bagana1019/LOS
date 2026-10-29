@@ -4,6 +4,8 @@ import shell from './mn.shell.json';
 import makerChecker from './mn.maker-checker.json';
 import merchant from './mn.merchant.json'; // Мерчант POS портал (docs/05 §12): merchant.*, pos.*, error.* — бусад файлтай түлхүүр давхцахгүй
 import borrower from './mn.borrower.json';
+import collateral from './mn.collateral.json'; // Барьцаа (FR-6, FR-14, G0): collateral.*
+import documents from './mn.document.json'; // Баримт бичиг (FR-9): document.*
 import payment from './mn.payment.json';
 import notification from './mn.notification.json';
 import report from './mn.report.json';
@@ -19,6 +21,8 @@ export const mnSources = {
   makerChecker,
   merchant,
   borrower,
+  collateral,
+  documents,
   payment,
   notification,
   report,
