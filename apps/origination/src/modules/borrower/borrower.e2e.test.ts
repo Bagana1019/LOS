@@ -1143,12 +1143,17 @@ describe.skipIf(!hasTestDb)('borrower API (DB)', () => {
       expect((await http().delete(url(app.id, b1.borrower.id)).set(officer)).status).toBe(409);
     });
 
-    it('PLEDGOR биш дүрийг барьцаатай эсэхээс үл хамааран хасч болно (GUARANTOR)', async () => {
+    it('барьцаа өмчилдөг хамтран зээлдэгчийг мөн хасахгүй (409 BORROWER_OWNS_COLLATERAL); барьцаагүй батлан даагчийг чөлөөтэй хасна', async () => {
       const app = await newApp();
+      const c = await cust();
       const g = await cust();
-      await addOk(app.id, (await cust()).id, 'PRIMARY'); const b = await addOk(app.id, g.id, 'GUARANTOR');
-      await collateral(app.id, g.id);
-      expect((await http().delete(url(app.id, b.borrower.id)).set(officer)).status).toBe(204);
+      await addOk(app.id, (await cust()).id, 'PRIMARY');
+      const co = await addOk(app.id, c.id, 'CO_BORROWER');
+      const guarantor = await addOk(app.id, g.id, 'GUARANTOR');
+      await collateral(app.id, c.id);
+      const blocked = await http().delete(url(app.id, co.borrower.id)).set(officer);
+      expect([blocked.status, blocked.body.code]).toEqual([409, 'BORROWER_OWNS_COLLATERAL']);
+      expect((await http().delete(url(app.id, guarantor.borrower.id)).set(officer)).status).toBe(204);
     });
   });
 
