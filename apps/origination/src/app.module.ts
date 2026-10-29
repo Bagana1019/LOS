@@ -14,6 +14,7 @@ import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
 // import { BlacklistModule } from './modules/blacklist/blacklist.module';
 // import { NotificationModule } from './modules/notification/notification.module';
 // import { ReportModule } from './modules/report/report.module';
+import { MakerCheckerModule } from './modules/maker-checker/maker-checker.module';
 import { SettingsModule } from './modules/settings/settings.module';
 
 @Module({
@@ -34,6 +35,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     // BlacklistModule,
     // NotificationModule,
     // ReportModule,
+    MakerCheckerModule,
     SettingsModule,
   ],
 })

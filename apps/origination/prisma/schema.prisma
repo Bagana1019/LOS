@@ -783,3 +783,125 @@ model PricingTier {
   @@map("pricing_tier")
   @@schema("origination")
 }
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Maker-Checker ("4 нүдний зарчим") — docs/05-maker-checker.md. Модуль: src/modules/maker-checker.
+// DB-ийн CHECK / partial unique index / trigger нь migrations/*_maker_checker/migration.sql-д (Prisma илэрхийлж чадахгүй).
+// ───────────────────────────────────────────────────────────────────────────────
+enum ChangeRequestStatus {
+  PENDING
+  APPLIED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  FAILED
+
+  @@map("change_request_status")
+  @@schema("origination")
+}
+
+enum ChangeRequestMode {
+  FOUR_EYES
+  DIRECT
+
+  @@map("change_request_mode")
+  @@schema("origination")
+}
+
+enum ChangeRequestEvent {
+  SUBMITTED
+  APPLIED
+  DIRECT_APPLIED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  FAILED
+
+  @@map("change_request_event")
+  @@schema("origination")
+}
+
+/// Нэг ажилтан (maker) санал болгосон өөрчлөлт/шийдвэр; өөр хэрэглэгч (checker) батласны дараа л хэрэгжинэ.
+model ChangeRequest {
+  id                   String              @id @default(uuid()) @db.Uuid
+  orgId                String              @map("org_id")
+  branchId             String?             @map("branch_id")
+  targetType           String              @map("target_type")
+  targetId             String              @map("target_id")
+  action               String
+  applicationId        String?             @map("application_id")
+  mode                 ChangeRequestMode   @default(FOUR_EYES)
+  status               ChangeRequestStatus @default(PENDING)
+  payload              Json
+  /// Maker илгээх үеийн зорилтын төлөв (handler.snapshot)
+  before               Json?
+  /// Maker харсан үеийн зорилтын хувилбар; apply үед handler харьцуулна (MC-BR-7)
+  baseVersion          String?             @map("base_version")
+  reason               String
+  makerId              String              @map("maker_id")
+  makerRoles           String[]            @map("maker_roles")
+  /// Илгээх үеийн policy-н checkerRoles (snapshot) — дараа policy өөрчлөгдсөн ч хүчинтэй
+  requiredCheckerRoles String[]            @map("required_checker_roles")
+  checkerId            String?             @map("checker_id")
+  checkerRoles         String[]            @map("checker_roles")
+  checkerComment       String?             @map("checker_comment")
+  failureReason        String?             @map("failure_reason")
+  correlationId        String              @map("correlation_id")
+  expiresAt            DateTime            @map("expires_at") @db.Timestamptz(6)
+  decidedAt            DateTime?           @map("decided_at") @db.Timestamptz(6)
+  version              Int                 @default(0)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy            String              @map("created_by")
+  updatedBy            String              @map("updated_by")
+
+  history ChangeRequestHistory[]
+
+  @@index([orgId, status, expiresAt])
+  @@index([orgId, targetType, targetId])
+  @@index([makerId, status])
+  @@index([checkerId])
+  @@index([applicationId])
+  @@map("change_request")
+  @@schema("origination")
+}
+
+/// Append-only аудит түүх (MC-BR-9). UPDATE/DELETE-г trigger хориглоно.
+model ChangeRequestHistory {
+  id              String               @id @default(uuid()) @db.Uuid
+  changeRequestId String               @map("change_request_id") @db.Uuid
+  seq             Int
+  event           ChangeRequestEvent
+  fromStatus      ChangeRequestStatus? @map("from_status")
+  toStatus        ChangeRequestStatus  @map("to_status")
+  actorId         String?              @map("actor_id")
+  actorRoles      String[]             @map("actor_roles")
+  comment         String?
+  data            Json?
+  at              DateTime             @default(now()) @db.Timestamptz(6)
+
+  changeRequest ChangeRequest @relation(fields: [changeRequestId], references: [id], onDelete: Restrict)
+
+  @@unique([changeRequestId, seq])
+  @@map("change_request_history")
+  @@schema("origination")
+}
+
+/// (targetType, action) тус бүрийн 4 нүдний тохиргоо (admin). Мөр байхгүй бол handler-ийн defaultPolicy.
+model MakerCheckerPolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id")
+  targetType     String   @map("target_type")
+  action         String
+  enabled        Boolean  @default(true)
+  checkerRoles   String[] @map("checker_roles")
+  expiresInHours Int      @map("expires_in_hours")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String   @map("created_by")
+  updatedBy      String   @map("updated_by")
+
+  @@unique([orgId, targetType, action])
+  @@map("maker_checker_policy")
+  @@schema("origination")
+}

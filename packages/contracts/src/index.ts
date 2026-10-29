@@ -3,3 +3,4 @@ export * from './events';
 export * from './auth';
 export * from './settings';
 export * from './dto';
+export * from './maker-checker';
