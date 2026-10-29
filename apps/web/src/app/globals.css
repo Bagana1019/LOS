@@ -1,0 +1,48 @@
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+}
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+}
+.los-skip {
+  position: absolute;
+  left: -9999px;
+}
+.los-skip:focus {
+  left: 8px;
+  top: 8px;
+  z-index: 1000;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--los-surface, #fff);
+}
+.los-user-trigger:focus-visible {
+  outline: 2px solid var(--los-primary, currentColor);
+  outline-offset: 2px;
+}
+.ant-layout-sider-collapsed .los-brand-name {
+  display: none;
+}
+@media (max-width: 575px) {
+  .los-user-name,
+  .los-kbd-hint {
+    display: none;
+  }
+}
+/* lg-ээс нарийн дэлгэц: нээгдсэн sidebar контентыг шахахгүй, давхарлан гарна (antd `below` анги = breakpoint-ээс доош) */
+.ant-layout-sider-below:not(.ant-layout-sider-collapsed) {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 100;
+  height: 100vh;
+}
+.los-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: rgba(0, 0, 0, 0.45);
+}

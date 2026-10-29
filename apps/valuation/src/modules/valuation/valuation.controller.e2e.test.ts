@@ -3,10 +3,10 @@ import type { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { AutoValuationResponse, VehicleLookupResponse } from '@los/contracts';
+import { AutoValuationResponse, CTX_HEADERS, VehicleLookupResponse } from '@los/contracts';
+import { Clock, CommonModule, FixedClock, JsonLogger } from '@los/nest-common';
 import { AppModule } from '../../app.module';
-import { CLOCK } from '../../common/clock';
-import type { IntegrationContext } from '../../integrations/integration.types';
+import { IntegrationError, type IntegrationContext } from '../../integrations/integration.types';
 import { VEHICLE_REGISTRY } from '../../integrations/vehicle-registry/vehicle-registry.port';
 import { ValuationModule } from './valuation.module';
 import { VALUATION_SETTINGS } from './valuation-settings.port';
@@ -14,26 +14,33 @@ import { DemoValuationSettings } from './demo-valuation-settings';
 
 const NOW = new Date('2026-10-28T09:00:00.000Z');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// What the gateway sends after it has authenticated the user (CLAUDE.md §3.2 rule 9).
+const OFFICER = { [CTX_HEADERS.userId]: 'user-1', [CTX_HEADERS.roles]: 'OFFICER', [CTX_HEADERS.orgId]: 'org-1' };
 
-async function createApp(mode: 'mock' | 'real'): Promise<INestApplication> {
-  const moduleRef = await Test.createTestingModule({
+const testModule = (mode: 'mock' | 'real') =>
+  Test.createTestingModule({
     imports: [
       ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, load: [() => ({ INTEGRATION_MODE: mode })] }),
+      CommonModule.forRoot(),
       ValuationModule,
     ],
   })
-    .overrideProvider(CLOCK)
-    .useValue({ now: () => NOW })
-    .compile();
-  const app = moduleRef.createNestApplication();
+    .overrideProvider(Clock)
+    .useValue(new FixedClock(NOW));
+
+async function start(builder: ReturnType<typeof testModule>, logSink?: (line: string) => void): Promise<INestApplication> {
+  const app = (await builder.compile()).createNestApplication();
   app.setGlobalPrefix('api');
-  app.useLogger(false);
+  if (logSink) app.useLogger(new JsonLogger('valuation', 'debug', logSink));
+  else app.useLogger(false);
   await app.init();
   return app;
 }
 
-const post = (app: INestApplication, path: 'auto' | 'vehicle-lookup', body?: unknown, correlationId?: string) => {
-  const req = request(app.getHttpServer()).post(`/api/valuate/${path}`);
+const createApp = (mode: 'mock' | 'real'): Promise<INestApplication> => start(testModule(mode));
+
+const post = (app: INestApplication, path: 'auto' | 'vehicle-lookup', body?: unknown, correlationId?: string, identity: Record<string, string> = OFFICER) => {
+  const req = request(app.getHttpServer()).post(`/api/valuate/${path}`).set(identity);
   return (correlationId ? req.set('x-correlation-id', correlationId) : req).send(body);
 };
 
@@ -131,17 +138,17 @@ describe('valuation endpoints with mock integrations', () => {
       ['a zero mileage', { assetType: 'VEHICLE', plateNo: 'УЕН5246', mileageKm: 0 }, 'mileageKm'],
       ['a negative mileage', { assetType: 'VEHICLE', plateNo: 'УЕН5246', mileageKm: -1 }, 'mileageKm'],
       ['a fractional mileage', { assetType: 'VEHICLE', plateNo: 'УЕН5246', mileageKm: 10.5 }, 'mileageKm'],
-    ])('returns 400 VALIDATION_ERROR for %s', async (_label, payload, field) => {
+    ])('returns 400 VALIDATION_FAILED for %s', async (_label, payload, field) => {
       const res = await post(app, 'auto', payload);
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('VALIDATION_ERROR');
-      expect(res.body.issues).toEqual(expect.arrayContaining([{ path: field, message: expect.any(String) }]));
+      expect(res.body.code).toBe('VALIDATION_FAILED');
+      expect(res.body.details).toEqual(expect.arrayContaining([{ path: field, message: expect.any(String) }]));
     });
 
-    it('returns 400 VALIDATION_ERROR for an empty body', async () => {
+    it('returns 400 VALIDATION_FAILED for an empty body', async () => {
       const res = await post(app, 'auto');
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(res.body.code).toBe('VALIDATION_FAILED');
     });
 
     it('does not echo the rejected plate back in the validation issues', async () => {
@@ -185,10 +192,10 @@ describe('valuation endpoints with mock integrations', () => {
       expect(res.body.code).toBe('VEHICLE_NOT_FOUND');
     });
 
-    it('returns 400 VALIDATION_ERROR for a Latin plate', async () => {
+    it('returns 400 VALIDATION_FAILED for a Latin plate', async () => {
       const res = await post(app, 'vehicle-lookup', { plateNo: 'UEN5246' });
       expect(res.status).toBe(400);
-      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(res.body.code).toBe('VALIDATION_FAILED');
     });
   });
 
@@ -222,6 +229,45 @@ describe('valuation endpoints with mock integrations', () => {
       expect(res.status).toBe(404);
       expect(res.headers['x-correlation-id']).toBe('corr-404');
     });
+    it('is repeated in the body of every error', async () => {
+      const res = await post(app, 'auto', { assetType: 'VEHICLE', plateNo: '9999ХХХ' }, 'corr-body');
+      expect(res.body).toMatchObject({ code: 'VEHICLE_NOT_FOUND', correlationId: 'corr-body' });
+    });
+  });
+});
+
+describe('authorization (identity comes from the gateway headers)', () => {
+  let app: INestApplication;
+  beforeAll(async () => {
+    app = await createApp('mock');
+  });
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it.each(['auto', 'vehicle-lookup'] as const)('POST /api/valuate/%s without an identity is 401 UNAUTHENTICATED', async (path) => {
+    const res = await post(app, path, { assetType: 'VEHICLE', plateNo: 'УЕН5246' }, undefined, {});
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('UNAUTHENTICATED');
+  });
+
+  it.each(['OFFICER', 'BRANCH_MANAGER', 'APPROVER', 'ADMIN'])('lets the %s role value a vehicle and look up the owner', async (role) => {
+    const identity = { ...OFFICER, [CTX_HEADERS.roles]: role };
+    expect((await post(app, 'auto', { assetType: 'VEHICLE', plateNo: 'УЕН5246' }, undefined, identity)).status).toBe(200);
+    expect((await post(app, 'vehicle-lookup', { plateNo: 'УЕН5246' }, undefined, identity)).status).toBe(200);
+  });
+
+  it.each(['auto', 'vehicle-lookup'] as const)('POST /api/valuate/%s is 403 for a user without a staff role', async (path) => {
+    const res = await post(app, path, { assetType: 'VEHICLE', plateNo: 'УЕН5246' }, undefined, { ...OFFICER, [CTX_HEADERS.roles]: '' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('FORBIDDEN');
+  });
+
+  it('keeps the owner away from a borrower (customer id only, no staff role)', async () => {
+    const borrower = { [CTX_HEADERS.customerId]: 'customer-1', [CTX_HEADERS.orgId]: 'org-1' };
+    const res = await post(app, 'vehicle-lookup', { plateNo: 'УЕН5246' }, undefined, borrower);
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(res.body)).not.toMatch(/Эрдэнэ|УЕ00000001/);
   });
 });
 
@@ -237,7 +283,7 @@ describe('valuation endpoints with INTEGRATION_MODE=real (adapters are stubs)', 
   it.each(['auto', 'vehicle-lookup'] as const)('POST /api/valuate/%s returns 502 REGISTRY_UNAVAILABLE', async (path) => {
     const res = await post(app, path, { assetType: 'VEHICLE', plateNo: 'УЕН5246' });
     expect(res.status).toBe(502);
-    expect(res.body).toMatchObject({ code: 'REGISTRY_UNAVAILABLE', message: expect.stringContaining('Try again') });
+    expect(res.body).toMatchObject({ code: 'REGISTRY_UNAVAILABLE', message: expect.stringContaining('дахин оролдоно уу') });
     expect(JSON.stringify(res.body)).not.toContain('УЕН5246');
   });
 
@@ -250,16 +296,7 @@ describe('valuation endpoints with INTEGRATION_MODE=real (adapters are stubs)', 
 describe('wiring', () => {
   it('hands the registry the normalised plate and the request correlation id', async () => {
     const lookup = vi.fn(async (_plateNo: string, _ctx: IntegrationContext) => null);
-    const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, load: [() => ({ INTEGRATION_MODE: 'mock' })] }), ValuationModule],
-    })
-      .overrideProvider(VEHICLE_REGISTRY)
-      .useValue({ lookup })
-      .compile();
-    const app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useLogger(false);
-    await app.init();
+    const app = await start(testModule('mock').overrideProvider(VEHICLE_REGISTRY).useValue({ lookup }));
     try {
       await post(app, 'auto', { assetType: 'VEHICLE', plateNo: ' уен-5246 ' }, 'corr-wire-1');
       expect(lookup).toHaveBeenCalledOnce();
@@ -271,18 +308,13 @@ describe('wiring', () => {
   });
 
   it('applies externalTimeoutMs from the settings to the registry call', async () => {
-    const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, load: [() => ({ INTEGRATION_MODE: 'mock' })] }), ValuationModule],
-    })
-      .overrideProvider(VEHICLE_REGISTRY)
-      .useValue({ lookup: () => new Promise(() => undefined) })
-      .overrideProvider(VALUATION_SETTINGS)
-      .useValue({ vehiclePricing: async () => ({ ...(await new DemoValuationSettings().vehiclePricing()), externalTimeoutMs: 25 }) })
-      .compile();
-    const app = moduleRef.createNestApplication();
-    app.setGlobalPrefix('api');
-    app.useLogger(false);
-    await app.init();
+    const app = await start(
+      testModule('mock')
+        .overrideProvider(VEHICLE_REGISTRY)
+        .useValue({ lookup: () => new Promise(() => undefined) })
+        .overrideProvider(VALUATION_SETTINGS)
+        .useValue({ vehiclePricing: async () => ({ ...(await new DemoValuationSettings().vehiclePricing()), externalTimeoutMs: 25 }) }),
+    );
     try {
       const res = await post(app, 'vehicle-lookup', { plateNo: 'УЕН5246' });
       expect(res.status).toBe(502);
@@ -292,25 +324,54 @@ describe('wiring', () => {
     }
   });
 
-  it('boots the real AppModule: health and a valuation work through the global prefix', async () => {
-    const saved = process.env.INTEGRATION_MODE;
+  it('logs a failing registry as one JSON line with the request correlation id and without personal data', async () => {
+    const lines: string[] = [];
+    const leaky = new IntegrationError('ATUT', 'UNAVAILABLE', 'lookup of УЕН5246 failed, owner Секрет Эзэмшигч ЗЗ12345678');
+    const app = await start(testModule('mock').overrideProvider(VEHICLE_REGISTRY).useValue({ lookup: async () => Promise.reject(leaky) }), (line) => lines.push(line));
+    try {
+      await post(app, 'auto', { assetType: 'VEHICLE', plateNo: 'УЕН5246' }, 'corr-log-1');
+      const events = lines.map((line) => JSON.parse(line)).filter((l) => l.msg === 'registry_failed');
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ level: 'error', service: 'valuation', correlationId: 'corr-log-1', extra: { source: 'ATUT', code: 'UNAVAILABLE' } });
+      for (const secret of ['УЕН5246', 'Секрет', 'ЗЗ12345678']) expect(lines.join('\n')).not.toContain(secret);
+    } finally {
+      await app.close();
+    }
+  });
+});
+
+// The real AppModule also needs the database (PrismaService, outbox, readiness), like test/health.e2e.test.ts.
+describe.skipIf(!process.env.TEST_DATABASE_URL)('the real AppModule', () => {
+  let app: INestApplication;
+  let savedMode: string | undefined;
+  beforeAll(async () => {
+    savedMode = process.env.INTEGRATION_MODE;
     process.env.INTEGRATION_MODE = 'mock';
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
-    const app = moduleRef.createNestApplication();
+    app = (await Test.createTestingModule({ imports: [AppModule] }).compile()).createNestApplication();
     app.setGlobalPrefix('api');
     app.useLogger(false);
     await app.init();
-    try {
-      const health = await request(app.getHttpServer()).get('/api/health');
-      expect(health.status).toBe(200);
-      expect(health.body).toEqual({ service: 'valuation', ok: true });
-      const res = await post(app, 'auto', { assetType: 'VEHICLE', plateNo: 'УЕН5246', mileageKm: 90_000 });
-      expect(res.status).toBe(200);
-      expect(res.body.status).toBe('OK');
-    } finally {
-      await app.close();
-      if (saved === undefined) delete process.env.INTEGRATION_MODE;
-      else process.env.INTEGRATION_MODE = saved;
-    }
+  });
+  afterAll(async () => {
+    await app.close();
+    if (savedMode === undefined) delete process.env.INTEGRATION_MODE;
+    else process.env.INTEGRATION_MODE = savedMode;
+  });
+
+  it('serves health and both valuation endpoints through the global prefix', async () => {
+    const health = await request(app.getHttpServer()).get('/api/health');
+    expect(health.status).toBe(200);
+    expect(health.body).toMatchObject({ service: 'valuation', ok: true });
+    const auto = await post(app, 'auto', { assetType: 'VEHICLE', plateNo: 'УЕН5246', mileageKm: 90_000 });
+    expect(auto.status).toBe(200);
+    expect(auto.body.status).toBe('OK');
+    const lookup = await post(app, 'vehicle-lookup', { plateNo: 'УЕН5246' });
+    expect(lookup.status).toBe(200);
+    expect(lookup.body.vehicle.make).toBe('Toyota');
+  });
+
+  it('rejects an anonymous call', async () => {
+    const res = await post(app, 'auto', { assetType: 'VEHICLE', plateNo: 'УЕН5246' }, undefined, {});
+    expect(res.status).toBe(401);
   });
 });

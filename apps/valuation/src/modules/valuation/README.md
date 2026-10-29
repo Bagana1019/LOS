@@ -10,18 +10,18 @@ FR-14.2 (зах зээлийн үнийг систем санал болгоно
 
 | Файл | Үүрэг |
 | --- | --- |
-| `valuation.controller.ts` | `POST /valuate/vehicle-lookup`, `POST /valuate/auto`; zod pipe-аар шалгана; correlation id нь `common/correlation-id.ts` middleware-ээс |
+| `valuation.controller.ts` | `POST /valuate/vehicle-lookup` (`customer:read`), `POST /valuate/auto` (`application:read`); `@los/nest-common`-ийн `ZodValidationPipe`, `@Ctx()` (correlationId) |
 | `auto-valuation.service.ts` | Урсгалыг удирдана: АТҮТ → зарын сайтууд → `estimateMarketPrice` → хариуны DTO; adapter-ийн хариуг шалгана; JSON лог |
 | `valuation-settings.port.ts` | `ValuationSettings` (`vehiclePricing()`): үнэлгээний бүх параметр |
 | `demo-valuation-settings.ts` | DEMO утгууд; `origination.settings`-ийн projection-оор солигдоно |
-| `valuation.module.ts` | `IntegrationsModule`-ийг импортлож, settings/clock-ийг token-оор бүртгэнэ |
+| `valuation.module.ts` | `IntegrationsModule`-ийг импортлож, settings-ийг token-оор бүртгэнэ; `Clock`, алдааны фильтр, guard нь AppModule-ийн `CommonModule`-ээс |
 
 Тооцооллын цэвэр функц нь `packages/calc/src/market-price.ts`, DTO нь `packages/contracts/src/dto/valuation.ts`,
 АТҮТ/зарын сайтын adapter нь `src/integrations/`.
 
 ## Урсгал (`autoValuateVehicle`)
 
-1. `now = clock.now()`, `settings.vehiclePricing()` уншина.
+1. `now = clock.now()` (`@los/nest-common` `Clock`; тестэд `FixedClock`), `settings.vehiclePricing()` уншина.
 2. АТҮТ-ээс улсын дугаараар машиныг авна (`callWithTimeout('ATUT', externalTimeoutMs)`).
    Олдохгүй → 404 `VEHICLE_NOT_FOUND`; алдаа/timeout → 502 `REGISTRY_UNAVAILABLE` (код нь лог-д, дугаар/өмчлөгч лог-д орохгүй).
 3. Бүх зарын сайтыг **зэрэгцээ** асууна: марк, загвар, он ± `yearTolerance`. АТҮТ-ийн дараа үлдсэн `externalTimeoutMs`-ийг л авна (нэг төсөв). Сайт бүр тусдаа try-catch-тай:

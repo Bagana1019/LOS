@@ -9,7 +9,8 @@
     "lint": "turbo run lint",
     "db:migrate": "turbo run db:migrate",
     "db:seed": "turbo run db:seed",
-    "db:generate": "turbo run db:generate"
+    "db:generate": "turbo run db:generate",
+    "db:migrate:dev": "turbo run db:migrate:dev"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

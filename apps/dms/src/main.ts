@@ -1,9 +1,5 @@
-import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
+import { bootstrapService } from '@los/nest-common';
 import { AppModule } from './app.module';
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api');
-  await app.listen(process.env.DMS_PORT ?? 4005);
-}
-bootstrap();
+
+// rawBody: provider webhook-ийн HMAC-ийг илгээсэн БАЙТААР шалгана (modules/esign/http/public-esign.controller.ts)
+void bootstrapService({ service: 'dms', module: AppModule, portEnv: 'DMS_PORT', defaultPort: 4005, rawBody: true });

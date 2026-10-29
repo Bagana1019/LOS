@@ -7,9 +7,11 @@
     "build": "nest build",
     "test": "vitest run --passWithNoTests",
     "lint": "eslint src",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:generate": "node ../../scripts/prisma.mjs origination generate",
+    "db:migrate": "node ../../scripts/prisma.mjs origination migrate deploy",
+    "db:migrate:dev": "node ../../scripts/prisma.mjs origination migrate dev",
+    "db:seed": "node ../../scripts/prisma.mjs origination seed",
+    "demo:merchant": "tsx scripts/merchant-demo.ts"
   },
   "dependencies": {
     "@los/contracts": "workspace:*",
@@ -23,15 +25,26 @@
     "zod": "^3.23.0",
     "@los/calc": "workspace:*",
     "bullmq": "^5.12.0",
-    "@prisma/client": "^5.20.0"
+    "@prisma/client": "^5.20.0",
+    "@los/nest-common": "workspace:*",
+    "exceljs": "^4.4.0",
+    "nodemailer": "^10.2.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@los/config": "workspace:*",
     "@nestjs/cli": "^10.4.0",
     "@nestjs/testing": "^10.4.0",
+    "@types/node": "^22.0.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/qrcode": "^1.5.6",
+    "@types/supertest": "^7.2.1",
     "vitest": "^2.1.0",
+    "@types/supertest": "^6.0.3",
     "supertest": "^7.0.0",
     "tsx": "^4.19.0",
-    "prisma": "^5.20.0"
+    "prisma": "^5.20.0",
+    "@types/supertest": "^6.0.2",
+    "@types/node": "^22.7.0"
   }
 }

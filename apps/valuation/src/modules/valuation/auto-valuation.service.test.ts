@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { BadGatewayException, Logger, NotFoundException, type HttpException } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { AutoValuationResponse, VehicleLookupResponse, type AutoValuationRequest, type VehicleInfo } from '@los/contracts';
-import type { Clock } from '../../common/clock';
+import { DomainError, FixedClock } from '@los/nest-common';
 import { IntegrationError, type IntegrationContext } from '../../integrations/integration.types';
 import type { VehicleListing, VehicleListingQuery, VehicleListingSource } from '../../integrations/listings/vehicle-listing-source.port';
 import type { VehicleRegistry } from '../../integrations/vehicle-registry/vehicle-registry.port';
@@ -9,7 +9,7 @@ import { AutoValuationService } from './auto-valuation.service';
 import type { VehiclePricingSettings } from './valuation-settings.port';
 
 const NOW = new Date('2026-10-28T09:00:00.000Z');
-const clock: Clock = { now: () => NOW };
+const clock = new FixedClock(NOW);
 const daysAgo = (days: number): string => new Date(NOW.getTime() - days * 86_400_000).toISOString();
 
 // Sentinel personal data: must never show up in log output.
@@ -90,11 +90,11 @@ function build(opts: { registry?: VehicleRegistry; sources?: VehicleListingSourc
   return new AutoValuationService(registry, opts.sources ?? [], { vehiclePricing: async () => settings }, clock);
 }
 
-const rejection = async (pending: Promise<unknown>): Promise<HttpException> => {
+const rejection = async (pending: Promise<unknown>): Promise<DomainError> => {
   try {
     await pending;
   } catch (error) {
-    return error as HttpException;
+    return error as DomainError;
   }
   throw new Error('expected the promise to reject');
 };
@@ -124,30 +124,33 @@ describe('AutoValuationService.lookupVehicle', () => {
     expect(ctx.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('throws NotFound VEHICLE_NOT_FOUND when the plate is not registered', async () => {
+  it('throws 404 VEHICLE_NOT_FOUND when the plate is not registered', async () => {
     const error = await rejection(build({ registry: registryReturning(null) }).lookupVehicle(PLATE, 'corr-1'));
-    expect(error).toBeInstanceOf(NotFoundException);
+    expect(error).toBeInstanceOf(DomainError);
+    expect(error.getStatus()).toBe(404);
     expect(error.getResponse()).toMatchObject({ code: 'VEHICLE_NOT_FOUND', message: expect.any(String) });
   });
 
   it.each([
     ['an IntegrationError', new IntegrationError('ATUT', 'UNAVAILABLE', 'connection refused')],
     ['an unexpected error', new TypeError('boom')],
-  ])('throws BadGateway REGISTRY_UNAVAILABLE on %s', async (_label, cause) => {
+  ])('throws 502 REGISTRY_UNAVAILABLE on %s', async (_label, cause) => {
     vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const registry = { lookup: vi.fn(async () => Promise.reject(cause)) };
     const error = await rejection(build({ registry }).lookupVehicle(PLATE, 'corr-1'));
-    expect(error).toBeInstanceOf(BadGatewayException);
-    expect(error.getResponse()).toMatchObject({ code: 'REGISTRY_UNAVAILABLE', message: expect.stringContaining('Try again') });
+    expect(error).toBeInstanceOf(DomainError);
+    expect(error.getStatus()).toBe(502);
+    expect(error.getResponse()).toMatchObject({ code: 'REGISTRY_UNAVAILABLE', message: expect.stringContaining('дахин оролдоно уу') });
   });
 
-  it('throws BadGateway REGISTRY_UNAVAILABLE when the registry does not answer in time', async () => {
+  it('throws 502 REGISTRY_UNAVAILABLE when the registry does not answer in time', async () => {
     const logError = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const registry = { lookup: vi.fn(() => new Promise<VehicleInfo | null>(() => undefined)) };
     const error = await rejection(build({ registry, settings: { externalTimeoutMs: 20 } }).lookupVehicle(PLATE, 'corr-1'));
-    expect(error).toBeInstanceOf(BadGatewayException);
+    expect(error).toBeInstanceOf(DomainError);
+    expect(error.getStatus()).toBe(502);
     expect(error.getResponse()).toMatchObject({ code: 'REGISTRY_UNAVAILABLE' });
-    expect(String(logError.mock.calls[0][0])).toContain('"code":"TIMEOUT"');
+    expect(logError.mock.calls[0]).toEqual(['registry_failed', { source: 'ATUT', code: 'TIMEOUT' }]);
   });
 });
 
@@ -393,10 +396,11 @@ describe('AutoValuationService.autoValuateVehicle', () => {
   });
 
   describe('when the registry cannot identify the vehicle', () => {
-    it('throws NotFound VEHICLE_NOT_FOUND and does not query the ad sites', async () => {
+    it('throws 404 VEHICLE_NOT_FOUND and does not query the ad sites', async () => {
       const source = siteA();
       const error = await rejection(build({ registry: registryReturning(null), sources: [source] }).autoValuateVehicle(REQ, 'corr-1'));
-      expect(error).toBeInstanceOf(NotFoundException);
+      expect(error).toBeInstanceOf(DomainError);
+    expect(error.getStatus()).toBe(404);
       expect(error.getResponse()).toMatchObject({ code: 'VEHICLE_NOT_FOUND' });
       expect(source.search).not.toHaveBeenCalled();
     });
@@ -406,7 +410,8 @@ describe('AutoValuationService.autoValuateVehicle', () => {
       const source = siteA();
       const registry = { lookup: vi.fn(async () => Promise.reject(new IntegrationError('ATUT', 'NOT_IMPLEMENTED', 'stub'))) };
       const error = await rejection(build({ registry, sources: [source] }).autoValuateVehicle(REQ, 'corr-1'));
-      expect(error).toBeInstanceOf(BadGatewayException);
+      expect(error).toBeInstanceOf(DomainError);
+    expect(error.getStatus()).toBe(502);
       expect(error.getResponse()).toMatchObject({ code: 'REGISTRY_UNAVAILABLE' });
       expect(source.search).not.toHaveBeenCalled();
     });
@@ -452,12 +457,14 @@ describe('AutoValuationService.autoValuateVehicle', () => {
       ['a string model year', { ...VEHICLE, manufactureYear: '2012' }],
       ['a non-object', 'Toyota Prius'],
     ])('answers 502 REGISTRY_UNAVAILABLE for %s', async (_label, payload) => {
+      vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       const logError = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
       const registry = { lookup: vi.fn(async () => payload as unknown as VehicleInfo) };
       const error = await rejection(build({ registry }).autoValuateVehicle(REQ, 'corr-1'));
-      expect(error).toBeInstanceOf(BadGatewayException);
+      expect(error).toBeInstanceOf(DomainError);
+    expect(error.getStatus()).toBe(502);
       expect(error.getResponse()).toMatchObject({ code: 'REGISTRY_UNAVAILABLE' });
-      expect(String(logError.mock.calls[0][0])).toContain('"code":"BAD_RESPONSE"');
+      expect(logError.mock.calls[0]).toEqual(['registry_failed', { source: 'ATUT', code: 'BAD_RESPONSE' }]);
     });
 
     it.each([
@@ -493,14 +500,11 @@ describe('AutoValuationService.autoValuateVehicle', () => {
       const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       const bad = { id: 'SITE_BAD', search: vi.fn(async () => [{ ...ad('a1'), make: 12345, price: 'SECRET-PRICE' }] as unknown as VehicleListing[]) };
       await build({ sources: [bad] }).autoValuateVehicle(REQ, 'corr-7');
-      const events = warn.mock.calls.map((args) => JSON.parse(String(args[0])));
-      expect(events[0]).toEqual({
-        event: 'adapter_contract_violation',
-        source: 'SITE_BAD',
-        issues: ['0.make:invalid_type', '0.price:invalid_type'],
-        correlationId: 'corr-7',
-      });
-      expect(JSON.stringify(events)).not.toContain('SECRET-PRICE');
+      expect(warn.mock.calls[0]).toEqual([
+        'adapter_contract_violation',
+        { source: 'SITE_BAD', issues: ['0.make:invalid_type', '0.price:invalid_type'] },
+      ]);
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('SECRET-PRICE');
     });
 
     it('caps the logged issues at five', async () => {
@@ -508,7 +512,7 @@ describe('AutoValuationService.autoValuateVehicle', () => {
       const broken = Array.from({ length: 20 }, (_, i) => ({ ...ad(`n${i}`), make: i }));
       const bad = { id: 'SITE_BAD', search: vi.fn(async () => broken as unknown as VehicleListing[]) };
       await build({ sources: [bad] }).autoValuateVehicle(REQ, 'corr-8');
-      expect(JSON.parse(String(warn.mock.calls[0][0])).issues).toHaveLength(5);
+      expect((warn.mock.calls[0][1] as { issues: string[] }).issues).toHaveLength(5);
     });
 
     it('excludes a placeholder price such as 1 ("negotiable") as INVALID_PRICE instead of averaging it in', async () => {
@@ -531,7 +535,7 @@ describe('AutoValuationService.autoValuateVehicle', () => {
     const logged = (spies: ReturnType<typeof spyOnLogger>): string =>
       spies.flatMap((spy) => spy.mock.calls).map((args) => JSON.stringify(args)).join('\n');
 
-    it('logs source id, error code and correlation id of a failed ad site, and no personal data', async () => {
+    it('logs source id and error code of a failed ad site, and no personal data', async () => {
       const spies = spyOnLogger();
       // Adapter messages are free text and may carry the plate or the owner: they must not be logged.
       const leaky = new IntegrationError('SITE_A', 'BAD_RESPONSE', `bad page for ${PLATE} owned by ${OWNER_NAME} ${OWNER_REGISTER}`);
@@ -539,7 +543,6 @@ describe('AutoValuationService.autoValuateVehicle', () => {
       const output = logged(spies);
       expect(output).toContain('SITE_A');
       expect(output).toContain('BAD_RESPONSE');
-      expect(output).toContain('corr-42');
       for (const secret of [PLATE, OWNER_NAME, OWNER_REGISTER]) expect(output).not.toContain(secret);
     });
 
@@ -551,15 +554,14 @@ describe('AutoValuationService.autoValuateVehicle', () => {
       const output = logged(spies);
       expect(output).toContain('ATUT');
       expect(output).toContain('UNAVAILABLE');
-      expect(output).toContain('corr-43');
       for (const secret of [PLATE, OWNER_NAME, OWNER_REGISTER]) expect(output).not.toContain(secret);
     });
 
-    it('writes one JSON object per event', async () => {
+    it('writes one structured event (the app logger adds the correlationId of the request)', async () => {
       const [, , warn] = spyOnLogger();
       await build({ sources: [failingSource('SITE_A', new IntegrationError('SITE_A', 'TIMEOUT', 'x'))] }).autoValuateVehicle(REQ, 'corr-9');
       expect(warn.mock.calls).toHaveLength(1);
-      expect(JSON.parse(String(warn.mock.calls[0][0]))).toEqual({ event: 'listing_source_failed', source: 'SITE_A', code: 'TIMEOUT', correlationId: 'corr-9' });
+      expect(warn.mock.calls[0]).toEqual(['listing_source_failed', { source: 'SITE_A', code: 'TIMEOUT' }]);
     });
 
     it('logs nothing on a successful valuation', async () => {

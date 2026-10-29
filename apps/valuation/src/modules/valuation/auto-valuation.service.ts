@@ -1,4 +1,4 @@
-import { BadGatewayException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { estimateMarketPrice, type ComparableOutcome, type MarketListingInput } from '@los/calc';
 import {
   VehicleInfo,
@@ -8,8 +8,8 @@ import {
   type SourceReport,
   type VehicleLookupResponse,
 } from '@los/contracts';
+import { Clock, DomainError } from '@los/nest-common';
 import type { z, ZodTypeAny } from 'zod';
-import { CLOCK, type Clock } from '../../common/clock';
 import { callWithTimeout } from '../../integrations/call-with-timeout';
 import { IntegrationError } from '../../integrations/integration.types';
 import {
@@ -41,7 +41,7 @@ export class AutoValuationService {
     @Inject(VEHICLE_REGISTRY) private readonly registry: VehicleRegistry,
     @Inject(VEHICLE_LISTING_SOURCES) private readonly sources: VehicleListingSource[],
     @Inject(VALUATION_SETTINGS) private readonly settings: ValuationSettings,
-    @Inject(CLOCK) private readonly clock: Clock,
+    @Inject(Clock) private readonly clock: Clock,
   ) {}
 
   async lookupVehicle(plateNo: string, correlationId: string): Promise<VehicleLookupResponse> {
@@ -118,38 +118,40 @@ export class AutoValuationService {
     let vehicle: VehicleInfo | null;
     try {
       const raw = await callWithTimeout(REGISTRY_ID, timeoutMs, base, (ctx) => this.registry.lookup(plateNo, ctx));
-      vehicle = raw === null ? null : this.checked(REGISTRY_ID, VehicleInfo, raw, base);
+      vehicle = raw === null ? null : this.checked(REGISTRY_ID, VehicleInfo, raw);
     } catch (error) {
       // Source id and code only: adapter messages may carry the plate or owner data.
-      this.log('error', 'registry_failed', { source: REGISTRY_ID, code: errorCodeOf(error), correlationId: base.correlationId });
-      throw new BadGatewayException({
-        code: 'REGISTRY_UNAVAILABLE',
-        message:
-          'The vehicle registry (АТҮТ) did not answer. Try again in a few minutes; if it keeps failing, enter the collateral value manually.',
-      });
+      this.log('error', 'registry_failed', { source: REGISTRY_ID, code: errorCodeOf(error) });
+      throw new DomainError(
+        'REGISTRY_UNAVAILABLE',
+        'АТҮТ-ийн бүртгэл хариу өгсөнгүй. Хэдэн минутын дараа дахин оролдоно уу; үргэлжлээд алдаа гарвал барьцааны үнийг гараар оруулна уу.',
+        HttpStatus.BAD_GATEWAY,
+      );
     }
     if (!vehicle) {
-      throw new NotFoundException({
-        code: 'VEHICLE_NOT_FOUND',
-        message: 'No vehicle is registered under this plate number. Check the plate number and try again.',
-      });
+      throw new DomainError(
+        'VEHICLE_NOT_FOUND',
+        'Энэ улсын дугаартай тээврийн хэрэгсэл бүртгэлд олдсонгүй. Дугаараа шалгаад дахин оролдоно уу.',
+        HttpStatus.NOT_FOUND,
+      );
     }
     return vehicle;
   }
 
   // Adapters are external code: whatever they return is checked before it reaches the calculation.
   // On a violation the log names the offending fields (path and zod code, never the values) so the adapter can be fixed.
-  private checked<S extends ZodTypeAny>(integration: string, schema: S, value: unknown, base: CallBase): z.output<S> {
+  private checked<S extends ZodTypeAny>(integration: string, schema: S, value: unknown): z.output<S> {
     const parsed = schema.safeParse(value);
     if (parsed.success) return parsed.data;
     const issues = parsed.error.issues.slice(0, MAX_LOGGED_ISSUES).map((issue) => `${issue.path.join('.')}:${issue.code}`);
-    this.log('warn', 'adapter_contract_violation', { source: integration, issues, correlationId: base.correlationId });
+    this.log('warn', 'adapter_contract_violation', { source: integration, issues });
     throw new IntegrationError(integration, 'BAD_RESPONSE', `${integration} returned a payload that does not match the adapter contract`);
   }
 
-  // One JSON object per line, always with the correlationId (CLAUDE.md §3.2 rule 10); never the plate, owner or adapter messages.
+  // The app logger (nest-common JsonLogger) writes one JSON line and adds the correlationId of the request (CLAUDE.md §3.2 rule 10).
+  // Fields are limited to source ids, codes and field paths: never the plate, the owner or an adapter message.
   private log(level: 'warn' | 'error', event: string, fields: Record<string, string | string[]>): void {
-    this.logger[level](JSON.stringify({ event, ...fields }));
+    this.logger[level](event, fields);
   }
 
   /** Never rejects: one failing ads site must not fail the valuation (it becomes an ERROR source report). */
@@ -162,12 +164,12 @@ export class AutoValuationService {
     const fetchedAt = base.now.toISOString();
     try {
       const raw = await callWithTimeout(source.id, timeoutMs, base, (ctx) => source.search(query, ctx));
-      const listings = this.checked(source.id, ListingsSchema, raw, base);
+      const listings = this.checked(source.id, ListingsSchema, raw);
       const report: SourceReport = { id: source.id, kind: 'CLASSIFIED_ADS', status: 'OK', count: listings.length, errorCode: null, fetchedAt };
       return { report, listings };
     } catch (error) {
       const errorCode = errorCodeOf(error);
-      this.log('warn', 'listing_source_failed', { source: source.id, code: errorCode, correlationId: base.correlationId });
+      this.log('warn', 'listing_source_failed', { source: source.id, code: errorCode });
       return { report: { id: source.id, kind: 'CLASSIFIED_ADS', status: 'ERROR', count: null, errorCode, fetchedAt }, listings: [] };
     }
   }

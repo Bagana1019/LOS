@@ -19,21 +19,27 @@ Endpoint нь stateless: юу ч хадгалахгүй.
 ### Endpoint-ууд
 
 Дуудагч нь `origination` (CLAUDE.md §3.2 дүрэм 2); `/api` угтвартай, DTO нь `@los/contracts` (`dto/valuation.ts`).
-Улсын дугаар URL/access log-д орохгүйн тулд хоёулаа `POST`.
+Улсын дугаар URL/access log-д орохгүйн тулд хоёулаа `POST`. Gateway-ээр `/api/valuation/valuate/...` гэж дуудна
+(gateway `/api/valuation`-ийг `/api` болгон шилжүүлнэ).
 
-| Endpoint | Body | Зориулалт |
-| --- | --- | --- |
-| `POST /api/valuate/vehicle-lookup` | `{ "plateNo": "уен 5246" }` | АТҮТ-ээс машины мэдээлэл авах. **Өмчлөгчийн регистр/нэр зөвхөн энд** буцна |
-| `POST /api/valuate/auto` | `{ "assetType": "VEHICLE", "plateNo": "УЕН5246", "mileageKm": 90000 }` | зах зээлийн үнийн санал; `mileageKm` заавал биш (орхих эсвэл `null`; АТҮТ-д гүйлт байхгүй). Зөвхөн 1…2 000 000 бүхэл тоо: `0`, сөрөг, бутархай утга татгалзана |
-| `GET /api/health` | | `{ "service": "valuation", "ok": true }` |
+| Endpoint | Эрх | Body | Зориулалт |
+| --- | --- | --- | --- |
+| `POST /api/valuate/vehicle-lookup` | `customer:read` | `{ "plateNo": "уен 5246" }` | АТҮТ-ээс машины мэдээлэл авах. **Өмчлөгчийн регистр/нэр зөвхөн энд** буцна |
+| `POST /api/valuate/auto` | `application:read` | `{ "assetType": "VEHICLE", "plateNo": "УЕН5246", "mileageKm": 90000 }` | зах зээлийн үнийн санал; `mileageKm` заавал биш (орхих эсвэл `null`; АТҮТ-д гүйлт байхгүй). Зөвхөн 1…2 000 000 бүхэл тоо: `0`, сөрөг, бутархай утга татгалзана |
+| `GET /api/health` | нийтийн | | `{ "service": "valuation", "ok": true, ... }` |
+
+**Нэвтрэлт.** Module 0-ийн `CommonModule`-ийн глобал guard ажиллана (CLAUDE.md §3.2 дүрэм 9): gateway-ийн `X-User-Id`, `X-Roles`,
+`X-Org-Id` толгой шаардлагатай (`INTERNAL_AUTH_SECRET` тохируулсан бол `X-Internal-Token` ч). Толгой байхгүй бол 401 `UNAUTHENTICATED`;
+эрхгүй дүр (жишээ нь зөвхөн `X-Customer-Id` бүхий зээлдэгч) 403 `FORBIDDEN`. Өмчлөгчийн хувийн мэдээлэл буцдаг `vehicle-lookup` нь
+`customer:read`, өмчлөгчгүй `auto` нь `application:read` шаардана (OFFICER, BRANCH_MANAGER, APPROVER, ADMIN дүр хоёр эрхийг хоёуланг нь агуулна).
 
 Улсын дугаар: 4 цифр + 2-3 кирилл үсэг, аль ч дарааллаар (`УЕН5246`, `1234УБА`). Зай/зураас арилгаж, том үсэг болгож
 хэвийн болгоно (`уен 5246` → `УЕН5246`). Латин үсэг татгалзана.
 
-Хүсэлтийн `X-Correlation-Id` толгойг (`[A-Za-z0-9_.:-]`, ≤128 тэмдэгт) хариунд тусгана; байхгүй эсвэл хэлбэр нь өөр бол UUID
-үүсгэнэ. Middleware (`src/common/correlation-id.ts`) validation-ээс өмнө ажилладаг тул 200, 400, 404, 502 бүгдэд орно.
-Controller-т хүрэхээс өмнө framework өөрөө татгалзах хүсэлт (буруу JSON бүтэц, хэт том body, байхгүй зам) `X-Correlation-Id`-гүй,
-Nest-ийн анхдагч алдааны body-тай (`{ statusCode, message }`) ирнэ; доорх `{ code, message }` бүтэц зөвхөн сервисийн өөрийн алдаанд хамаарна.
+Хүсэлтийн `X-Correlation-Id` толгойг (`[A-Za-z0-9._-]`, ≤128 тэмдэгт) `@los/nest-common`-ийн `RequestContextMiddleware` хариунд тусгана;
+байхгүй эсвэл хэлбэр нь өөр бол UUID үүсгэнэ. Validation-ээс өмнө ажилладаг тул 200, 400, 401, 404, 502 бүгдэд орно, алдааны body-д ч
+`correlationId` орно. Зөвхөн body parser-ийн өөрийн татгалзал (буруу JSON, хэт том body) middleware-ээс өмнө гардаг тул толгойгүй,
+`correlationId: null`-тай ирнэ (суурийн онцлог, энэ сервисийнх биш).
 
 **Хугацаа.** Бүх гадаад дуудлага (АТҮТ, зарын сайтууд) нийлээд `externalTimeoutMs` (15с, CLAUDE.md §3.1) нэг төсөвтэй: АТҮТ өөрөө
 төсвийн нэг хэсгийг ашиглавал зарын сайтуудад үлдсэн хугацаа л олгогдоно. Дуудагч (`origination`) энэ endpoint-д дотоод sync
@@ -85,11 +91,13 @@ Nest-ийн анхдагч алдааны body-тай (`{ statusCode, message }`
 `warnings`: `SOURCE_UNAVAILABLE` (зарын сайтын аль нэг нь хариулсангүй; үнэлгээ бусдаар үргэлжилнэ, `sources`-д `ERROR` + `errorCode`),
 `MILEAGE_NOT_PROVIDED` (гүйлт оруулаагүй тул гүйлтийн засвар хийгдээгүй), `LOW_CONFIDENCE` (`confidence = LOW`).
 
-Алдаа (body нь `{ code, message }`):
+Алдаа (body нь суурийн хэлбэр `{ code, message, details?, correlationId }`, `message` монгол):
 
 | HTTP | `code` | Тохиолдол |
 | --- | --- | --- |
-| 400 | `VALIDATION_ERROR` | буруу улсын дугаар/`assetType`/`mileageKm`; `issues: [{ path, message }]`. Татгалзсан **улсын дугаарыг** буцааж хэвлэхгүй (`assetType`-ын "Invalid enum value" мессеж өгөгдсөн утгыг нэрлэж болно) |
+| 400 | `VALIDATION_FAILED` | буруу улсын дугаар/`assetType`/`mileageKm`; `details: [{ path, message }]`. Татгалзсан **улсын дугаарыг** буцааж хэвлэхгүй (`assetType`-ын "Invalid enum value" мессеж өгөгдсөн утгыг нэрлэж болно) |
+| 401 | `UNAUTHENTICATED` | gateway-ийн identity толгой байхгүй |
+| 403 | `FORBIDDEN` | шаардлагатай эрхгүй дүр |
 | 404 | `VEHICLE_NOT_FOUND` | АТҮТ-д бүртгэлгүй дугаар |
 | 502 | `REGISTRY_UNAVAILABLE` | АТҮТ хариулсангүй/алдаа/timeout (15с), эсвэл adapter-ийн хариу гэрээнд нийцэхгүй (`BAD_RESPONSE`). Зарын сайт унахад 502 **болохгүй**: `sources[].status = ERROR` |
 
@@ -99,8 +107,9 @@ Adapter-ийн хариуг (АТҮТ-ийн бичлэг: `@los/contracts` `Veh
 (цагийн бүсгүй бол UTC; өөр хэлбэрийг `STALE_LISTING` гэж хасна), `year` бүхэл тоо. Зөрчлийн лог нь зөвхөн талбарын зам, zod код
 (`0.make:invalid_type`) бичнэ, утгыг бичихгүй.
 
-Лог: `main.ts` нь `JsonLogger` (`src/common/json-logger.ts`) ашигладаг тул мөр бүр нэг JSON объект (`level`, `time`, `context`; үйл явдлын
-мөрөнд `event`, `source`, `code`, `correlationId`). Улсын дугаар, өмчлөгч, adapter-ийн мессеж лог-д орохгүй. Тохиргооны утга
+Лог: `bootstrapService` нь `@los/nest-common`-ийн `JsonLogger`-ийг тавьдаг тул мөр бүр нэг JSON объект (`ts`, `level`, `service`, `context`,
+`msg`, хүсэлтийн `correlationId`, `extra`). Үйл явдал нь `msg` (`registry_failed`, `listing_source_failed`, `adapter_contract_violation`),
+`extra` нь зөвхөн `source`, `code`, талбарын зам. Улсын дугаар, өмчлөгч, adapter-ийн мессеж лог-д орохгүй. Тохиргооны утга
 `NaN`/дутуу байвал (`@los/calc` `RangeError`) endpoint 500 өгнө: шалгалтыг чимээгүй унтраахгүй.
 
 ### Тооцооллын арга (`MARKET_COMPARABLES_V1`, `@los/calc` `estimateMarketPrice`)
@@ -160,14 +169,15 @@ Adapter-ийн хариуг (АТҮТ-ийн бичлэг: `@los/contracts` `Veh
 - `ValuationCompleted` event (outbox/event bus нь `TODO(M00)`).
 - Автомашинаас бусад хөрөнгийн төрөл (`assetType` одоогоор зөвхөн `VEHICLE`), суурь үнийн сан (FR-14.1 суурь үнэ × элэгдэл, FR-14.5).
 - Өмчлөлийн KYC (FR-6.5): өмчлөгчийн мэдээллийг зөвхөн лавлах оролт болгон буцаана, `kyc`/`origination` шийднэ.
-- Хэрэглэгчийн эрх шалгах (gateway-д шийдэгдэнэ, CLAUDE.md §3.2 дүрэм 9).
+- Нэвтрэлт, дүр/салбарын хүрээ: gateway шийднэ; энд зөвхөн дээрх `@Permissions` шалгана. Өгөгдлийн хүрээ (`scopeWhere`) шаардахгүй, юу ч хадгалдаггүй.
 
 ### Ажиллуулах, шалгах
 
 ```bash
 pnpm exec turbo run build --filter=@los/valuation...   # @los/contracts, @los/calc-ийг хамт бүтээнэ (тестэд заавал хэрэгтэй)
-INTEGRATION_MODE=mock VALUATION_PORT=4104 node apps/valuation/dist/main.js
+INTEGRATION_MODE=mock VALUATION_PORT=4104 node apps/valuation/dist/main.js   # DATABASE_URL (valuation схем) хэрэгтэй: PrismaService
 curl -s -X POST localhost:4104/api/valuate/auto -H 'content-type: application/json' \
+  -H 'x-user-id: dev-officer' -H 'x-roles: OFFICER' -H 'x-org-id: dev-org' \
   -d '{"assetType":"VEHICLE","plateNo":"УЕН5246","mileageKm":90000}'
-cd apps/valuation && npx vitest run      # unit + e2e (supertest)
+cd apps/valuation && npx vitest run      # unit + e2e (supertest); `TEST_DATABASE_URL` (нэр нь `test`-ээр төгссөн DB) тохируулбал AppModule-ийн тест ч ажиллана
 ```
