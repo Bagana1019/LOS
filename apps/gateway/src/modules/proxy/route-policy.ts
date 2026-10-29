@@ -29,3 +29,17 @@ export function requiredPermission(method: string, path: string): Permission | n
   }
   return null;
 }
+
+/**
+ * Ажилтны proxy-гоор ХЭЗЭЭ Ч гаргахгүй замууд (404): дотоод sync (origination → dms: CLAUDE.md §3.2.2) ба public/dev замууд.
+ * Зээлдэгчийн public e-sign нь тусдаа `/api/public/esign/**` (modules/public-esign); `dms/esign` нь origination-ийн урьдчилсан нөхцөлөөр
+ * (гэрээний төлөв, хүрээ) хамгаалагддаг тул ажилтан өөрийн заасан signer/файлаар шууд хүсэлт үүсгэж болохгүй.
+ */
+export const INTERNAL_ONLY_PREFIXES: readonly string[] = ['/api/dms/esign', '/api/dms/public', '/api/dms/dev'];
+
+export function isInternalOnly(path: string): boolean {
+  let p: string;
+  try { p = decodeURIComponent(path); } catch { return true; } // задлагдахгүй зам: сервис руу дамжуулахгүй
+  p = p.toLowerCase().replace(/\/{2,}/g, '/');
+  return INTERNAL_ONLY_PREFIXES.some((x) => p === x || p.startsWith(`${x}/`));
+}

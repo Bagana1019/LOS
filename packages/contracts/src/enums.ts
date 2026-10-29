@@ -116,3 +116,12 @@ export const Gender = ['MALE','FEMALE'] as const;
 export type Gender = typeof Gender[number];
 export const MaritalStatus = ['SINGLE','MARRIED','DIVORCED','WIDOWED'] as const;
 export type MaritalStatus = typeof MaritalStatus[number];
+// FR-11.4 Цахим гарын үсэг (цаасгүй гэрээ). Provider adapter: apps/dms/src/integrations/{tridum,monpass}
+export const ESignProvider = ['TRIDUM','MONPASS'] as const;
+export type ESignProvider = typeof ESignProvider[number];
+// PENDING: линк илгээсэн, зээлдэгч provider сонгоогүй · IN_PROGRESS: provider-т session нээгдсэн, апп дээр баталгаажуулахыг хүлээж буй
+// FINALIZING: гарын үсэг ирсэн, QR/штамп зурж DMS-д хадгалж буй (түр төлөв) · SIGNED/DECLINED/EXPIRED/FAILED/CANCELLED: төгсгөлийн төлөв
+export const SigningStatus = ['PENDING','IN_PROGRESS','FINALIZING','SIGNED','DECLINED','EXPIRED','FAILED','CANCELLED'] as const;
+export type SigningStatus = typeof SigningStatus[number];
+export const SigningFailureReason = ['DECLINED','EXPIRED','IDENTITY_MISMATCH','INTEGRITY_ERROR','PROVIDER_ERROR','CANCELLED'] as const;
+export type SigningFailureReason = typeof SigningFailureReason[number];

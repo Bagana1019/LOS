@@ -40,6 +40,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const message = Array.isArray(obj.message) ? obj.message.join('; ') : String(obj.message ?? e.message);
       return { status, body: { code: String(obj.code ?? STATUS_CODE[status] ?? 'ERROR'), message, ...(obj.details !== undefined ? { details: obj.details } : {}), correlationId } };
     }
+    // Body-parser/raw-body (http-errors): хэт том бие (413) г.м — 4xx ба `expose` бол клиентийн алдаа, 500 биш. Мессежийг (бие/зам агуулж болно) эргүүлэхгүй.
+    const external = e as { status?: unknown; expose?: unknown } | null;
+    if (typeof external?.status === 'number' && external.status >= 400 && external.status < 500 && external.expose === true) {
+      return { status: external.status, body: { code: STATUS_CODE[external.status] ?? 'BAD_REQUEST', message: external.status === 413 ? 'Хүсэлтийн хэмжээ хэтэрсэн' : 'Хүсэлт буруу байна', correlationId } };
+    }
     // Prisma (nest-common нь prisma-аас хамааралгүй тул нэрээр таниж байна)
     const err = e as { name?: string; code?: string; meta?: { target?: unknown } } | null;
     if (err?.name === 'PrismaClientKnownRequestError') {

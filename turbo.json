@@ -5,7 +5,8 @@
     "REDIS_URL",
     "MINIO_ENDPOINT",
     "JWT_SECRET",
-    "INTEGRATION_MODE"
+    "INTEGRATION_MODE",
+    "NEXT_PUBLIC_GATEWAY_URL"
   ],
   "globalPassThroughEnv": [
     "TEST_DATABASE_URL",
@@ -23,6 +24,14 @@
     "DATA_*",
     "INTERNAL_AUTH_SECRET",
     "SEED_PASSWORD",
+    "DMS_*",
+    "ESIGN_*",
+    "MOCK_ESIGN_*",
+    "TRIDUM_*",
+    "MONPASS_*",
+    "TRUST_PROXY",
+    "CORS_ORIGINS",
+    "NEXT_PUBLIC_ESIGN_*",
     "PII_HASH_KEY",
     "KYC_BASE_URL",
     "POS_*"
@@ -58,7 +67,8 @@
     },
     "lint": {
       "dependsOn": [
-        "^build"
+        "^build",
+        "db:generate"
       ]
     },
     "db:generate": {

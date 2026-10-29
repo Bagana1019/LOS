@@ -7,6 +7,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
 import { ProxyModule } from './modules/proxy/proxy.module';
+import { PublicEsignModule } from './modules/public-esign/public-esign.module';
 import { PrismaModule, PrismaService } from './prisma.service';
 
 @Module({
@@ -20,6 +21,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
     AuditModule,
     AuthModule,
     ProxyModule,
+    PublicEsignModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

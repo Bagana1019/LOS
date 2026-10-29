@@ -6,5 +6,6 @@ import payment from './mn.payment.json';
 import notification from './mn.notification.json';
 import report from './mn.report.json';
 import mnCustomer from './mn.customer.json';
+import esignMn from './esign.mn.json'; // FR-11.4 цахим гарын үсэг: esign.*, verify.*, contractSigning.*
 // Модуль бүр өөрийн түлхүүрийг тусдаа файлд (mn.<module>.json) хөтөлнө — нэг файлд олон хүн зэрэг засахад зөрчил гарахгүй.
-export const mn: Record<string, string> = { ...mnJson, ...mnMakerChecker, ...mnMerchant, ...borrower, ...payment, ...notification, ...report, ...mnCustomer };
+export const mn: Record<string, string> = { ...mnJson, ...mnMakerChecker, ...mnMerchant, ...borrower, ...payment, ...notification, ...report, ...mnCustomer, ...esignMn };

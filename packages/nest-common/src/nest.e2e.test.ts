@@ -22,6 +22,7 @@ class TestController {
   @Permissions('approval:vote') @Get('vote') vote() { return { ok: true }; }
   @Post('echo') echo(@Body(new ZodValidationPipe(Body1)) b: z.infer<typeof Body1>) { return b; }
   @Get('domain') domain() { throw new DomainError('LTV_EXCEEDED', 'LTV хэтэрсэн', 422, { ltv: 0.8 }); }
+  @Get('too-large') tooLarge() { throw Object.assign(new Error('request entity too large: body of 99999 bytes'), { status: 413, statusCode: 413, expose: true }); }
   @Get('boom') boom() { throw new Error('secret db password leaked'); }
   @Get('app/:officer') app(@Ctx() ctx: RequestContext) { assertInScope(ctx, { officerId: 'someone-else', branchId: 'b1', orgId: ctx.orgId }); return {}; }
   @Get('prisma') prisma() { throw Object.assign(new Error('x'), { name: 'PrismaClientKnownRequestError', code: 'P2002', meta: { target: ['register_no_hash'] } }); }
@@ -54,6 +55,13 @@ describe('CommonModule (guard, filter, context)', () => {
   it('injects the parsed context via @Ctx()', async () => {
     const res = await request(app.getHttpServer()).get('/api/t/me').set(as('OFFICER'));
     expect(res.body).toMatchObject({ userId: 'u1', roles: ['OFFICER'], orgId: 'o1', branchId: 'b1' });
+  });
+  it('maps body-parser/http-errors 4xx (413) to its own status without echoing the message; unexposed errors stay 500', async () => {
+    const res = await request(app.getHttpServer()).get('/api/t/too-large').set(as('OFFICER'));
+    expect(res.status).toBe(413);
+    expect(res.body).toMatchObject({ code: 'PAYLOAD_TOO_LARGE', message: 'Хүсэлтийн хэмжээ хэтэрсэн' });
+    expect(JSON.stringify(res.body)).not.toContain('99999');
+    expect((await request(app.getHttpServer()).get('/api/t/boom').set(as('OFFICER'))).status).toBe(500);
   });
   it('@Roles and @Permissions enforce RBAC', async () => {
     expect((await request(app.getHttpServer()).get('/api/t/admin').set(as('OFFICER'))).status).toBe(403);
