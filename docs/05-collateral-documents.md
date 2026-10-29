@@ -93,11 +93,14 @@ flowchart LR
 
 ## 4. Үнэлгээний сервис (valuation, `/api/...`)
 
+> Эрх: valuation/dms/kyc-ийн дотоод endpoint-ууд `application:read`/`customer:read` шаардана — ADMIN-д `application:write` байхгүй тул origination дуудлагад дамжуулах хэрэглэгчийн эрхээр (ADMIN ч) орох ёстой.
+> Бичих эрх, хүрээ, төлөвийн жинхэнэ шалгалт origination-д; ажилтны proxy эдгээр замыг гаргахгүй тул valuation-д давхар write-эрх шаардахгүй.
+
 | Зам | Эрх | Тайлбар |
 | --- | --- | --- |
-| `POST /valuate/collateral/suggest` | `application:write` | `SuggestValuationRequest` → санал + haircut (хадгалахгүй) |
-| `POST /valuate/collateral` | `application:write` | `SaveCollateralValuationRequest` → `collateral_valuation` мөр, `ValuationCompleted` event |
-| `POST /valuate/collateral/external` | `application:write` | `RecordExternalValuationRequest` |
+| `POST /valuate/collateral/suggest` | `application:read` | `SuggestValuationRequest` → санал + haircut (хадгалахгүй) |
+| `POST /valuate/collateral` | `application:read` | `SaveCollateralValuationRequest` → `collateral_valuation` мөр, `ValuationCompleted` event |
+| `POST /valuate/collateral/external` | `application:read` | `RecordExternalValuationRequest` |
 | `GET /valuate/collateral/:collateralId/history` | `application:read` | түүх (шинэ нь эхэнд) |
 | `GET/POST /base-prices`, `POST /base-prices/import` | унших `application:read`; бичих `settings:manage` | суурь үнэ, хувилбар (FR-14.5) |
 | `GET/PUT /haircuts` | унших `application:read`; бичих `settings:manage` | haircut-ийн дүрэм |
@@ -124,7 +127,7 @@ flowchart LR
 | --- | --- | --- |
 | `POST /xyp/assets` | `customer:read` | регистрийн эзэмшлийн үл хөдлөх + тээврийн хэрэгсэл (FR-6.3) |
 | `POST /xyp/property` | `customer:read` | өмчлөх эрхийн дугаараар өмчлөгчид (FR-6.5) |
-| `POST /collateral-checks/encumbrance` | `application:write` | ЗМС + ЭБ ачаалал (FR-6.6); эх сурвалж унавал 503 `ENCUMBRANCE_UNAVAILABLE` (fail closed) |
+| `POST /collateral-checks/encumbrance` | `customer:read` | ЗМС + ЭБ ачаалал (FR-6.6); эх сурвалж унавал 503 `ENCUMBRANCE_UNAVAILABLE` (fail closed) |
 
 Mock DEMO fixture: §9.
 
