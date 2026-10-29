@@ -1,9 +1,10 @@
 'use client';
-import { Alert } from 'antd';
+import { Alert, App } from 'antd';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { t } from '../../lib/i18n';
+import { useAuth } from '../../lib/auth/auth-context';
 import { isNoAccess } from './errors';
 import { useMe } from './hooks';
 import { Icon, type IconName } from './icons';
@@ -25,6 +26,19 @@ export function MerchantShell({ children }: { children: ReactNode }) {
   const store = profile ? profile.stores.find((s) => s.id === profile.currentStoreId) : undefined;
   const storeLabel = profile ? (store ? store.name : t('merchant.allStores')) : '';
   const blocked = me.isError && isNoAccess(me.error);
+  const { logout } = useAuth();
+  const { message } = App.useApp();
+  const [signingOut, setSigningOut] = useState(false);
+  // Мерчант портал өөрийн shell-тэй (staff UserMenu байхгүй) тул гарах товч энд. Амжилттай бол auth хаалга /login руу шилжүүлнэ.
+  const signOut = async () => {
+    setSigningOut(true);
+    try {
+      await logout();
+    } catch {
+      message.error(t('auth.logout.failed'));
+      setSigningOut(false);
+    }
+  };
 
   return (
     <div className="mp-shell">
@@ -51,7 +65,10 @@ export function MerchantShell({ children }: { children: ReactNode }) {
             {profile ? <span className="mp-head-store"><Icon name="store" size={14} />{storeLabel}</span> : null}
           </div>
         </div>
-        {profile ? <span className="mp-role-chip">{t(`merchant.role.${profile.role}`)}</span> : null}
+        <div className="mp-head-actions">
+          {profile ? <span className="mp-role-chip">{t(`merchant.role.${profile.role}`)}</span> : null}
+          <button type="button" className="mp-signout" onClick={() => void signOut()} disabled={signingOut}>{t('auth.logout')}</button>
+        </div>
       </header>
 
       <main className="mp-main" id="main">

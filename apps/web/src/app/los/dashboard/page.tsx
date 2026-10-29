@@ -6,10 +6,10 @@ import { DashboardPage } from '../../../features/reports';
 // FR-13.3: `/los/dashboard` — KPI самбар (удирдлагын тайлан). `useSearchParams` нь Suspense шаарддаг.
 export default function Page() {
   return (
-    <main style={{ padding: 24 }}>
+    <div>
       <Suspense fallback={<Skeleton active paragraph={{ rows: 12 }} />}>
         <DashboardPage />
       </Suspense>
-    </main>
+    </div>
   );
 }

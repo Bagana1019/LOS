@@ -1,5 +1,9 @@
 // `next dev` маршрутыг эхний хүсэлтэд компайлдаг (10–30 сек) — тестүүдийн эхнийх нь expect timeout-д баригдахгүйн тулд бүх маршрутыг урьдчилан дуудна.
 const ROUTES = [
+  '/',
+  '/login',
+  '/los/report',
+  '/settings',
   '/merchant',
   '/merchant/leases',
   '/merchant/leases/new',
@@ -7,6 +11,12 @@ const ROUTES = [
   '/settings/merchants',
   '/settings/merchants/11111111-1111-4111-8111-111111111111',
   '/los/pos-leases',
+  '/notifications',
+  '/settings/notifications',
+  '/los/loan/list',
+  '/los/maker-checker',
+  '/sign/warm-up',
+  '/verify/warm-up',
 ];
 
 export default async function globalSetup(): Promise<void> {

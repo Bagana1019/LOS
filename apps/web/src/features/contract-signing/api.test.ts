@@ -95,7 +95,7 @@ describe('startSigning / resendSigning / cancelSigning', () => {
     for (const [, init] of [resend, cancel]) {
       expect(init).toMatchObject({ method: 'POST', credentials: 'include' });
       expect(init.body).toBeUndefined();
-      expect(init.headers).toEqual({ Accept: 'application/json' });
+      expect(init.headers).toEqual({ Accept: 'application/json', 'x-correlation-id': expect.any(String) });
     }
   });
 

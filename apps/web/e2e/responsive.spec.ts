@@ -59,6 +59,7 @@ function merchantMocks(api: MockApi) {
 for (const width of WIDTHS) {
   test.describe(`viewport ${width}px`, () => {
     test.use({ viewport: { width, height: width < 768 ? 800 : 900 } });
+    test.setTimeout(150_000); // бүх хуудсыг нэг тестэд гүйдэг (axe + overflow) — 3 worker зэрэг ачаалалтай үед 60с-д багтахгүй
 
     test('merchant portal pages', async ({ page }) => {
       const { api, guard } = await setup(page, { role: 'MERCHANT_ADMIN' });

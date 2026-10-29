@@ -27,6 +27,9 @@
   -webkit-font-smoothing: antialiased;
 }
 body:has(.mp-root) { margin: 0; background: #f4f6fa; }
+/* /settings/merchants, /los/pos-leases: ажилтны Frame (antd Layout.Content) дотор — өөрийн дэлгэцийн өндөр, дэвсгэргүй */
+.ant-layout-content .mp-root { min-height: 0; background: transparent; }
+.ant-layout-content .mp-boot { min-height: 40dvh; }
 .mp-root *, .mp-root *::before, .mp-root *::after { box-sizing: border-box; }
 :where(.mp-root, .ant-drawer, .ant-modal) :where(h1, h2, h3) { margin: 0; }
 :where(.mp-root a) { color: var(--mp-primary); }
@@ -55,6 +58,10 @@ body:has(.mp-root) { margin: 0; background: #f4f6fa; }
 .mp-head-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
 .mp-head-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mp-head-store { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--mp-muted); }
+.mp-head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+.mp-signout { flex: none; min-height: 44px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--mp-muted); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
+.mp-signout:hover:not(:disabled) { background: var(--mp-primary-soft); color: #0a4f9f; }
+.mp-signout:disabled { opacity: 0.6; cursor: default; }
 .mp-role-chip { flex: none; padding: 5px 12px; border-radius: 999px; background: var(--mp-primary-soft); color: #0a4f9f; font-weight: 600; font-size: 13px; }
 .mp-main { grid-area: main; min-width: 0; padding: 24px; width: 100%; max-width: 1360px; margin: 0 auto; }
 .mp-tabbar { display: none; }

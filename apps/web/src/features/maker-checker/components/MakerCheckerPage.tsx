@@ -30,7 +30,7 @@ function Content() {
   const count = (key: TabKey): number => (key === 'inbox' ? (summary?.inbox ?? 0) : key === 'mine' ? (summary?.mine ?? 0) : 0);
 
   return (
-    <main style={{ padding: 24, maxWidth: 1600, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1600, margin: '0 auto' }}>
       <Flex justify="space-between" align="flex-start" wrap gap={12}>
         <div>
           <Title level={3} style={{ marginTop: 0, marginBottom: 4 }}>
@@ -67,7 +67,7 @@ function Content() {
 
       <RequestDrawer id={id} onClose={() => go({ tab })} handlers={handlers} />
       {modals}
-    </main>
+    </div>
   );
 }
 

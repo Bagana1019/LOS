@@ -4,7 +4,8 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MerchantModule } from '../merchant.module';
 import { seedFixtures } from './fixtures';
-import { applyDemoIdentity, corsOrigins, demoRefusal, displayHost, hostPolicy, isLoopbackHost } from './demo-gateway';
+import { AuthResponse } from '@los/contracts';
+import { applyDemoIdentity, corsOrigins, demoRefusal, demoSession, displayHost, hostPolicy, isLoopbackHost } from './demo-gateway';
 import { personasFor } from './personas';
 import { MerchantService } from '../services/merchant.service';
 import { PlanService } from '../services/plan.service';
@@ -113,5 +114,22 @@ describe('displayHost / corsOrigins: the cookie host matches the web API base', 
     expect(corsOrigins('http://localhost:3000')).toEqual(['http://localhost:3000', 'http://127.0.0.1:3000']);
     expect(corsOrigins('http://127.0.0.1:3000')).toEqual(['http://127.0.0.1:3000', 'http://localhost:3000']);
     expect(corsOrigins('https://web.example.com/app')).toEqual(['https://web.example.com']);
+  });
+});
+
+describe('demoSession: the web shell can boot from a demo persona', () => {
+  const p = personasFor('00000000-0000-4000-8000-0000000000a1', 'org-demo');
+  it('lender persona is a valid gateway AuthResponse with its permissions and menu', () => {
+    const s = demoSession('lender-admin', 'Админ', p.lenderAdmin('u-admin'), 'org-demo');
+    expect(AuthResponse.safeParse(s).success).toBe(true);
+    expect(s.user).toMatchObject({ id: 'u-admin', orgId: 'org-demo', branchId: 'BR-HQ', roles: ['ADMIN'] });
+    expect(s.permissions.length).toBeGreaterThan(0);
+  });
+  it('merchant personas drop the non-gateway roles but stay a valid session', () => {
+    const s = demoSession('cashier-1', 'Кассир', p.staff('store-1', 'u-cashier'), 'org-demo');
+    expect(AuthResponse.safeParse(s).success).toBe(true);
+    expect(s.user.roles).toEqual([]);
+    expect(s.user.branchId).toBeNull();
+    expect(s.accessToken).toBe('demo-cashier-1');
   });
 });

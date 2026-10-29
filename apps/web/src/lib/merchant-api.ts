@@ -4,12 +4,12 @@ import {
   type PosLeaseCreate, type PosLeaseDeliver, type PosLeaseReview, type PosLeaseSettle, type PosLeaseStatus, type PosLeaseSubmit, type PosQuoteRequest, type StoreCreate, type StoreUpdate,
 } from '@los/contracts';
 import { z } from 'zod';
-import { API } from './api';
+import { API, authFetch } from './api';
 
 /** Gateway proxy: `/api/<service>/<зам>` → origination `/api/<зам>` (docs/00-foundation.md §2). Merchant API бүгд origination-д. */
 export const ORIGINATION_API = `${API}/origination`;
-// Мерчант POS портал ↔ gateway (docs/05 §8). Хариу бүр @los/contracts-ын zod схемээр шалгагдана. Auth (gateway Module 0) хараахан байхгүй:
-// cookie-тэй (`credentials: 'include'`), x-correlation-id толгойтой; 401/403 → UI "хандах эрхгүй" төлөв.
+// Мерчант POS портал ↔ gateway (docs/05 §8). Хариу бүр @los/contracts-ын zod схемээр шалгагдана. Auth:
+// `authFetch` (bearer + 401-д token шинэчлэл), x-correlation-id толгойтой; 401/403 → UI "хандах эрхгүй" төлөв.
 
 export type ApiErrorCode = MerchantErrorCode | 'INTERNAL' | 'NETWORK_ERROR' | 'INVALID_RESPONSE' | 'UNKNOWN';
 
@@ -109,7 +109,7 @@ export async function request<S extends z.ZodTypeAny>(path: string, o: RequestOp
   if (o.idempotencyKey) headers['idempotency-key'] = o.idempotencyKey;
   let res: Response;
   try {
-    res = await fetch(`${ORIGINATION_API}${path}${buildQuery(o.query)}`, {
+    res = await authFetch(`${ORIGINATION_API}${path}${buildQuery(o.query)}`, {
       method: o.method ?? 'GET',
       credentials: 'include',
       headers,

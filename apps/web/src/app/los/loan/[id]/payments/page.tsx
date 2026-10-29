@@ -6,8 +6,8 @@ import { PaymentsPage } from '../../../../../features/payments';
 export default function Page() {
   const { id } = useParams<{ id: string }>();
   return (
-    <main style={{ padding: 24 }}>
+    <div>
       <PaymentsPage applicationId={id} />
-    </main>
+    </div>
   );
 }

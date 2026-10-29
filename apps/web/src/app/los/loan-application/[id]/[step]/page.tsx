@@ -7,9 +7,9 @@ export default function Page() {
   const { id, step } = useParams<{ id: string; step: string }>();
   if (step === 'client') {
     return (
-      <main style={{ padding: 24 }}>
+      <div>
         <BorrowersStep applicationId={id} />
-      </main>
+      </div>
     );
   }
   return null;

@@ -1,4 +1,4 @@
-import { GATEWAY_HEADERS } from '@los/contracts';
+import { GATEWAY_HEADERS, menuFor, permissionsFor, UserRole, type AuthResponse } from '@los/contracts';
 import { isProduction, PosConfigError, readIntegrationMode } from '../config/pos.config';
 
 // DEMO ONLY (scripts/merchant-demo.ts): demo-г аюулгүй, тууштай ажиллуулах цэвэр туслахууд. Скрипт өөрөө top-level-д ажилладаг тул логикийг энд гаргаж тестлэнэ.
@@ -67,4 +67,20 @@ export interface HeaderBag { headers: Record<string, string | string[] | undefin
 export function applyDemoIdentity(req: HeaderBag, personaHeaders?: Record<string, string>): void {
   for (const name of Object.values(GATEWAY_HEADERS)) if (name !== GATEWAY_HEADERS.correlationId) delete req.headers[name];
   if (personaHeaders) for (const [k, v] of Object.entries(personaHeaders)) req.headers[k] = v;
+}
+
+/**
+ * Вэб-ийн нэвтрэлтийн (`/auth/*`) хамгийн бага дүр: persona толгойг gateway-ийн AuthResponse хэлбэрээр буцаана.
+ * MERCHANT_STAFF / MERCHANT_ADMIN нь gateway-ийн UserRole биш тул roles-оос хасагдана (мерчант портал зөвхөн нэвтэрсэн байхыг шаарддаг).
+ */
+export function demoSession(key: string, label: string, headers: Record<string, string>, fallbackOrgId: string): AuthResponse {
+  const known: readonly string[] = UserRole;
+  const roles = (headers[GATEWAY_HEADERS.roles] ?? '').split(',').filter((r): r is UserRole => known.includes(r));
+  return {
+    accessToken: `demo-${key}`,
+    expiresIn: 900,
+    user: { id: headers[GATEWAY_HEADERS.userId] ?? key, orgId: headers[GATEWAY_HEADERS.orgId] ?? fallbackOrgId, branchId: headers[GATEWAY_HEADERS.branchId] ?? null, username: key, fullName: label, roles },
+    permissions: permissionsFor(roles),
+    menu: menuFor(roles),
+  };
 }

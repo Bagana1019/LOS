@@ -18,6 +18,7 @@ export function NotificationBellContainer() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [openedAt, setOpenedAt] = useState(0);
   const unread = useUnreadCount();
   const recent = useNotificationList({ page: 1, pageSize: BELL_PAGE_SIZE }, { enabled: open });
   const markRead = useMarkRead();
@@ -30,11 +31,11 @@ export function NotificationBellContainer() {
     void queryClient.invalidateQueries({ queryKey: notificationKeys.lists });
   }, [unreadCount, queryClient]);
 
-  // Харьцангуй хугацааны суурь — жагсаалт шинэчлэгдэх бүрд л шинэчлэгдэнэ.
+  // Харьцангуй хугацааны суурь — жагсаалт шинэчлэгдэх БОЛОН хонх нээгдэх бүрд шинэчлэгдэнэ (өгөгдөл ижил бол react-query ижил лавлагаа өгдөг тул `recent.data` дангаараа хүрэлцэхгүй).
   const items = useMemo<NotificationBellItem[]>(() => {
     const nowMs = Date.now();
     return (recent.data?.items ?? []).map((n) => toBellItem(n, nowMs, t));
-  }, [recent.data]);
+  }, [recent.data, openedAt]);
 
   const onItemClick = (item: NotificationBellItem) => {
     const source = recent.data?.items.find((n) => n.id === item.id);
@@ -54,7 +55,10 @@ export function NotificationBellContainer() {
       onMarkAllRead={() => markAll.mutate()}
       onViewAll={() => router.push('/notifications')}
       onRetry={() => void recent.refetch()}
-      onOpenChange={setOpen}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) setOpenedAt(Date.now());
+      }}
     />
   );
 }

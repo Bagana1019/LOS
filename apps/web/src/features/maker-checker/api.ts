@@ -12,7 +12,7 @@ import {
   type MakerCheckerPolicy,
 } from '@los/contracts';
 import { mn } from '@los/ui';
-import { API } from '../../lib/api';
+import { API, authFetch } from '../../lib/api';
 import { ApiError, buildApiError } from './errors';
 
 const BASE = `${API}/origination/maker-checker`;
@@ -59,7 +59,7 @@ async function request<T>(
   const hasBody = opts.body !== undefined;
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
+    res = await authFetch(`${BASE}${path}`, {
       method,
       credentials: 'include',
       headers: hasBody ? { Accept: 'application/json', 'Content-Type': 'application/json' } : { Accept: 'application/json' },

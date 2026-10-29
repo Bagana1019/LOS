@@ -1,7 +1,9 @@
 import type { Page, Route } from '@playwright/test';
-import { MerchantErrorBody, type MerchantErrorCode } from '@los/contracts';
+import { MerchantErrorBody, type MerchantErrorCode, type UserRole } from '@los/contracts';
+import { mockGateway } from './mock-gateway';
 
 // e2e: gateway-ийн БҮХ дуудлагыг `page.route`-аар тосож fixture буцаана (backend шаардлагагүй).
+// Бүх хуудас нэвтрэлтийн хаалгатай (AppShell) тул `install` нь `/auth/*`-ийг (mock-gateway.ts, authOnly) нэмж, нэвтэрсэн ажилтныг дуурайна.
 
 export interface MockRequest {
   method: string;
@@ -39,6 +41,9 @@ export class MockApi {
   readonly unhandled: string[] = [];
   private readonly routes: RouteEntry[] = [];
 
+  /** `role`: `/auth/me`-ийн дүр. Анхдагч ADMIN — `/settings/*` (settings:manage) хуудсууд хаагдахгүй. */
+  constructor(private readonly role: UserRole = 'ADMIN') {}
+
   /** `path` нь `/api`-аас хойших, жишээ `/merchant-portal/leases/:id`. Сүүлд бүртгэсэн нь түрүүлж таарна. */
   on(method: string, path: string, handler: MockHandler | MockReply): this {
     const { keys, re } = compile(path);
@@ -58,6 +63,9 @@ export class MockApi {
   }
 
   async install(page: Page): Promise<void> {
+    await mockGateway(page, { signedIn: true, role: this.role, authOnly: true });
+    // Ажилтны shell-ийн хонх (FR-13.2) уншаагүй тоог асууна — тест бүрд "mock-гүй дуудлага" болохгүйн тулд анхдагч хариу.
+    this.get('/notifications/unread-count', { json: { unreadCount: 0 } });
     await page.route('**/api/**', (route) => this.handle(route));
   }
 
@@ -92,6 +100,10 @@ export class MockApi {
         return;
       }
       await route.fulfill({ status: reply.status ?? 200, headers: { ...cors, 'content-type': 'application/json' }, body: JSON.stringify(reply.json ?? {}) });
+      return;
+    }
+    if (path.startsWith('/auth/')) {
+      await route.fallback(); // mock-gateway.ts (authOnly)
       return;
     }
     this.unhandled.push(`${method} ${path}`);

@@ -8,10 +8,10 @@ import { ReportPage } from '../../../../features/reports';
 export default function Page() {
   const { key } = useParams<{ key: string }>();
   return (
-    <main style={{ padding: 24 }}>
+    <div>
       <Suspense fallback={<Skeleton active paragraph={{ rows: 10 }} />}>
         <ReportPage key={key} reportKey={key} />
       </Suspense>
-    </main>
+    </div>
   );
 }

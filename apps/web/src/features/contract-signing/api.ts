@@ -1,9 +1,9 @@
 import { SigningRequestView, type ESignProvider } from '@los/contracts';
 import type { z } from 'zod';
-import { API } from '../../lib/api';
+import { API, authFetch } from '../../lib/api';
 
 // FR-11.4 — ажилтны тал: gateway `/api/origination/contracts/:applicationId/esign`. Gateway-ийн JWT (Authorization: Bearer) шаардлагатай —
-// web-ийн нэвтрэлтийн клиент (login/refresh, Module 2+) бэлэн болоход түүгээр толгойг нэмнэ (одоогоор зөвхөн cookie `credentials: 'include'`).
+// `authFetch` (lib/api) нэвтэрсэн сессийн token-ийг нэмж, дууссан бол шинэчилнэ.
 // Зээлдэгчийн линк (signingUrl) ЗӨВХӨН SMS-ээр явна — энд хэзээ ч хүсэхгүй, харуулахгүй: schema-аар (strip) хасна.
 
 export const StaffSigningView = SigningRequestView.omit({ signingUrl: true });
@@ -55,7 +55,7 @@ async function readServerMessage(res: Response): Promise<string | null> {
 async function request(target: string, method: 'GET' | 'POST', body?: unknown, signal?: AbortSignal): Promise<Response> {
   let res: Response;
   try {
-    res = await fetch(target, {
+    res = await authFetch(target, {
       method,
       credentials: 'include',
       cache: 'no-store',

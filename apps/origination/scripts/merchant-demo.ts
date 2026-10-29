@@ -22,7 +22,7 @@ import { MerchantService } from '../src/modules/merchant/services/merchant.servi
 import { PlanService } from '../src/modules/merchant/services/plan.service';
 import { DEMO_ORG_ID, DEMO_USERS, DemoClock, seedDemo } from '../src/modules/merchant/testing/seed-demo';
 import { personasFor, type HeaderMap } from '../src/modules/merchant/testing/personas';
-import { applyDemoIdentity, corsOrigins, demoRefusal, displayHost, hostPolicy } from '../src/modules/merchant/testing/demo-gateway';
+import { applyDemoIdentity, corsOrigins, demoRefusal, demoSession, displayHost, hostPolicy } from '../src/modules/merchant/testing/demo-gateway';
 
 const PORT = Number(process.env.DEMO_PORT ?? 4000);
 const HOST = process.env.DEMO_HOST?.trim() || '127.0.0.1'; // анхдагч зөвхөн loopback; loopback биш бол DEMO_ALLOW_REMOTE=1 (hostPolicy)
@@ -33,7 +33,11 @@ const COOKIE = 'demo_persona';
 interface Req { url?: string; method?: string; headers: Record<string, string | string[] | undefined> }
 interface Res { statusCode: number; setHeader(name: string, value: string | string[]): unknown; end(body?: string): unknown }
 type Next = () => void;
-interface ExpressLike { use(fn: (req: Req, res: Res, next: Next) => void): void; get(path: string, fn: (req: Req, res: Res) => void): void }
+interface ExpressLike {
+  use(fn: (req: Req, res: Res, next: Next) => void): void;
+  get(path: string, fn: (req: Req, res: Res) => void): void;
+  post(path: string, fn: (req: Req, res: Res) => void): void;
+}
 
 type PersonaKey = 'cashier-1' | 'cashier-2' | 'merchant-admin' | 'lender-admin' | 'approver';
 interface Persona { key: PersonaKey; label: string; hint: string; headers: HeaderMap; landing: string }
@@ -79,6 +83,8 @@ function buildPersonas(merchantId: string, storeA1: string, storeA2: string): Pe
     { key: 'approver', label: 'Лизингийн байгууллага — шинжээч', hint: 'APPROVER (REFER хянах)', headers: p.approver(DEMO_USERS.approver), landing: `${WEB_URL}/los/pos-leases` },
   ];
 }
+
+const sessionFor = (p: Persona) => demoSession(p.key, p.label, p.headers, DEMO_ORG_ID);
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 
@@ -134,6 +140,30 @@ async function main(): Promise<void> {
     res.setHeader('location', to);
     res.end();
   };
+  const json = (res: Res, status: number, body?: unknown) => {
+    res.statusCode = status;
+    res.setHeader('cache-control', 'no-store');
+    if (body === undefined) return res.end();
+    res.setHeader('content-type', 'application/json; charset=utf-8');
+    return res.end(JSON.stringify(body));
+  };
+  // Вэб апп нэвтрэлтийн төлөв (`/auth/*`)-ийг cookie-оор сэргээнэ: `demo_persona` cookie нь refresh cookie-н үүрэгтэй. Нууц үгээр нэвтрэхгүй — /demo-оос дүр сонгоно.
+  const current = (req: Req): Persona | undefined => byKey.get(parseCookies(req.headers.cookie)[COOKIE] ?? '');
+  server.post('/api/auth/refresh', (req, res) => {
+    const persona = current(req);
+    return persona ? json(res, 200, sessionFor(persona)) : json(res, 401, { code: 'INVALID_REFRESH_TOKEN', message: `Demo: ${displayHost(HOST, WEB_URL)}:${PORT}/demo хаягаас дүр сонгоно уу` });
+  });
+  server.get('/api/auth/me', (req, res) => {
+    const persona = current(req);
+    if (!persona) return json(res, 401, { code: 'SESSION_ENDED', message: 'Demo: дүр сонгоогүй байна' });
+    const { accessToken: _t, expiresIn: _e, ...me } = sessionFor(persona);
+    return json(res, 200, me);
+  });
+  server.post('/api/auth/login', (_req, res) => json(res, 400, { code: 'DEMO_LOGIN_UNSUPPORTED', message: 'Demo-д нууц үгээр нэвтрэхгүй: /demo хаягаас дүр сонгоно уу' }));
+  server.post('/api/auth/logout', (_req, res) => {
+    res.setHeader('set-cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
+    return json(res, 204);
+  });
   server.get('/demo', (req, res) => html(res, 200, demoPage(personas, parseCookies(req.headers.cookie)[COOKIE])));
   server.get('/demo/logout', (_req, res) => redirect(res, '/demo', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`));
   server.get('/demo/login/:persona', (req, res) => {

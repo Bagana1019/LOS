@@ -115,4 +115,27 @@ async onModuleInit() {
 
 ## 6. Мерж хийх үед зөрчил гарах газрууд
 
-`pnpm-lock.yaml` (merge-ийн дараа `pnpm install`-ээр дахин үүсгэ), `apps/<svc>/prisma/schema.prisma` + migration (өөр өөр feature-ийн хүснэгт бол нэг файлд зэрэгцэх тул шинэ migration файлаар нэм), `packages/contracts/src/{events,settings,auth}.ts` (нэмэх л), `packages/ui/src/i18n/mn.json`.
+`pnpm-lock.yaml` (merge-ийн дараа `pnpm install`-ээр дахин үүсгэ), `apps/<svc>/prisma/schema.prisma` + migration (өөр өөр feature-ийн хүснэгт бол нэг файлд зэрэгцэх тул шинэ migration файлаар нэм), `packages/contracts/src/{events,settings,auth}.ts` (нэмэх л), `packages/ui/src/i18n/mn.ts` (модуль бүр НЭГ import + `mnSources`-д НЭГ мөр нэмнэ — §7).
+
+## 7. Web (apps/web) — shell, нэвтрэлт, i18n
+
+```
+app/layout.tsx → <Providers> (antd, TanStack Query, AuthProvider) → <AppShell> → хуудас
+```
+
+| Юу | Хаана |
+| --- | --- |
+| Нэвтрэх хуудас | `app/login/page.tsx`, `components/auth/LoginForm.tsx` |
+| Сесс (access token санах ойд, refresh cookie-ээр сэргээнэ, 401 → нэг удаа refresh) | `lib/auth/session.ts`, `lib/auth/auth-context.tsx`, `lib/api.ts` (`apiFetch`, `authFetch`) |
+| Хаалт, sidebar, дээд хайлт, хэрэглэгчийн цэс | `components/shell/*` |
+| Хонх (FR-13.2) | `features/notifications/NotificationBellContainer.tsx` (shell-д залгасан) |
+| Брэнд: өнгө, нэр, лого (брэндбүүк ирэхэд ЗӨВХӨН энэ файл) | `theme/brand.tsx` |
+| Эрх/зам/хайлтын цэвэр функцүүд (тесттэй) | `lib/access.ts` |
+
+* **Бүх дуудлага `apiFetch('/<service>/<зам>', { schema })`-ээр** (gateway `/api/...`, bearer + `X-Correlation-Id` автоматаар, хариуг `@los/contracts`-ийн zod-оор шалгана; `json`/`body` аль нэгээр). Хариуг (`Response`) өөрөө задлах, өөрийн алдааны схемтэй модуль `authFetch(url, init)`-ээр дууд — bearer нэмж, 401 дээр token шинэчилнэ. Нэвтрэлт шаардсан дуудлагад шууд `fetch` бүү хий (нийтийн `/sign`, `/verify` л үл хамаарна). Gateway зөвхөн `/api/<service>/*`-ийг дамжуулдаг тул origination-ий модуль `originationFetch('/<зам>')` / `originationDownload` (`${API}/origination/...`) ашиглана — хоосон угтвартай `/api/<зам>` бичихгүй (`features/gateway-paths.test.ts` барина). Сүлжээний алдаа (`fetch`-ийн `TypeError`) `apiFetch`-ээс анхны `TypeError`-оороо гарна.
+* **Шинэ хуудас** = `app/<зам>/page.tsx`. Shell-ийн `Layout.Content` (`<main id="main">`) нь хуудасны цорын ганц `main` landmark бөгөөд 24px (гар утсанд 12px) padding өгдөг — хуудас өөрөө `<main>` болон давхар `padding` бүү нэм (`<div>`/`<section>`); `metadata.title`-д брэндийн дагавар (` · LOS Radix`) бүү бич — root layout-ийн `title.template` нэмнэ. Цэсэнд харагдах эсэх нь `packages/contracts/src/auth.ts` `MENU` + `ROLE_PERMISSIONS` (web дээр цэс бичихгүй). Цэсний дүрс: `components/shell/menu-icons.tsx`. Цэсэнд байхгүй ч эрх шаардах зам бол `lib/access.ts` `EXTRA_ROUTES`. Хуудас дотор эрхээр товч нууцлахдаа `useAuth().me.permissions`.
+* **i18n:** текст бүр `t('<модуль>.<түлхүүр>')`. Түлхүүр модулийн нэрээр угтвартай (`auth.*`, `shell.*`, `customer.*`, `notification.*`) — өөр модулийн угтвыг бүү ашигла. Модуль бүр `packages/ui/src/i18n/mn.<модуль>.json` үүсгээд `mn.ts`-д НЭГ import + `mnSources`-д НЭГ мөр нэмнэ. Түлхүүр давхардвал `pnpm test` (`apps/web/src/i18n.test.ts`) унана.
+* **Нэвтрэлтгүй хуудас:** `/login` ба түүнтэй адил нээлттэй хуудас `PUBLIC_PATHS`; shell-гүй, өөрийн token-той хуудас (`/sign/<token>`, `/verify/<code>` гэх мэт) `lib/access.ts` `STANDALONE_PREFIXES`-д prefix-ээ нэмнэ — тэнд сесс сэргээх дуудлага, redirect хийгдэхгүй. Нэвтрэлт шаардах ч staff sidebar/header-гүй, өөрийн shell-тэй хэсэг (мерчант портал `/merchant`) `OWN_SHELL_PREFIXES`-д. Бусад бүх зам нэвтрэлт шаардаж staff shell-д зурагдана. Нарийн дэлгэцэд (lg-ээс доош) sidebar давхарлан гарч, цэс сонгоход хаагдана; мерчант shell-д «Гарах» товч байна.
+* **UI-д тооцоолол хийхгүй** (`@los/calc` л).
+* **Тест:** эхлээд `pnpm --filter @los/contracts build` (web нь contracts-ийн `dist`-ийг ашигладаг; эсвэл `pnpm turbo test --filter @los/web`). `pnpm --filter @los/web test` (vitest, хурдан). E2E: `pnpm --filter @los/web test:e2e` — gateway-г mock хийсэн, backend хэрэггүй; `E2E_LIVE=1 pnpm --filter @los/web test:e2e` — ажиллаж буй бодит stack (§1) дээр (`live.spec.ts`). Модуль бүр `apps/web/e2e/<нэр>.spec.ts` нэмнэ; бүх хуудас нэвтрэлт шаарддаг тул spec бүр `mockGateway(page, { signedIn: true, role })` (`e2e/mock-gateway.ts`) эсвэл `new MockApi(role).install(page)` (`e2e/mock-api.ts` — `/auth/*`-ийг өөрөө нэмнэ)-оор эхэлнэ. Урьдчилан суулгасан Chromium ашиглах бол `PW_CHROMIUM_PATH`.
+* Дээд хайлтын гэрээний дугаар `/los/loan-application?q=` руу очно — жагсаалтыг хэрэгжүүлэгч `q`-г унших ёстой (FR-1.4).

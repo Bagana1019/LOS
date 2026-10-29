@@ -13,7 +13,7 @@ beforeEach(() => {
   calls = [];
   respond = () => ({ status: 200, body: {} });
   vi.stubGlobal('fetch', (url: string, init: RequestInit = {}) => {
-    const call: Call = { url: url.replace(/^https?:\/\/[^/]+\/api/, ''), method: init.method ?? 'GET', body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body };
+    const call: Call = { url: url.replace(/^https?:\/\/[^/]+\/api\/origination/, ''), method: init.method ?? 'GET', body: typeof init.body === 'string' ? JSON.parse(init.body) : init.body };
     calls.push(call);
     const r = respond(call);
     return Promise.resolve({ ok: r.status < 400, status: r.status, statusText: 'x', json: () => Promise.resolve(r.body ?? null) });

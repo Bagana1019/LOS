@@ -56,7 +56,7 @@ export function NotificationsPage() {
     });
 
   return (
-    <main style={{ padding: 24, maxWidth: 960 }}>
+    <div style={{ maxWidth: 960 }}>
       <Flex align="center" justify="space-between" wrap gap={12} style={{ marginBottom: 16 }}>
         <Flex align="center" gap={12}>
           <Typography.Title level={3} style={{ margin: 0 }}>{t('notification.page.title')}</Typography.Title>
@@ -114,6 +114,6 @@ export function NotificationsPage() {
           </Flex>
         ) : null}
       </Card>
-    </main>
+    </div>
   );
 }

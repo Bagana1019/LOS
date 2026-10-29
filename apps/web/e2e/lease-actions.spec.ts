@@ -140,8 +140,11 @@ test.describe('кодын илгээлтийн хязгаар (n=22)', () => {
     serve(api, lease({ status: 'DRAFT', consentVerified: false }));
     api.post('/merchant-portal/leases/:id/otp/consent', () => apiError(429, 'OTP_ATTEMPTS_EXCEEDED', { reason: 'MAX_SENDS' }));
     await page.goto(`/merchant/leases/${ID}`);
+    // Хуудас нэвтрэлтийн хаалганы дараа (async) ачаалдаг тул lease эхний удаа ирж дууссаны дараа л суурь тоог авна
+    const resend = page.getByRole('button', { name: 'Код дахин илгээх' });
+    await expect(resend).toBeVisible();
     const before = leaseGets(api);
-    await page.getByRole('button', { name: 'Код дахин илгээх' }).click();
+    await resend.click();
     const alert = page.getByRole('alert').filter({ hasText: 'Кодын илгээлтийн хязгаар хэтэрсэн' });
     await expect(alert).toBeVisible();
     await expect(alert).not.toContainText('Шинэ код авна уу');

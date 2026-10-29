@@ -15,4 +15,6 @@
 * **web**: `ContractSigningPanel` wizard-ийн `contract` алхамд холбогдоогүй (Модуль 2/11); staff API нь web-ийн нэвтрэлтийн клиент (Bearer) бэлэн болоход толгойг нэмнэ.
 * **gateway**: in-memory rate limiter (instance бүр тусдаа) — олон instance-д Redis-ээр солино. `ThrottlerGuard`-ийн Redis storage орох үед нэгтгэнэ.
 * **dms**: орфан signed файл цэвэрлэх (DMS-д delete API байхгүй); `file` retention (M11).
+* **gateway CORS**: `enableCors` (`packages/nest-common/src/bootstrap.ts`) `exposedHeaders` тохируулаагүй тул веб (өөр origin) `Retry-After`, `Content-Disposition`-ийг уншиж чадахгүй — 429 дээр `EsignApiError.retryAfterMs` үргэлж `null`, шалгагдсан хугацаа биш экспоненциал backoff ажиллана. Засвар: `exposedHeaders: ['Retry-After', 'Content-Disposition']`.
+* **gateway + web**: `ReviewStep`-ийн PDF `<iframe>` нь gateway-ийн origin-оос ачаалагддаг, харин gateway `helmet()` нь `X-Frame-Options: SAMEORIGIN` / `frame-ancestors 'self'` тавьдаг тул өөр origin-ийн вэб (`localhost:3000` ↔ `:4000`) iframe-д харуулж чадахгүй; «Бүтнээр нээх» холбоос л ажиллана. Засвар: `/api/public/esign/:token/document` хариунд `frame-ancestors <WEB_ORIGIN>` тавих (бусад зам хэвээр).
 * **Event relay**: `OUTBOX_RELAY=off`/Redis-гүй орчинд `ContractSigned` origination-д очихгүй → G4 (олголт) нээгдэхгүй. Production-д Redis заавал.

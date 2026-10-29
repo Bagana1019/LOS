@@ -13,7 +13,7 @@ import { TestSendCard } from './TestSendCard';
  */
 export function NotificationSettingsPage() {
   return (
-    <main style={{ padding: 24 }}>
+    <div>
       <Flex vertical gap={4} style={{ marginBottom: 16 }}>
         <Typography.Title level={3} style={{ margin: 0 }}>{t('notification.settings.title')}</Typography.Title>
         <Typography.Text type="secondary">{t('notification.settings.subtitle')}</Typography.Text>
@@ -36,6 +36,6 @@ export function NotificationSettingsPage() {
           { key: 'customers', label: t('notification.settings.tab.customers'), children: <CustomerPreferencesPanel /> },
         ]}
       />
-    </main>
+    </div>
   );
 }

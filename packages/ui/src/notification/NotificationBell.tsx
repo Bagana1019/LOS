@@ -52,7 +52,7 @@ function BellIcon({ size = 20 }: { size?: number }) {
 export function NotificationBellPanel({ items, unreadCount, loading = false, error = false, markingAll = false, onItemClick, onMarkAllRead, onViewAll, onRetry }: Omit<NotificationBellProps, 'onOpenChange'>) {
   const { token } = theme.useToken();
   return (
-    <div style={{ width: 360 }}>
+    <div style={{ width: 360, maxWidth: 'calc(100vw - 56px)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 8px' }}>
         <Typography.Text strong>{tr('notification.bell.title')}</Typography.Text>
         <Button type="link" size="small" disabled={unreadCount === 0 || markingAll} loading={markingAll} onClick={onMarkAllRead}>
