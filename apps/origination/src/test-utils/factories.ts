@@ -12,8 +12,12 @@ export const BRANCH = 'branch-1';
 /**
  * Тестийн өгөгдлийг цэвэрлэнэ. Module 0-ийн seed-ийн лавлах хүснэгтүүд (setting, product, approval_level*, contract_number_template)
  * болон migration-ийн хүснэгтийг хөндөхгүй — seed-д тулгуурладаг тест (`test/settings.e2e.test.ts`) эвдрэхгүй. Эдгээр тестүүд зөвхөн `ORG`-ийн `setting`, `product` мөрийг ашиглах тул тэдгээрийг л устгана.
+ * Өөр модулийн хүснэгтийг (Maker-Checker-ийн append-only `change_request*` — TRUNCATE-г trigger хориглоно, `pricing_tier`) хөндөхгүй.
  */
-const KEEP_TABLES = new Set(['_prisma_migrations', 'setting', 'product', 'approval_level', 'approval_level_member', 'contract_number_template']);
+const KEEP_TABLES = new Set([
+  '_prisma_migrations', 'setting', 'product', 'approval_level', 'approval_level_member', 'contract_number_template',
+  'change_request', 'change_request_history', 'maker_checker_policy', 'pricing_tier',
+]);
 
 export async function resetDb(prisma: PrismaService): Promise<void> {
   const tables = (await prisma.$queryRaw<Array<{ tablename: string }>>`SELECT tablename FROM pg_tables WHERE schemaname = 'origination'`).filter((t) => !KEEP_TABLES.has(t.tablename));

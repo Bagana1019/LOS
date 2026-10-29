@@ -16,6 +16,7 @@ describe.skipIf(!hasTestDb)(`report: гүйцэтгэл (NFR-1), ${LOANS} зээ
     env = await bootReport();
     await resetReport(env);
     await seedBulkLoans(env.t.prisma, LOANS);
+    await env.t.prisma.$executeRawUnsafe('ANALYZE'); // bulk ачааллын дараа autovacuum-ийг хүлээхгүй (статистикгүй үед төлөвлөгч муу план сонгож эхний дуудлага удааширдаг)
   }, 280_000);
   afterAll(async () => { await env.t.close(); });
 
