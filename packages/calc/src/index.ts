@@ -7,3 +7,4 @@ export * from './risk-pricing';
 export * from './aging';
 export * from './payment-allocation';
 export * from './reminders';
+export * from './pos-lease';
