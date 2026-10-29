@@ -39,4 +39,8 @@ describe('RBAC (docs/01 §3)', () => {
     });
     expect(parsed.success).toBe(true);
   });
+
+  it('only ADMIN may manage the ERP sync', () => {
+    for (const r of UserRole) expect(ROLE_PERMISSIONS[r].includes('erp-sync:manage'), r).toBe(r === 'ADMIN');
+  });
 });

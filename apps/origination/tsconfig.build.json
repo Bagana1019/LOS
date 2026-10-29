@@ -10,6 +10,7 @@
     "src/**/testing/**",
     "src/**/e2e/**",
     "src/**/persistence/contract-fixtures.ts",
-    "src/**/persistence/repository.contract.ts"
+    "src/**/persistence/repository.contract.ts",
+    "src/**/*.contract.ts"
   ]
 }
