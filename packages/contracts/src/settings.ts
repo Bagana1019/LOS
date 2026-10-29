@@ -42,6 +42,17 @@ export const SETTING_REGISTRY = {
   'bsa.signal.inter_account_min_repeat': def(z.number().int().positive(), 3, 'Данс хоорондын залилан — хамгийн цөөн давталт'),
   'bsa.signal.collusion_min_counterparties': def(z.number().int().positive(), 5, 'Хамтарсан залилан — кластерын хамгийн цөөн данс'),
   'bsa.signal.gambling_keywords': def(z.array(z.string()), ['casino', 'bet', 'betting', 'казино', 'бооцоо', 'ставка'], 'Мөрийтэй тоглоом — утгын түлхүүр үгс'),
+  // ── Хамтран зээлдэгч, төлбөр, мэдэгдэл, тайлан (docs/05-borrower-payment-notification-report.md; DEMO таамаг — docs/DECISIONS.md) ──
+  'borrower.max_co_borrowers': def(z.number().int().min(0), 3, 'Хүсэлтэд оруулах хамтран зээлдэгчийн дээд тоо'),
+  'borrower.max_guarantors': def(z.number().int().min(0), 3, 'Хүсэлтэд оруулах батлан даагчийн дээд тоо'),
+  'payment.invoice_ttl_minutes': def(z.number().int().positive(), 60, 'Төлбөрийн invoice хүчинтэй байх хугацаа (минут)'),
+  'payment.min_amount': def(z.number().positive(), 1000, 'Нэг удаагийн төлбөрийн доод дүн (₮)'),
+  'payment.collection_account': def(z.object({ bankCode: z.string(), accountNo: z.string(), accountName: z.string() }), { bankCode: '', accountNo: '', accountName: '' }, 'Банкны шилжүүлгээр хүлээн авах данс'),
+  'notification.reminder_before_due_days': def(z.array(z.number().int().min(0)), [3, 1, 0], 'Төлбөрийн сануулга — хугацаанаас өмнөх хоногууд'),
+  'notification.reminder_overdue_days': def(z.array(z.number().int().positive()), [1, 3, 7], 'Төлбөрийн сануулга — хугацаа хэтэрсний дараах хоногууд'),
+  'notification.max_attempts': def(z.number().int().positive(), 5, 'Мэдэгдэл илгээх дээд оролдлого'),
+  'notification.channels_customer': def(z.array(z.enum(['SMS', 'EMAIL', 'PUSH'])), ['SMS', 'EMAIL', 'PUSH'], 'Зээлдэгчид мэдэгдэх идэвхтэй сувгууд'),
+  'report.max_export_rows': def(z.number().int().positive(), 50_000, 'Excel экспортын дээд мөрийн тоо'),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_REGISTRY;

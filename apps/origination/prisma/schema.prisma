@@ -330,6 +330,8 @@ model LoanApplication {
   letters          OfficialLetter[]
   disbursements    DisbursementRequest[]
   comments         Comment[]
+  invoices PaymentInvoice[]
+  payments Payment[]
 
   @@unique([orgId, appNo])
   @@unique([orgId, contractNo])
@@ -348,6 +350,15 @@ model LoanApplicationBorrower {
   customerId    String   @map("customer_id")
   role          String // BorrowerRole
   isPrimary     Boolean  @default(false) @map("is_primary")
+  // ── өргөтгөл (docs/03-д байхгүй, DECISIONS.md 2026-10-28): хамтран зээлдэгч / батлан даагчийн нөхцөл
+  relationToPrimary String?   @map("relation_to_primary") // BorrowerRelation
+  liabilityShare    Decimal?  @map("liability_share") @db.Decimal(7, 4) // CO_BORROWER: 0.5 = 50%; null = хамтын хариуцлага
+  guaranteeType     String?   @map("guarantee_type") // GuaranteeType
+  guaranteeAmount   Decimal?  @map("guarantee_amount") @db.Decimal(18, 2) // LIMITED баталгааны дээд дүн
+  consentFileId     String?   @map("consent_file_id") // dms.file.id (гарын үсэгтэй зөвшөөрөл)
+  consentSignedAt   DateTime? @map("consent_signed_at")
+  incomeIncluded    Boolean   @default(false) @map("income_included") // орлого нэгтгэнэ (PRIMARY, CO_BORROWER)
+  note              String?
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   createdBy     String?  @map("created_by")
@@ -357,6 +368,7 @@ model LoanApplicationBorrower {
   customer    Customer        @relation(fields: [customerId], references: [id])
 
   @@unique([applicationId, customerId, role])
+  @@index([applicationId])
   @@index([customerId])
   @@map("loan_application_borrower")
   @@schema("origination")
@@ -547,6 +559,7 @@ model RepaymentScheduleRow {
   balance      Decimal  @db.Decimal(18, 2)
 
   schedule RepaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  allocations PaymentAllocation[]
 
   @@unique([scheduleId, seq])
   @@index([dueDate])
@@ -903,5 +916,215 @@ model MakerCheckerPolicy {
 
   @@unique([orgId, targetType, action])
   @@map("maker_checker_policy")
+  @@schema("origination")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// Төлбөр (payment) — QPay / SocialPay / банкны шилжүүлгээр эргэн төлөлт цуглуулах
+// ════════════════════════════════════════════════════════════════════════════════════
+
+model PaymentInvoice {
+  id                   String    @id @default(uuid())
+  orgId                String    @map("org_id")
+  applicationId        String    @map("application_id")
+  scheduleRowId        String?   @map("schedule_row_id")
+  provider             String // PaymentProvider
+  status               String    @default("PENDING") // PaymentInvoiceStatus
+  amount               Decimal   @db.Decimal(18, 2)
+  currency             String    @default("MNT")
+  senderInvoiceNo      String    @unique @map("sender_invoice_no")
+  providerInvoiceId    String?   @map("provider_invoice_id")
+  qrText               String?   @map("qr_text")
+  qrImage              String?   @map("qr_image")
+  deeplinksJson        Json?     @map("deeplinks_json")
+  bankTransferJson     Json?     @map("bank_transfer_json")
+  providerResponseJson Json?     @map("provider_response_json")
+  expiresAt            DateTime  @map("expires_at")
+  paidAt               DateTime? @map("paid_at")
+  note                 String?
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  createdBy            String?   @map("created_by")
+  updatedBy            String?   @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id])
+  payments    Payment[]
+
+  @@index([applicationId])
+  @@index([status, expiresAt])
+  @@index([provider, providerInvoiceId])
+  @@map("payment_invoice")
+  @@schema("origination")
+}
+
+model Payment {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  applicationId      String   @map("application_id")
+  invoiceId          String?  @map("invoice_id")
+  provider           String // PaymentProvider
+  providerPaymentId  String   @map("provider_payment_id")
+  amount             Decimal  @db.Decimal(18, 2)
+  currency           String   @default("MNT")
+  paidAt             DateTime @map("paid_at")
+  payerName          String?  @map("payer_name")
+  payerAccountMasked String?  @map("payer_account_masked")
+  unallocatedAmount  Decimal  @default(0) @map("unallocated_amount") @db.Decimal(18, 2)
+  rawJson            Json?    @map("raw_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+  createdBy          String?  @map("created_by")
+
+  application LoanApplication     @relation(fields: [applicationId], references: [id])
+  invoice     PaymentInvoice?     @relation(fields: [invoiceId], references: [id])
+  allocations PaymentAllocation[]
+
+  @@unique([provider, providerPaymentId])
+  @@index([applicationId, paidAt])
+  @@map("payment")
+  @@schema("origination")
+}
+
+model PaymentAllocation {
+  id            String  @id @default(uuid())
+  paymentId     String  @map("payment_id")
+  scheduleRowId String  @map("schedule_row_id")
+  interestPaid  Decimal @map("interest_paid") @db.Decimal(18, 2)
+  principalPaid Decimal @map("principal_paid") @db.Decimal(18, 2)
+  totalPaid     Decimal @map("total_paid") @db.Decimal(18, 2)
+
+  payment Payment              @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  row     RepaymentScheduleRow @relation(fields: [scheduleRowId], references: [id])
+
+  @@index([paymentId])
+  @@index([scheduleRowId])
+  @@map("payment_allocation")
+  @@schema("origination")
+}
+
+// Банкны данснаас орж ирсэн шилжүүлэг (тулгалт). Тааруулж чадсан бол MATCHED + payment_id, үгүй бол UNMATCHED (гараар шийднэ).
+model BankTransferEntry {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  bankCode           String   @map("bank_code")
+  bankReference      String   @map("bank_reference") // банкны гүйлгээний дугаар
+  accountNo          String   @map("account_no") // манай хүлээн авах данс
+  amount             Decimal  @db.Decimal(18, 2)
+  currency           String   @default("MNT")
+  valueDate          DateTime @map("value_date")
+  description        String?
+  payerName          String?  @map("payer_name")
+  payerAccountMasked String?  @map("payer_account_masked")
+  status             String   @default("UNMATCHED") // MATCHED | UNMATCHED | FAILED
+  paymentId          String?  @map("payment_id")
+  rawJson            Json?    @map("raw_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([bankCode, bankReference])
+  @@index([status])
+  @@map("bank_transfer_entry")
+  @@schema("origination")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// Мэдэгдэл (notification) — in-app хонх (docs/03) + SMS / Email / Push хүргэлт
+// ════════════════════════════════════════════════════════════════════════════════════
+
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  type      String // NotificationType
+  channel   String // NotificationChannel
+  locale    String   @default("mn")
+  subject   String?
+  body      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  @@unique([orgId, type, channel, locale])
+  @@map("notification_template")
+  @@schema("origination")
+}
+
+model NotificationDelivery {
+  id                String    @id @default(uuid())
+  orgId             String    @map("org_id")
+  type              String // NotificationType
+  channel           String // NotificationChannel (SMS | EMAIL | PUSH)
+  recipientType     String    @map("recipient_type") // RecipientType
+  recipientId       String    @map("recipient_id")
+  address           String? // утас / имэйл / push token — хүлээн авагчийн мэдээлэл (PII), лог-д бичихгүй
+  applicationId     String?   @map("application_id")
+  branchId          String?   @map("branch_id") // хүсэлтийн салбар (denormalized) — BRANCH_MANAGER өөрийн салбарын хүргэлтийг шүүхэд
+  subject           String?
+  body              String
+  payloadJson       Json      @default("{}") @map("payload_json")
+  dedupeKey         String    @unique @map("dedupe_key") // ижил мэдэгдлийг давхар илгээхгүй (event/reminder бүр нэг удаа)
+  status            String    @default("QUEUED") // DeliveryStatus
+  attempts          Int       @default(0)
+  nextAttemptAt     DateTime? @map("next_attempt_at")
+  lastError         String?   @map("last_error")
+  providerMessageId String?   @map("provider_message_id")
+  scheduledFor      DateTime  @default(now()) @map("scheduled_for")
+  sentAt            DateTime? @map("sent_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, nextAttemptAt])
+  @@index([applicationId])
+  @@index([recipientType, recipientId])
+  @@index([orgId, branchId, scheduledFor])
+  @@map("notification_delivery")
+  @@schema("origination")
+}
+
+model NotificationPreference {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  subjectType String   @map("subject_type") // RecipientType
+  subjectId   String   @map("subject_id")
+  channel     String // NotificationChannel
+  enabled     Boolean  @default(true)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([orgId, subjectType, subjectId, channel]) // байгууллага тус бүрийн тохиргоо тусдаа: өөр org-ийн ADMIN хөндөж чадахгүй
+  @@map("notification_preference")
+  @@schema("origination")
+}
+
+model PushDevice {
+  id         String   @id @default(uuid())
+  orgId      String   @map("org_id")
+  ownerType  String   @map("owner_type") // RecipientType
+  ownerId    String   @map("owner_id")
+  token      String   @unique
+  platform   String // PushPlatform
+  isActive   Boolean  @default(true) @map("is_active")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([ownerType, ownerId, isActive])
+  @@map("push_device")
+  @@schema("origination")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// Тайлан (report) — гүйцэтгэл/экспортын аудит (NFR-4, NFR-5: хувийн мэдээлэл гаргасан үйлдэл)
+// ════════════════════════════════════════════════════════════════════════════════════
+
+model ReportRun {
+  id         String   @id @default(uuid())
+  orgId      String   @map("org_id")
+  reportKey  String   @map("report_key")
+  format     String // JSON | XLSX
+  paramsJson Json     @map("params_json")
+  rowCount   Int      @map("row_count")
+  runBy      String?  @map("run_by")
+  runAt      DateTime @default(now()) @map("run_at")
+
+  @@index([reportKey, runAt])
+  @@map("report_run")
   @@schema("origination")
 }
