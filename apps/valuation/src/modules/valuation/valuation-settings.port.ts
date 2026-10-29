@@ -7,6 +7,8 @@ export interface VehiclePricingSettings extends MarketPriceParams {
 }
 
 export interface ValuationSettings {
+  /** true while the values are DEMO placeholders: collateral suggestions built from them carry the `DEMO_PARAMETERS` warning. */
+  readonly demo?: boolean;
   vehiclePricing(): Promise<VehiclePricingSettings>;
 }
 
