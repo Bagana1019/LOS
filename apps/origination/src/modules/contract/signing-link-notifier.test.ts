@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { ConsoleLogger, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSigningLinkNotifier, MockSigningLinkNotifier, renderSigningSms, SIGNING_SMS_TEMPLATE, UnconfiguredSigningLinkNotifier } from './signing-link-notifier';
 import { maskPhone } from './pii';
@@ -21,8 +21,13 @@ describe('MockSigningLinkNotifier', () => {
     };
     vi.spyOn(process.stdout, 'write').mockImplementation(capture);
     vi.spyOn(process.stderr, 'write').mockImplementation(capture);
+    // vitest.setup.ts Logger-ийг дуугүй болгосон тул энэ тестэд л бодит ConsoleLogger-ийг буцааж залгана
+    Logger.overrideLogger(new ConsoleLogger());
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    Logger.overrideLogger(false);
+    vi.restoreAllMocks();
+  });
 
   it('зөвхөн {applicationId, phoneMasked} логлоно — URL, токен, утасны дугаар огт гарахгүй', async () => {
     await new MockSigningLinkNotifier().sendLink(INPUT);

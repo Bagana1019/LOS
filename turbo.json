@@ -31,7 +31,10 @@
     "MONPASS_*",
     "TRUST_PROXY",
     "CORS_ORIGINS",
-    "NEXT_PUBLIC_ESIGN_*"
+    "NEXT_PUBLIC_ESIGN_*",
+    "PII_HASH_KEY",
+    "KYC_BASE_URL",
+    "POS_*"
   ],
   "tasks": {
     "build": {

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { t, type MnKey } from './i18n';
 
 const SRC = resolve(__dirname, '../..');
+const I18N_DIR = resolve(__dirname, '../../../../../packages/ui/src/i18n');
 const SOURCE_DIRS = ['features/esign', 'features/contract-signing', 'app/sign', 'app/verify'].map((d) => join(SRC, d));
 const PREFIX = /^(esign|verify|contractSigning)\./;
 
@@ -28,8 +29,6 @@ function referencedKeys(): Set<string> {
   return keys;
 }
 
-const dictionaryKeys = Object.keys(mn);
-
 describe('i18n: esign.* / verify.* / contractSigning.*', () => {
   it('эх кодод ашигласан түлхүүр бүр толь бичигт байна', () => {
     const referenced = referencedKeys();
@@ -44,11 +43,16 @@ describe('i18n: esign.* / verify.* / contractSigning.*', () => {
     expect(unused).toEqual([]);
   });
 
-  it('mn = mn.json + esign.mn.json: түлхүүр давхцахгүй, анхны түлхүүрүүд хэвээр', () => {
-    const overlap = Object.keys(mnJson).filter((key) => Object.hasOwn(esignMn, key));
-    expect(overlap).toEqual([]);
-    expect(dictionaryKeys.sort()).toEqual([...Object.keys(mnJson), ...Object.keys(esignMn)].sort());
-    for (const [key, value] of Object.entries(mnJson)) expect(mn[key as keyof typeof mn], key).toBe(value);
+  it('esign.mn.json түлхүүр нь бусад mn*.json-той давхцахгүй; mn-д бүгд орсон, бусдын түлхүүр алга болоогүй', () => {
+    const others = readdirSync(I18N_DIR).filter((f) => /^mn.*\.json$/.test(f));
+    expect(others).toContain('mn.json');
+    for (const file of others) {
+      const dict = JSON.parse(readFileSync(join(I18N_DIR, file), 'utf8')) as Record<string, string>;
+      expect(Object.keys(dict).filter((key) => Object.hasOwn(esignMn, key)), file).toEqual([]);
+      for (const key of Object.keys(dict)) expect(Object.hasOwn(mn, key), `${file}: ${key}`).toBe(true);
+    }
+    for (const [key, value] of Object.entries(esignMn)) expect(mn[key], key).toBe(value);
+    expect(Object.keys(mn)).toEqual(expect.arrayContaining([...Object.keys(mnJson), ...Object.keys(esignMn)]));
   });
 
   it('esign.mn.json зөвхөн зөвшөөрөгдсөн угтвартай түлхүүртэй', () => {

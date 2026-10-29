@@ -1,76 +1,110 @@
-// Модуль 0 seed (docs/04): BSA ангилал + анхдагч дүрмүүд (docs/02 §4), Sosco Score загвар v1. Idempotent (create-only).
-// Бүх жин/босго DEMO таамаг — docs/DECISIONS.md. Admin (M13) UI-аас засна.
-import { PrismaClient } from '.prisma/client-scoring';
+// scoring сервисийн seed (pnpm --filter @los/scoring db:seed). Идемпотент: хоёр дахь ажиллуулалт юу ч өөрчлөхгүй.
+// BSA ангилал + дүрмийн анхдагч сан (docs/02 §4, NFR-6, BSA-FR-3.5): src/modules/bsa/classify/default-catalog.ts-ээс, байгууллага (SEED_ORG_ID) тутамд.
+//  - Анхдагч: ДУТУУГ нэмнэ, байгааг ӨӨРЧИЛӨХГҮЙ — admin засварласан дайчлах хувь/босгыг дахин seed дарахгүй.
+//  - SEED_BSA_REFRESH=1: ангилал/дүрмийг анхдагч утга руу буцаана (зөвхөн ялгаатай мөрийг шинэчилнэ).
+//  - Sosco Score загвар v1 (Модуль 0): жин/босго DEMO таамаг — docs/DECISIONS.md. Admin (M13) UI-аас засна.
+import { Prisma, PrismaClient } from '../node_modules/.prisma/client-scoring';
 import { SEED } from '@los/database';
+import { DEFAULT_BSA_CATEGORIES, DEFAULT_BSA_RULES } from '../src/modules/bsa/classify/default-catalog';
 
-const prisma = new PrismaClient();
-const orgId = SEED.org.id;
+const SEEDED_BY = 'seed';
 
-type Cat = [code: string, direction: 'INCOME' | 'EXPENSE', group: string, name: string, weight: number, dtiRole: string];
-// docs/02 §4. Дайчлах хувь орлогод; зарлагад 1 (DTI-д хэрхэн нөлөөлөхийг dti_role тодорхойлно).
-const categories: Cat[] = [
-  ['INC_SALARY', 'INCOME', 'A', 'Хөдөлмөрийн орлого (цалин)', 1, 'INCOME'],
-  ['INC_CASH', 'INCOME', 'B', 'Бэлэн орлого', 0.5, 'INCOME'],
-  ['INC_BUSINESS', 'INCOME', 'B', 'Бизнесийн орлого (бэлэнгээс бусад)', 0.85, 'INCOME'],
-  ['INC_PASSIVE', 'INCOME', 'C', 'Идэвхгүй орлого (түрээс, хүү, ногдол ашиг)', 1, 'INCOME'],
-  ['INC_CONTRACT', 'INCOME', 'D', 'Гэрээт ажлын орлого', 0.7, 'INCOME'],
-  ['INC_OTHER', 'INCOME', '?', 'Бусад орлого', 0.1, 'INCOME'],
-  ['INC_IRREGULAR', 'INCOME', '-', 'Тогтмол бус орлого', 0, 'EXCLUDE'],
-  ['INC_LOAN', 'INCOME', '-', 'Зээл (авсан зээлийн олголт)', 0, 'EXCLUDE'],
-  ['INC_NON_INCOME', 'INCOME', '-', 'Орлого бус (буцаалт, залруулга)', 0, 'EXCLUDE'],
-  ['INC_ABNORMAL', 'INCOME', '-', 'Хэвийн бус', 0, 'EXCLUDE'],
-  ['INC_SUSPICIOUS', 'INCOME', '-', 'Сэжигтэй орлого', 0, 'EXCLUDE'],
-  ['EXP_LOAN', 'EXPENSE', 'A', 'Зээл (зээлийн төлбөр)', 1, 'DEBT_SERVICE'],
-  ['EXP_DEBT', 'EXPENSE', 'A', 'Өрийн үүрэг', 1, 'DEBT_SERVICE'],
-  ['EXP_FIXED', 'EXPENSE', 'B', 'Тогтмол зардал', 1, 'HOUSEHOLD'],
-  ['EXP_ESSENTIAL', 'EXPENSE', 'C', 'Зайлшгүй зардал', 1, 'HOUSEHOLD'],
-  ['EXP_OPTIONAL', 'EXPENSE', 'D', 'Сонгон зардал', 1, 'INFO'],
-  ['EXP_BUSINESS', 'EXPENSE', 'E', 'Бизнесийн зардал', 1, 'BUSINESS_EXPENSE'],
-  ['EXP_BANK_FEE', 'EXPENSE', 'F', 'Банкны шимтгэл', 1, 'INFO'],
-  ['EXP_NON_EXPENSE', 'EXPENSE', 'F', 'Зардал бус (өөрийн данс, хадгаламж)', 1, 'EXCLUDE'],
-  ['EXP_SUSPICIOUS', 'EXPENSE', 'G', 'Сэжигтэй зардал', 1, 'INFO'],
-  ['EXP_CHANNEL', 'EXPENSE', 'CH', 'Сувгийн зарлага (QPay, POS, ATM)', 1, 'INFO'],
-  ['EXP_OTHER', 'EXPENSE', '?', 'Бусад зардал', 1, 'INFO'],
-];
+export interface CatalogSeedResult {
+  categories: { created: number; updated: number; unchanged: number };
+  rules: { created: number; updated: number; unchanged: number };
+}
 
-type Rule = [direction: 'INCOME' | 'EXPENSE', pattern: string, category: string, priority: number];
-// Түлхүүр үгийн анхдагч дүрэм (BSA-FR-3.5; admin өргөтгөнө). Бага priority = түрүүлж.
-const rules: Rule[] = [
-  ['INCOME', 'зээл олголт', 'INC_LOAN', 10], ['INCOME', 'зээлийн олголт', 'INC_LOAN', 10], ['INCOME', 'loan disbursement', 'INC_LOAN', 10],
-  ['INCOME', 'буцаалт', 'INC_NON_INCOME', 20], ['INCOME', 'refund', 'INC_NON_INCOME', 20], ['INCOME', 'залруулга', 'INC_NON_INCOME', 20],
-  ['INCOME', 'цалин', 'INC_SALARY', 30], ['INCOME', 'salary', 'INC_SALARY', 30], ['INCOME', 'хөлс', 'INC_SALARY', 35],
-  ['INCOME', 'түрээс', 'INC_PASSIVE', 40], ['INCOME', 'rent', 'INC_PASSIVE', 40], ['INCOME', 'ногдол ашиг', 'INC_PASSIVE', 40], ['INCOME', 'хадгаламжийн хүү', 'INC_PASSIVE', 40],
-  ['INCOME', 'гэрээний', 'INC_CONTRACT', 50],
-  ['INCOME', 'бэлэн мөнгө', 'INC_CASH', 60], ['INCOME', 'cash deposit', 'INC_CASH', 60],
-  ['INCOME', 'qpay', 'INC_BUSINESS', 70], ['INCOME', 'pos', 'INC_BUSINESS', 70], ['INCOME', 'борлуулалт', 'INC_BUSINESS', 70],
-  ['EXPENSE', 'зээлийн төлбөр', 'EXP_LOAN', 10], ['EXPENSE', 'loan repayment', 'EXP_LOAN', 10], ['EXPENSE', 'сарын төлбөр', 'EXP_LOAN', 15], ['EXPENSE', 'зээл төлөлт', 'EXP_LOAN', 15],
-  ['EXPENSE', 'шимтгэл', 'EXP_BANK_FEE', 20], ['EXPENSE', 'fee', 'EXP_BANK_FEE', 20],
-  ['EXPENSE', 'даатгал', 'EXP_FIXED', 30], ['EXPENSE', 'цахилгаан', 'EXP_FIXED', 30], ['EXPENSE', 'дулаан', 'EXP_FIXED', 30], ['EXPENSE', 'интернет', 'EXP_FIXED', 30], ['EXPENSE', 'сургалтын төлбөр', 'EXP_FIXED', 30],
-  ['EXPENSE', 'хүнс', 'EXP_ESSENTIAL', 40], ['EXPENSE', 'эмийн сан', 'EXP_ESSENTIAL', 40], ['EXPENSE', 'шатахуун', 'EXP_ESSENTIAL', 40],
-  ['EXPENSE', 'ресторан', 'EXP_OPTIONAL', 50], ['EXPENSE', 'кафе', 'EXP_OPTIONAL', 50],
-  ['EXPENSE', 'түүхий эд', 'EXP_BUSINESS', 60], ['EXPENSE', 'нийлүүлэгч', 'EXP_BUSINESS', 60], ['EXPENSE', 'ажилчдын цалин', 'EXP_BUSINESS', 55],
-];
+const ruleKey = (r: { direction: string; matchType: string; pattern: string; categoryCode: string; source: string }): string =>
+  [r.direction, r.matchType, r.pattern, r.categoryCode, r.source].join('\u0000');
+
+/** Анхдагч ангилал, дүрмийг org-д нэг транзакцид суулгана */
+export async function seedBsaCatalog(db: PrismaClient, orgId: string, refresh = false): Promise<CatalogSeedResult> {
+  return db.$transaction(async (tx: Prisma.TransactionClient) => {
+    const result: CatalogSeedResult = { categories: { created: 0, updated: 0, unchanged: 0 }, rules: { created: 0, updated: 0, unchanged: 0 } };
+
+    // ── Ангилал: (org_id, code) ──
+    const existingCats = new Map((await tx.bsaCategory.findMany({ where: { orgId } })).map((c) => [c.code, c]));
+    const newCats = DEFAULT_BSA_CATEGORIES.filter((c) => !existingCats.has(c.code));
+    if (newCats.length > 0) {
+      await tx.bsaCategory.createMany({
+        data: newCats.map((c) => ({ orgId, code: c.code, direction: c.direction, groupCode: c.groupCode, name: c.name, weight: c.weight, dtiRole: c.dtiRole, isActive: c.isActive, createdBy: SEEDED_BY, updatedBy: SEEDED_BY })),
+        skipDuplicates: true,
+      });
+    }
+    result.categories.created = newCats.length;
+    for (const c of DEFAULT_BSA_CATEGORIES) {
+      const cur = existingCats.get(c.code);
+      if (!cur) continue;
+      const differs =
+        cur.direction !== c.direction || cur.groupCode !== c.groupCode || cur.name !== c.name || cur.dtiRole !== c.dtiRole || cur.isActive !== c.isActive || cur.weight.toNumber() !== c.weight;
+      if (refresh && differs) {
+        await tx.bsaCategory.update({
+          where: { id: cur.id },
+          data: { direction: c.direction, groupCode: c.groupCode, name: c.name, weight: c.weight, dtiRole: c.dtiRole, isActive: c.isActive, updatedBy: SEEDED_BY },
+        });
+        result.categories.updated += 1;
+      } else {
+        result.categories.unchanged += 1;
+      }
+    }
+
+    // ── Дүрэм: байгалийн түлхүүр (org, direction, match_type, pattern, category_code, source) ──
+    const existingRules = new Map((await tx.bsaRule.findMany({ where: { orgId } })).map((r) => [ruleKey(r), r]));
+    const newRules = DEFAULT_BSA_RULES.filter((r) => !existingRules.has(ruleKey(r)));
+    if (newRules.length > 0) {
+      await tx.bsaRule.createMany({
+        data: newRules.map((r) => ({
+          orgId, direction: r.direction, matchType: r.matchType, pattern: r.pattern, categoryCode: r.categoryCode, priority: r.priority, source: r.source,
+          createdBy: SEEDED_BY, updatedBy: SEEDED_BY,
+        })),
+        skipDuplicates: true,
+      });
+    }
+    result.rules.created = newRules.length;
+    for (const r of DEFAULT_BSA_RULES) {
+      const cur = existingRules.get(ruleKey(r));
+      if (!cur) continue;
+      if (refresh && (cur.priority !== r.priority || !cur.isActive)) {
+        await tx.bsaRule.update({ where: { id: cur.id }, data: { priority: r.priority, isActive: true, updatedBy: SEEDED_BY } });
+        result.rules.updated += 1;
+      } else {
+        result.rules.unchanged += 1;
+      }
+    }
+    return result;
+  });
+}
 
 // SoscoWeights (@los/calc): нийлбэр 1.0. Босго — оноо 0–1000 → A–E.
-const soscoWeights = { fico: 0.3, dti: 0.25, reliability: 0.15, suspicious: 0.1, history: 0.15, ltv: 0.05 };
-const gradeThresholds = { A: 800, B: 700, C: 600, D: 500, E: 0 };
+const SOSCO_WEIGHTS = { fico: 0.3, dti: 0.25, reliability: 0.15, suspicious: 0.1, history: 0.15, ltv: 0.05 };
+const SOSCO_GRADE_THRESHOLDS = { A: 800, B: 700, C: 600, D: 500, E: 0 };
 
-async function main() {
-  for (const [i, [code, direction, groupCode, name, weight, dtiRole]] of categories.entries()) {
-    await prisma.bsaCategory.upsert({
-      where: { orgId_code: { orgId, code } },
-      create: { orgId, code, direction, groupCode, name, weight, dtiRole, sortOrder: i, isActive: true },
-      update: {},
-    });
-  }
-  if ((await prisma.bsaRule.count({ where: { orgId } })) === 0) {
-    await prisma.bsaRule.createMany({ data: rules.map(([direction, pattern, categoryCode, priority]) => ({ orgId, direction, matchType: 'KEYWORD', pattern, categoryCode, priority, source: 'ADMIN' })) });
-  }
-  await prisma.soscoModel.upsert({
+/** Sosco Score загвар v1 — байвал өөрчлөхгүй */
+export async function seedSoscoModel(db: PrismaClient, orgId: string): Promise<void> {
+  await db.soscoModel.upsert({
     where: { orgId_version: { orgId, version: 1 } },
-    create: { orgId, version: 1, weightsJson: soscoWeights, gradeThresholdsJson: gradeThresholds, isActive: true },
+    create: { orgId, version: 1, weightsJson: SOSCO_WEIGHTS, gradeThresholdsJson: SOSCO_GRADE_THRESHOLDS, isActive: true },
     update: {},
   });
-  console.log(`scoring seed: ${categories.length} BSA categories, ${rules.length} rules, sosco_model v1`);
 }
-main().catch((e) => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());
+
+async function main(): Promise<void> {
+  const orgId = process.env.SEED_ORG_ID ?? SEED.org.id;
+  const refresh = process.env.SEED_BSA_REFRESH === '1';
+  const prisma = new PrismaClient({ errorFormat: 'minimal' });
+  try {
+    const r = await seedBsaCatalog(prisma, orgId, refresh);
+    await seedSoscoModel(prisma, orgId);
+    console.log(`seed scoring: org=${orgId} refresh=${refresh} bsa_category ${JSON.stringify(r.categories)} bsa_rule ${JSON.stringify(r.rules)}, sosco_model v1`);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+// `tsx prisma/seed.ts` гэж ажиллуулсан үед л; import хийхэд (тест) ажиллахгүй
+if (require.main === module) {
+  main().catch((e: unknown) => {
+    console.error('seed scoring failed:', e instanceof Error ? e.message : String(e));
+    process.exitCode = 1;
+  });
+}

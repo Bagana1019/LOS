@@ -48,7 +48,7 @@ dms ── ContractSigned / ContractSigningFailed ──► Redis stream ──�
 `processed_events(origination, eventId)` (`idempotentHandler`) + handler-ийн CAS: өөр `signingRequestId`-тай (stale) event хаяна · SIGNED-ийг бууруулахгүй · давтан хүргэлт no-op.
 
 ## DB
-`20261028110000_contract_esign` (incremental): `sign_channel` (PAPER|ESIGN), `signing_request_id`, `signing_status`, `signing_failure_reason`, `signing_sent_at` + CHECK constraint-ууд
+`20261029040000_contract_esign` (incremental): `sign_channel` (PAPER|ESIGN), `signing_request_id`, `signing_status`, `signing_failure_reason`, `signing_sent_at` + CHECK constraint-ууд
 (enum утгууд, `SIGNED ⇒ signed_file_id IS NOT NULL`). Baseline `20261028000000_init`-д хүрээгүй.
 
 ## Тест

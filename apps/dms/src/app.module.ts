@@ -6,6 +6,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
 import { FileModule } from './modules/file/file.module';
 import { OBJECT_STORAGE, type ObjectStorage } from './modules/file/storage';
 import { EsignModule } from './modules/esign/esign.module';
+import { OcrModule } from './modules/ocr/ocr.module';
 // import { DocumentModule } from './modules/document/document.module';
 // import { TemplateModule } from './modules/template/template.module';
 // import { RetentionModule } from './modules/retention/retention.module';
@@ -20,6 +21,7 @@ import { EsignModule } from './modules/esign/esign.module';
     FileModule,
     // register() нь INTEGRATION_MODE зэрэг env-ийг ConfigModule.forRoot()-ийн ДАРАА уншина — дарааллыг бүү солих
     EsignModule.register(),
+    OcrModule,
     // DocumentModule,
     // TemplateModule,
     // RetentionModule,
