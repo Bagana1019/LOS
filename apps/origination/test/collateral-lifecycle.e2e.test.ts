@@ -365,6 +365,15 @@ describe.skipIf(!hasTestDb)('collateral lifecycle (DB)', () => {
       for (const body of [{ registryNo: 'EB-1', registryDate: '2026/10/02' }, { registryNo: '', registryDate: '2026-10-02' }, { registryNo: 'EB-1' }]) expect((await post(url(s.app.id, row.id, 'registry'), body)).status).toBe(400);
     });
 
+    it('өөр ноорог хүсэлтийн барьцаанд бичигдсэн ЭБ-ийн дугаар APPROVED хүсэлтийн ЭБ бүртгэлийг хориглохгүй (зөвхөн хүлээн авсан хүсэлттэй давхцана)', async () => {
+      const a = await withRow('APPROVED');
+      const d = await other({ status: 'DRAFT', product: a.s.product });
+      const cd = await pledge(d.app.id, d.owner.id, '7777УБА');
+      await prisma().collateral.update({ where: { id: cd.id }, data: { registryNo: 'EB-88' } });
+      const r = await post(url(a.s.app.id, a.row.id, 'registry'), { registryNo: 'EB-88', registryDate: '2026-10-01' });
+      expect(r.status).toBe(200);
+    });
+
     it('ижил ЭБ-ийн дугаар өөр барьцаанд бүртгэлтэй бол 409 REGISTRY_NO_IN_USE; тэр чөлөөлөгдсөний дараа боломжтой', async () => {
       const a = await withRow('ACTIVE');
       const b = await withRow('APPROVED', { registerNo: 'АБ12345678', product: a.s.product });

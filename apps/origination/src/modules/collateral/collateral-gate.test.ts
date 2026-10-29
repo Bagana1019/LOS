@@ -27,6 +27,13 @@ describe('evaluateCollateralGate (G0)', () => {
       expect(r.summary.ltv).toBeCloseTo(2.380952, 5);
     });
 
+    it('0 дүнтэй үнэлгээ (haircut 0 / дөрвөлжин 0.004 → 0.00) «үнэлэгдсэн» биш: NOT_VALUED, LTV чимээгүй алгасагдахгүй', () => {
+      const r = evaluateCollateralGate(gateInput({ collaterals: [collateral({ marketValue: 0, collateralValue: 0 })] }));
+      expect(r.gate.complete).toBe(false);
+      expect(codes(r)).toContain('NOT_VALUED');
+      expect(isValued(collateral({ marketValue: 30_000_000, collateralValue: 0 }))).toBe(false);
+    });
+
     it('LTV яг дээд хязгаартай тэнцүү (14,700,000 / 21,000,000 = 70%) → хангана; 1₮ илүү → хэтэрнэ', () => {
       expect(evaluateCollateralGate(gateInput({ loanAmount: 14_700_000 })).gate.complete).toBe(true);
       const over = evaluateCollateralGate(gateInput({ loanAmount: 14_700_001 }));

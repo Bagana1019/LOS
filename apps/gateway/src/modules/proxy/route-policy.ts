@@ -40,8 +40,10 @@ export function requiredPermission(method: string, path: string): Permission | n
  * ажилтан шууд дуудахгүй — хүрээг шалгадаг origination фасад (`/api/origination/applications/:id/score…`)-аар л. `sosco/models` (унших/тохируулах) нээлттэй.
  */
 // `dms/documents`: баримтыг origination (хүсэлтийн хүрээ/төлвийн шалгалттай) дамжуулан л үүсгэнэ. `valuation/valuate/collateral`: үнэлгээг origination л хадгална (хүрээ, төлөв, G0).
+// `kyc/xyp/{assets,property}`, `kyc/collateral-checks`, `valuation/valuate/vehicle-lookup`: бусдын регистр/нэр буцаадаг лавлагаа — хүсэлтийн хүрээгүйгээр ажилтан шууд дуудаж болохгүй, origination (FR-6.3, FR-6.5, FR-6.6) л дуудна.
 export const INTERNAL_ONLY_PREFIXES: readonly string[] = [
   '/api/dms/esign', '/api/dms/public', '/api/dms/dev', '/api/dms/documents', '/api/valuation/valuate/collateral',
+  '/api/kyc/xyp/assets', '/api/kyc/xyp/property', '/api/kyc/collateral-checks', '/api/valuation/valuate/vehicle-lookup',
   '/api/scoring/underwrite', '/api/scoring/sosco/score', '/api/scoring/sosco/results',
 ];
 

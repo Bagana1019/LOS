@@ -7,6 +7,7 @@ import {
   ExternalValuationRequest,
   MANUAL_VALUE_ASSET_TYPES,
   ProductCollateralChecklist,
+  IsoDate,
   SaveValuationRequest,
   UpdateCollateralRequest,
   collateralAssetKey,
@@ -116,5 +117,11 @@ describe('helpers', () => {
   it('product collateral checklist accepts plain keys and objects', () => {
     const parsed = ProductCollateralChecklist.parse({ VEHICLE: ['vehicle_certificate', { key: 'insurance', required: false }, { key: 'x' }] });
     expect(parsed.VEHICLE).toHaveLength(3);
+  });
+
+  it('IsoDate: бодит хуанлийн огноо л зөвшөөрнө (2026-13-45, 2026-02-30 татгалзана)', () => {
+    expect(IsoDate.parse('2026-10-29')).toBe('2026-10-29');
+    expect(IsoDate.parse('2028-02-29')).toBe('2028-02-29');
+    for (const bad of ['2026-13-45', '2026-02-30', '2027-02-29', '0001-01-01', '2026-1-1', '']) expect(IsoDate.safeParse(bad).success, bad).toBe(false);
   });
 });

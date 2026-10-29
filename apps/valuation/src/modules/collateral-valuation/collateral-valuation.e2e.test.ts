@@ -292,7 +292,8 @@ describe.skipIf(!HAS_DB)('collateral valuation endpoints (FR-14)', () => {
 
       const projection = await db.collateral.findUniqueOrThrow({ where: { orgId_collateralId: { orgId: ORG, collateralId: body.collateralId } } });
       expect(projection).toMatchObject({ applicationId: body.applicationId, productId: 'prod-77', assetType: 'APARTMENT', createdBy: as('officerA')['x-user-id'] });
-      expect(projection.descriptionJson).toMatchObject({ propertyId: 'P-100', areaM2: 60 });
+      expect(projection.descriptionJson).toMatchObject({ areaM2: 60 });
+      expect(projection.descriptionJson).not.toHaveProperty('propertyId'); // identifiers (plate, VIN, property id, serial) are not kept on the valuation side
       expect(JSON.stringify(projection.descriptionJson)).not.toContain('Номин'); // street address is not kept
 
       const rows = await db.collateralValuation.findMany({ where: { collateralRefId: projection.id } });

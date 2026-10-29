@@ -218,18 +218,25 @@ describe.skipIf(!HAS_DB)('base prices (FR-14.1, FR-14.5)', () => {
       const res = await importAll([
         horse(1),
         { assetType: 'VEHICLE', key: { district: 'Баянзүрх' }, unitPrice: 5_000_000, validFrom: '2026-10-10' }, // key of another asset type
-        horse(2, '2026-02-30'), // a day that does not exist
+        horse(2, '2026-10-12'),
         horse(3, '2026-10-11'),
         horse(3, '2026-10-11'), // the same key and date twice
       ]);
       expect(res.status).toBe(422);
       expect(res.body.code).toBe('BASE_PRICE_IMPORT_INVALID');
-      expect(res.body.details.totalIssues).toBe(3);
+      expect(res.body.details.totalIssues).toBe(2);
       expect(res.body.details.issues.map((i: { index: number; code: string }) => [i.index, i.code])).toEqual([
         [1, 'BASE_PRICE_KEY_MISMATCH'],
-        [2, 'BASE_PRICE_DATE_INVALID'],
         [4, 'BASE_PRICE_DUPLICATE'],
       ]);
+      expect(await count()).toBe(before);
+    });
+
+    it('a calendar date that does not exist is rejected by the contract (400, path points at the item) and nothing is written', async () => {
+      const before = await count();
+      const res = await importAll([horse(1), horse(2, '2026-02-30')]);
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body.details)).toContain('validFrom');
       expect(await count()).toBe(before);
     });
 

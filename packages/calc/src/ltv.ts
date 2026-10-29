@@ -1,5 +1,6 @@
-// FR-14.2, FR-14.4
-export const collateralValue = (marketValue: number, haircut: number) => Math.round(marketValue * haircut * 100) / 100;
+import Decimal from 'decimal.js';
+// FR-14.2, FR-14.4 · Decimal ROUND_HALF_UP: 12,345,678.35 × 0.7 = 8,641,974.845 → 8,641,974.85 (binary float өгвөл .84 болно)
+export const collateralValue = (marketValue: number, haircut: number) => new Decimal(marketValue).mul(haircut).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
 export const ltv = (loanAmount: number, totalCollateralValue: number) => totalCollateralValue <= 0 ? Infinity : loanAmount / totalCollateralValue;
 
 /** Үнэлэгдсэн барьцааны үнэлгээний нийлбэр (FR-14.4): null/NaN/сөрөг утгыг тооцохгүй. 2 орноор бөөрөнхийлнө. */

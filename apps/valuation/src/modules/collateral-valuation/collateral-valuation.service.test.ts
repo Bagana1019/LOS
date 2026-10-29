@@ -287,10 +287,16 @@ describe('save (internal valuation)', () => {
     const { service, repo } = setup();
     await service.save(CTX, saveRequest());
     const stored = [...repo.projections.values()][0].descriptionJson as Record<string, unknown>;
-    expect(stored).toEqual({ address: { province: 'Улаанбаатар', district: 'Баянзүрх' }, propertyId: 'P-1', areaM2: 60 });
+    expect(stored).toEqual({ address: { province: 'Улаанбаатар', district: 'Баянзүрх' }, areaM2: 60, purpose: 'RESIDENTIAL' }); // propertyId (identifier) is not stored
     const livestock = setup({ suggestion: unavailable('NO_BASE_PRICE') });
     await livestock.service.save(CTX, saveRequest({ assetType: 'LIVESTOCK', description: { livestockType: 'HORSE', headCount: 3, location: 'Төв аймаг, Алтанбулаг' }, marketValue: 5 * M, overrideReason: 'тооллого' }));
-    expect([...livestock.repo.projections.values()][0].descriptionJson).toEqual({ livestockType: 'HORSE', headCount: 3 });
+    expect([...livestock.repo.projections.values()][0].descriptionJson).toEqual({ livestockType: 'HORSE', ageGroup: 'ADULT', headCount: 3 });
+    // unknown client keys (e.g. a register number smuggled into the free-form description) are not stored
+    const junk = setup({ suggestion: unavailable('NO_BASE_PRICE') });
+    await junk.service.save(CTX, saveRequest({ assetType: 'LIVESTOCK', description: { livestockType: 'HORSE', headCount: 3, secretRegister: 'УБ12345678' }, marketValue: 5 * M, overrideReason: 'тооллого' }));
+    expect([...junk.repo.projections.values()][0].descriptionJson).toEqual({ livestockType: 'HORSE', ageGroup: 'ADULT', headCount: 3 });
+    // a sub-cent market value that rounds to 0.00 is not a valuation
+    await expect(setup().service.save(CTX, saveRequest({ marketValue: 0.004, overrideReason: 'x' }))).rejects.toMatchObject({ status: 400 });
   });
 
   it('a second valuation of the same collateral reuses its projection row', async () => {

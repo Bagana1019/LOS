@@ -83,9 +83,9 @@ export function missingChecklistKeys(rules: readonly ChecklistRule[], documentKe
 // ── үнэлгээ (FR-14) ───────────────────────────────────────────────────────────────
 type ValuationFields = Pick<GateCollateralInput, 'marketValue' | 'collateralValue' | 'valuationId' | 'valuationSource' | 'valuedAt'>;
 
-/** Үнэлэгдсэн = үнэлгээний бичлэг + дүн + огноо + эх сурвалж бүгд бий. */
+/** Үнэлэгдсэн = үнэлгээний бичлэг + эерэг дүн + огноо + эх сурвалж бүгд бий (0 дүн «үнэлэгдсэн» биш — LTV-г чимээгүй алгасахаас сэргийлнэ). */
 export const isValued = (c: ValuationFields): c is ValuationFields & { marketValue: number; collateralValue: number; valuationId: string; valuationSource: ValuationSource; valuedAt: Date } =>
-  !!c.valuationId && !!c.valuationSource && c.valuedAt != null && c.marketValue != null && c.collateralValue != null;
+  !!c.valuationId && !!c.valuationSource && c.valuedAt != null && c.marketValue != null && c.marketValue > 0 && c.collateralValue != null && c.collateralValue > 0;
 
 /** Гадны лицензтэй үнэлгээ заавал эсэх: valuation-ий тэмдэглэсэн (хадгалагдсан) эсвэл одоогийн бүтээгдэхүүний босго давсан (FR-14.3). */
 export function externalValuationRequired(c: Pick<GateCollateralInput, 'marketValue' | 'externalValuationRequired'>, product: Pick<GateProduct, 'externalValuationThreshold'> | null): boolean {
