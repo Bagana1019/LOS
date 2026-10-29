@@ -327,7 +327,8 @@ describe('adversarial long lines (no catastrophic backtracking)', () => {
     const lines = Array.from({ length: 100_000 }, () => garbageLine(r));
     const t = Date.now();
     expectWellFormed(parsers[0].parse(textOf(lines)));
-    expect(Date.now() - t).toBeLessThan(5000);
+    // ~3 s alone; CI runs the services' suites in parallel and doubles it. A backtracking blow-up takes minutes.
+    expect(Date.now() - t).toBeLessThan(15_000);
   });
 });
 
