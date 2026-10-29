@@ -1,6 +1,7 @@
 {
   "app.title": "LOS Radix",
   "nav.customer": "Харилцагч",
+  "nav.blacklist": "Хар жагсаалт",
   "nav.application": "Хүсэлт",
   "nav.loan": "Зээл",
   "nav.report": "Тайлан",
@@ -17,5 +18,24 @@
   "action.approve": "Батлах",
   "action.return": "Буцаах",
   "action.submit": "Илгээх",
-  "action.add": "Нэмэх"
+  "action.add": "Нэмэх",
+  "pricing.title": "Эрсдэлд суурилсан үнэ тогтоолт",
+  "pricing.suggest": "Хүү санал болгох",
+  "pricing.band.GREEN": "Бага эрсдэл",
+  "pricing.band.YELLOW": "Дунд эрсдэл",
+  "pricing.band.RED": "Өндөр эрсдэл",
+  "pricing.basis.SCORE": "Sosco Score-оор",
+  "pricing.basis.DEFAULT_TIER": "Sosco Score байхгүй — анхдагч шатлал",
+  "pricing.rateBound.MIN": "Хүү бүтээгдэхүүний доод хязгаарт тайрагдсан",
+  "pricing.rateBound.MAX": "Хүү бүтээгдэхүүний дээд хязгаарт тайрагдсан",
+  "pricing.error.PRICING_NOT_CONFIGURED": "Эрсдэлд суурилсан үнийн шатлал тохируулагдаагүй байна",
+  "pricing.error.PRODUCT_NOT_FOUND": "Бүтээгдэхүүн олдсонгүй",
+  "pricing.error.INVALID_TIER_SET": "Шатлал буруу байна",
+  "pricing.issue.EMPTY": "Хамгийн багадаа нэг шатлал хэрэгтэй",
+  "pricing.issue.FIRST_TIER_NOT_ZERO": "Хамгийн доод шатлал 0 оноогоос эхлэх ёстой",
+  "pricing.issue.DUPLICATE_MIN_SCORE": "Хоёр шатлал ижил доод оноотой байна",
+  "pricing.issue.DUPLICATE_CODE": "Шатлалын код давхардсан байна",
+  "pricing.issue.DEFAULT_TIER_COUNT": "Яг нэг шатлал анхдагч байх ёстой",
+  "pricing.issue.INTEREST_RATE_NOT_MONOTONIC": "Оноо өндөр шатлалын хүү доод шатлалынхаас өндөр байж болохгүй",
+  "pricing.issue.FEE_RATE_NOT_MONOTONIC": "Оноо өндөр шатлалын шимтгэл доод шатлалынхаас өндөр байж болохгүй"
 }

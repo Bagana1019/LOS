@@ -1,2 +1,11 @@
-// TODO: docs/01 §2 — los/report
-export default function Page() { return null; }
+'use client';
+import { ReportsIndexPage } from '../../../features/reports';
+
+// docs/01 §2.1: `/los/report` — Тайлан цэс (9 тайлан + Dashboard).
+export default function Page() {
+  return (
+    <div>
+      <ReportsIndexPage />
+    </div>
+  );
+}

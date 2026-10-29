@@ -5,7 +5,38 @@
     "REDIS_URL",
     "MINIO_ENDPOINT",
     "JWT_SECRET",
-    "INTEGRATION_MODE"
+    "INTEGRATION_MODE",
+    "DEFAULT_ORG_ID",
+    "AML_LIST_REFRESH_MINUTES",
+    "NEXT_PUBLIC_GATEWAY_URL"
+  ],
+  "globalPassThroughEnv": [
+    "TEST_DATABASE_URL",
+    "DWH_DATABASE_URL",
+    "ORIGINATION_DATABASE_URL",
+    "KYC_DATABASE_URL",
+    "SCORING_DATABASE_URL",
+    "VALUATION_DATABASE_URL",
+    "DMS_DATABASE_URL",
+    "GATEWAY_DATABASE_URL",
+    "NODE_ENV",
+    "OUTBOX_RELAY",
+    "STORAGE_DRIVER",
+    "MINIO_*",
+    "DATA_*",
+    "INTERNAL_AUTH_SECRET",
+    "SEED_PASSWORD",
+    "DMS_*",
+    "ESIGN_*",
+    "MOCK_ESIGN_*",
+    "TRIDUM_*",
+    "MONPASS_*",
+    "TRUST_PROXY",
+    "CORS_ORIGINS",
+    "NEXT_PUBLIC_ESIGN_*",
+    "PII_HASH_KEY",
+    "KYC_BASE_URL",
+    "POS_*"
   ],
   "tasks": {
     "build": {
@@ -29,7 +60,8 @@
     },
     "test": {
       "dependsOn": [
-        "^build"
+        "^build",
+        "db:generate"
       ],
       "outputs": [
         "coverage/**"
@@ -37,7 +69,8 @@
     },
     "lint": {
       "dependsOn": [
-        "^build"
+        "^build",
+        "db:generate"
       ]
     },
     "db:generate": {

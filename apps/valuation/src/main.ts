@@ -1,9 +1,4 @@
-import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
+import { bootstrapService } from '@los/nest-common';
 import { AppModule } from './app.module';
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api');
-  await app.listen(process.env.VALUATION_PORT ?? 4004);
-}
-bootstrap();
+
+void bootstrapService({ service: 'valuation', module: AppModule, portEnv: 'VALUATION_PORT', defaultPort: 4004 });

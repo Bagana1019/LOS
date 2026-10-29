@@ -1,9 +1,4 @@
-import 'reflect-metadata';
-import { NestFactory } from '@nestjs/core';
+import { bootstrapService } from '@los/nest-common';
 import { AppModule } from './app.module';
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.setGlobalPrefix('api');
-  await app.listen(process.env.KYC_PORT ?? 4002);
-}
-bootstrap();
+
+void bootstrapService({ service: 'kyc', module: AppModule, portEnv: 'KYC_PORT', defaultPort: 4002 });
