@@ -29,7 +29,8 @@ Claude Code-д **нэг удаад нэг модуль** өгнө. Даалга�
 
 ## Модуль 5 — Зээлийн нөхцөл (FR-5)
 **Хийх**: бүтээгдэхүүн сонгоход хязгаар/хүү автомат; хязгаараас гарвал хадгалахгүй; ЗМС зориулалт ангилал (seed); валют; ЗЭЗ-ийн санал. Нөхцөл өөрчлөгдвөл schedule/calculation `is_stale=true` (FR-7.3).
-**AC**: 60 сарын хугацаа оруулахад 36-аас хэтэрсэн алдаа; дүн өөрчлөхөд ЭТХ алхам STALE болно.
+**Эрсдэлд суурилсан үнэ (FR-5.5)**: `origination/modules/loan-terms/pricing` + `@los/calc` `risk-pricing.ts` — Sosco Score → хүү/шимтгэлийн шатлал (`pricing_tier`), `POST /api/loan-terms/pricing/quote`, `GET /api/loan-terms/pricing/tiers` (`application:read`), `PUT` (`settings:manage` = зөвхөн ADMIN; хувилбар + audit + `SettingsChanged`). UI: "Хүү санал болгох" товч (Sosco Score ирэхээс өмнө default шатлал), Тохиргоо → шатлалын засвар (M13).
+**AC**: 60 сарын хугацаа оруулахад 36-аас хэтэрсэн алдаа; дүн өөрчлөхөд ЭТХ алхам STALE болно; оноо 860 → ногоон шатлалын хүү/шимтгэл, оноо 240 → улаан шатлалын (илүү өндөр) хүү/шимтгэл; шатлалын хүү бүтээгдэхүүний [min_rate, max_rate]-аас хэтэрвэл хязгаарт тайрагдаж `rateBound` заана; 0 оноог хамаарахгүй шатлал, эсвэл оноо өндөр байх тусам хүү өсдөг шатлал хадгалахад 422.
 
 ## Модуль 6 — Барьцаа + Үнэлгээ (FR-6, FR-14, G0)
 **Хийх**: collateral CRUD, ХУР хөрөнгөөс сонгох, өмчлөл тулгалт (регистр = зээлдэгч/барьцаалагч; үгүй бол барьцаалагч бүртгэхийг шаардах), ачаалал шалгалт (mock ЗМС/ЭБ), checklist by asset_type, валиуэйшн: base_price × коэффициент (FR-14.1 — дор хаяж VEHICLE, APARTMENT, LIVESTOCK), haircut by product/asset_type, override_reason, external_valuation_threshold, LTV тооцоо (@los/calc), давхар барьцааны unique шалгалт, G0 хаалт → алхам COMPLETED; ЭБ бүртгэл/чөлөөлөлт талбар (S).

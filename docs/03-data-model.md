@@ -24,6 +24,7 @@ SuspicionFlag     OWN_ACCOUNT | CIRCULAR | INTER_ACCOUNT_FRAUD | QUICK_CASH | SP
 ReviewStatus      PENDING | RESOLVED
 ReviewAction      APPROVE | RECLASSIFY | EXCLUDE
 NotificationType  APPROVAL_REQUESTED | RETURNED | APPROVED | DISBURSEMENT_APPROVED | SLA_BREACH | MENTION
+RiskBand          GREEN | YELLOW | RED
 ```
 
 ## Харилцагч, хүсэлт
@@ -52,6 +53,7 @@ NotificationType  APPROVAL_REQUESTED | RETURNED | APPROVED | DISBURSEMENT_APPROV
 **contract_number_template** — org_id, pattern (жишээ `{PREFIX}{BRANCH}{YYMMDD}{SEQ:2}`), prefix, seq_scope (DAY | BRANCH | GLOBAL), next_seq
 **contract_template** — product_id, type (LOAN_CONTRACT | SCHEDULE | OFFICIAL_LETTER), name, docx_file_id, placeholders_json, version
 **setting** — org_id, key, value_json (BR босго, лавлагааны хуучралт N хоног, ноорог архивлах хоног, BSA ангилал/дайчлах хувь, дохионы босго, хадгалах 3 жил…)
+**pricing_tier** — product_id (nullable = байгууллагын нийтлэг шатлал), version, code, name, band (RiskBand), min_score (0–1000; tier нь [min_score, дараагийн tier-ийн min_score) мужийг хамарна), interest_rate (жилийн хувь: 23.99 — product.min_rate/max_rate-тай ижил нэгж), fee_rate (бутархай: 0.015 = 1.5%; шимтгэл = зээлийн дүнгийн нэг удаагийн хувь), is_default (Sosco Score байхгүй үед), is_active. Хадгалах бүрд шинэ version, өмнөх нь is_active=false (FR-5.5)
 **base_price** — asset_type, key_json (make/model/year | district/khoroo | livestock_type/age), unit_price, valid_from, version
 
 ## Барьцаа, үнэлгээ (модуль 5)

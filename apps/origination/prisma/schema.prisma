@@ -757,3 +757,29 @@ model Comment {
   @@map("comment")
   @@schema("origination")
 }
+
+/// FR-5.5 Эрсдэлд суурилсан үнэ: Sosco Score → хүү/шимтгэлийн шатлал. Хадгалах бүрд шинэ version, өмнөх нь is_active=false (түүх хадгална).
+/// product_id = null → байгууллагын нийтлэг шатлал. Хүү, шимтгэл бутархай (0.2399 = 23.99%) — docs/03.
+model PricingTier {
+  id           String    @id @default(uuid())
+  orgId        String    @map("org_id")
+  productId    String?   @map("product_id")
+  version      Int
+  code         String
+  name         String
+  band         String
+  minScore     Int       @map("min_score")
+  interestRate Decimal   @map("interest_rate") @db.Decimal(7, 4)
+  feeRate      Decimal   @map("fee_rate") @db.Decimal(7, 4)
+  isDefault    Boolean   @default(false) @map("is_default")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdBy    String?   @map("created_by")
+  updatedBy    String?   @map("updated_by")
+
+  @@index([orgId, productId, isActive])
+  @@index([orgId, productId, version])
+  @@map("pricing_tier")
+  @@schema("origination")
+}
