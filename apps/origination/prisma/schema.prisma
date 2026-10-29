@@ -490,6 +490,16 @@ model Collateral {
   releasedAt           DateTime? @map("released_at")
   insuranceExpiresAt   DateTime? @map("insurance_expires_at") @db.Date
   nextRevaluationAt    DateTime? @map("next_revaluation_at") @db.Date
+  // ── өргөтгөл (docs/03-д байхгүй, DECISIONS.md 2026-10-29 · M6): давхар барьцааны түлхүүр, үнэлгээний хуулбар (valuation-ий `collateral_valuation`-аас)
+  assetKey                String?   @map("asset_key") // @los/contracts collateralAssetKey: VEHICLE:1234УБА | REALTY:… — null = тодорхойлогчгүй (мал, бараа)
+  xypRef                  String?   @map("xyp_ref") // ХУР-ын хөрөнгийн ID (source=XYP)
+  note                    String?
+  valuationId             String?   @map("valuation_id") // valuation.collateral_valuation.id (string, FK-гүй)
+  valuationSource         String?   @map("valuation_source") // ValuationSource
+  valuedAt                DateTime? @map("valued_at")
+  valuationValidUntil     DateTime? @map("valuation_valid_until")
+  valuationOverrideReason String?   @map("valuation_override_reason")
+  externalValuationRequired Boolean @default(false) @map("external_valuation_required") // зах зээлийн үнэ ≥ product.external_valuation_threshold
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   createdBy            String?   @map("created_by")
@@ -498,8 +508,10 @@ model Collateral {
   application LoanApplication      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   documents   CollateralDocument[]
 
+  @@unique([applicationId, assetKey])
   @@index([applicationId])
   @@index([orgId, registryNo])
+  @@index([orgId, assetKey])
   @@map("collateral")
   @@schema("origination")
 }
@@ -510,6 +522,11 @@ model CollateralDocument {
   collateralId String   @map("collateral_id")
   checklistKey String   @map("checklist_key")
   fileId       String   @map("file_id") // dms.file.id
+  // ── өргөтгөл (DECISIONS.md 2026-10-29 · M6): файлын мета хуулбар — жагсаалтад dms дуудахгүй
+  fileName     String?  @map("file_name")
+  mime         String?
+  size         Int?
+  note         String?
   uploadedBy   String?  @map("uploaded_by")
   uploadedAt   DateTime @default(now()) @map("uploaded_at")
   createdAt    DateTime @default(now()) @map("created_at")

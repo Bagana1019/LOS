@@ -21,6 +21,8 @@ import { MakerCheckerModule } from './modules/maker-checker/maker-checker.module
 import { MerchantModule } from './modules/merchant/merchant.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { ErpSyncModule } from './modules/erp-sync/erp-sync.module';
+import { CollateralModule } from './modules/collateral/collateral.module';
+import { DocumentModule } from './modules/document/document.module';
 
 @Module({
   imports: [
@@ -47,6 +49,8 @@ import { ErpSyncModule } from './modules/erp-sync/erp-sync.module';
     SettingsModule,
     MerchantModule.register(),
     ErpSyncModule,
+    CollateralModule,
+    DocumentModule,
   ],
 })
 export class AppModule {}

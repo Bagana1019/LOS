@@ -9,6 +9,7 @@ import { XypModule } from './modules/xyp/xyp.module';
 // import { CibModule } from './modules/cib/cib.module';
 // import { NdshModule } from './modules/ndsh/ndsh.module';
 import { AmlModule } from './modules/aml/aml.module';
+import { CollateralChecksModule } from './modules/collateral-checks/collateral-checks.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AmlModule } from './modules/aml/aml.module';
     // CibModule,
     // NdshModule,
     AmlModule,
+    CollateralChecksModule,
   ],
 })
 export class AppModule {}
