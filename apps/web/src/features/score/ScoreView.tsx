@@ -60,6 +60,14 @@ export function ScoreSkeleton() {
   );
 }
 
+/** Серверийн `staleReason` нь машины код (BORROWERS_CHANGED …) байж болно — түүхий кодыг хэрэглэгчид харуулахгүй; танигдаагүй код → ерөнхий тайлбар. */
+function staleDescription(reason: string | null | undefined): string {
+  if (!reason) return t('score.alert.stale.default');
+  if (reason === 'BORROWERS_CHANGED') return t('score.alert.stale.reason', { reason: t('score.alert.stale.reasons.BORROWERS_CHANGED') });
+  if (/^[A-Z][A-Z0-9_]*$/.test(reason)) return t('score.alert.stale.default');
+  return t('score.alert.stale.reason', { reason });
+}
+
 /** Wizard-ийн 7-р алхам "Тооцоолол" (`/los/loan-application/:id/score`)-ийн дүрслэл. Төлөв, мутацийг `ScoreStep` барина. FR-8.1…8.6. */
 export function ScoreView({ model, actions }: { model: ScoreViewModel; actions: ScoreViewActions }) {
   const { applicationId, overview, source, draft, dirty, previewPending, previewError } = model;
@@ -127,7 +135,7 @@ export function ScoreView({ model, actions }: { model: ScoreViewModel; actions: 
             type="warning"
             showIcon
             message={t('score.alert.stale.title')}
-            description={saved?.calculation.staleReason ? t('score.alert.stale.reason', { reason: saved.calculation.staleReason }) : t('score.alert.stale.default')}
+            description={staleDescription(saved?.calculation.staleReason)}
             action={calcBlock === null ? <Button size="small" type="primary" ghost loading={model.calculating} onClick={actions.onCalculate}>{t('score.action.recalculate')}</Button> : undefined}
           />
         ) : null}

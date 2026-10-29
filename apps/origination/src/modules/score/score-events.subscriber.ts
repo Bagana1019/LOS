@@ -7,7 +7,8 @@ import { PrismaService, type Tx } from '../../prisma.service';
 import { isEditableStatus, planScoreStep, readSnapshot, reconcileSnapshot } from './score.rules';
 
 /** Consumer group = сервисийн нэр (CLAUDE.md §3.1) */
-export const EVENT_GROUP = 'origination';
+/** Тусдаа consumer group: contract/notification subscriber-тэй 'origination' группыг хуваалцвал Redis event-ийг зөвхөн нэг уншигчид өгч, таарахгүй төрлийг XACK-аар хаядаг (ScoringCompleted алдагдана). */
+export const EVENT_GROUP = 'origination.score';
 const SUBSCRIBED_TYPES: DomainEvent['type'][] = ['ScoringCompleted'];
 
 type ScoringCompleted = Extract<DomainEvent, { type: 'ScoringCompleted' }>;

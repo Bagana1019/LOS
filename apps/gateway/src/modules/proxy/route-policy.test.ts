@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isInternalOnly, requiredPermission } from './route-policy';
+import { isAmbiguousPath, isInternalOnly, requiredPermission } from './route-policy';
 
 describe('requiredPermission (FR-5.5 pricing tiers)', () => {
   const tiers = '/api/origination/loan-terms/pricing/tiers';
@@ -44,5 +44,22 @@ describe('isInternalOnly (FR-8 scoring: хүрээг origination шалгана)
     expect(requiredPermission('PUT', '/api/scoring/sosco/models')).toBe('settings:manage');
     expect(requiredPermission('PUT', '/api/scoring/bsa/rules')).toBe('settings:manage');
     expect(requiredPermission('POST', '/api/scoring/bsa/analyses')).toBeNull();
+  });
+});
+
+describe('isAmbiguousPath (NFR-3: шалгасан зам = дамжуулсан зам)', () => {
+  it('http-proxy-ийн нормчлолоор өөр зам болох хэлбэрүүдийг хаана (INTERNAL_ONLY / эрхийн шалгалтыг тойрох оролдлого)', () => {
+    for (const p of [
+      '/api/scoring/underwrite\\applications/APP1/latest', '/api/scoring/underwrite\\', '/api/scoring/sosco\\score', '/api/scoring/sosco/results\\latest',
+      '/api/scoring/underwrite%5Capplications/x', '/api/scoring/underwrite%5c', '/api/scoring/underwrite%2Fpreview', '/api/scoring//underwrite/preview',
+      '/api/scoring/sosco/./score', '/api/scoring/sosco/x/../score', '/api/scoring/sosco/%2e%2e/score', '/api/scoring/sosco;x/score', '/api/scoring/sosco/score%00', '/api/scoring/sosco/score\u0000',
+    ]) expect(isAmbiguousPath(p), p).toBe(true);
+  });
+
+  it('жирийн API замуудыг (id, шимтгэл, кирилл эсвэл %-кодлосон үсэг) хаахгүй', () => {
+    for (const p of [
+      '/api/origination/applications/00000000-0000-4000-8000-000000000001/score/calculate', '/api/scoring/sosco/models/active', '/api/scoring/bsa/categories/', '/api/dms/files/a%20b',
+      '/api/origination/customers/%D0%91%D0%B0%D1%82', '/api/scoring/underwrite', '/api/valuation/base-prices',
+    ]) expect(isAmbiguousPath(p), p).toBe(false);
   });
 });

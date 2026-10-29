@@ -36,6 +36,7 @@
   "score.alert.stale.title": "Тооцоолол хуучирсан",
   "score.alert.stale.default": "Хүсэлтийн нөхцөл өөрчлөгдсөн тул дахин тооцоолно уу.",
   "score.alert.stale.reason": "Шалтгаан: {reason}",
+  "score.alert.stale.reasons.BORROWERS_CHANGED": "зээлдэгч, хамтран зээлдэгчийн бүрэлдэхүүн эсвэл орлогын хувь өөрчлөгдсөн",
   "score.alert.preview.initial.title": "Тооцоолол хараахан хадгалагдаагүй",
   "score.alert.preview.initial.text": "Одоогийн нөхцөлөөр урьдчилан харуулж байна: {terms}. Хадгалахын тулд «Тооцоолох (хадгалах)» товчийг дарна уу.",
   "score.alert.preview.modified.title": "Урьдчилсан харагдац: хадгалагдаагүй",

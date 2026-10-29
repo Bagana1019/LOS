@@ -50,3 +50,15 @@ export function isInternalOnly(path: string): boolean {
   p = p.toLowerCase().replace(/\/{2,}/g, '/');
   return INTERNAL_ONLY_PREFIXES.some((x) => p === x || p.startsWith(`${x}/`));
 }
+
+/**
+ * Gateway-ийн шалгасан зам ба proxy-ийн (http-proxy нь legacy `url.parse` — `\`-г `/` болгож, `//`-г нэгтгэдэг) дамжуулах зам ЯГ ИЖИЛ байх ёстой.
+ * Үгүй бол `/api/scoring/underwrite\applications/<id>/latest` нь INTERNAL_ONLY шалгалтыг тойрч сервис рүү `/api/underwrite/…` болж очно (NFR-3).
+ * Хууль ёсны API зам эдгээрийг хэзээ ч агуулахгүй тул хоёрдмол утгатай замыг шууд 404-өөр хаана.
+ */
+export function isAmbiguousPath(path: string): boolean {
+  // eslint-disable-next-line no-control-regex -- NUL ба бусад control тэмдэгтийг зориуд хаана
+  if (/[\\;\u0000-\u001f\u007f]/.test(path)) return true;
+  if (/%(?:5c|2f|2e|3b|00)/i.test(path) || /\/{2,}/.test(path)) return true;
+  return path.split('/').some((seg) => seg === '.' || seg === '..');
+}

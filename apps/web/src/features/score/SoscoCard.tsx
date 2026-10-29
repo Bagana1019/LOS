@@ -3,7 +3,7 @@ import { Alert, Card, Empty, Flex, Progress, Table, Tag, Tooltip, Typography } f
 import type { TableColumnsType } from 'antd';
 import type { SoscoComponentBreakdown, SoscoSummary } from '@los/contracts';
 import { t } from '../../lib/i18n';
-import { EMPTY_VALUE, formatNumber } from '../../lib/format';
+import { EMPTY_VALUE } from '../../lib/format';
 import { GRADE_COLOR, formatDateTime, formatPoints, formatShare, formatSoscoInput, fractionBar, pointsBar, soscoComponentKey } from './score.utils';
 
 interface Props {
@@ -66,7 +66,7 @@ export function SoscoCard({ sosco, previewing }: Props) {
             <div>
               <Typography.Text type="secondary">{t('score.sosco.score')}</Typography.Text>
               <div style={{ fontSize: 40, lineHeight: 1.1, fontWeight: 600 }} data-testid="score-sosco-score">
-                {sosco.score === null ? EMPTY_VALUE : formatNumber(sosco.score)}
+                {sosco.score === null ? EMPTY_VALUE : String(sosco.score)}
                 {sosco.score === null ? null : <span style={{ fontSize: 14, fontWeight: 400, marginInlineStart: 6 }}>{t('score.sosco.scale')}</span>}
               </div>
             </div>

@@ -204,13 +204,16 @@ export function buildScoreRequest(p: RequestParts): ScoreRequest {
 
 /**
  * Sosco-ийн оролт (docs/05 §3, §5). `method` = сонгогдох (гараар хэвээр үлдсэн эсвэл автомат) арга: BSA шинжилгээ байхгүй үед түүний `burdenPercent` нь dtiPercent болно.
- * ЗМС/BSA-д байхгүй зүйл `null` (мэдэгдэхгүй) — зохиомол утга өгөхгүй.
+ * ЗМС/BSA-д байхгүй зүйл `null` (мэдэгдэхгүй) — зохиомол утга өгөхгүй. Харин орлого байхгүйгээс ӨОХ тооцогдохгүй бол хамгийн муу утга (доор).
  */
+/** Орлого байхгүй / суурь орлого ≤ 0 → өр төлөх чадваргүй: Sosco-д «мэдэгдэхгүй» (жин дахин хуваарилагдаж оноо өснө) биш, хамгийн муу ӨОХ гэж өгнө (BSA-ийн cap-тай ижил). */
+export const SOSCO_UNSERVICEABLE_DTI_PERCENT = 999.9;
+
 export function buildSoscoInput(credit: CreditHistory | null, bsa: BsaFacts, result: UnderwriteResult, method: CalcMethod | null): SoscoInput {
   const verdict = method ? result.methods.find((m) => m.method === method) : undefined;
   return {
     ficoScore: credit?.ficoScore ?? null,
-    dtiPercent: bsa.analyzed && bsa.dtiPercent !== null ? bsa.dtiPercent : (verdict?.burdenPercent ?? null),
+    dtiPercent: bsa.analyzed && bsa.dtiPercent !== null ? bsa.dtiPercent : (verdict?.burdenPercent ?? SOSCO_UNSERVICEABLE_DTI_PERCENT),
     incomeReliability: bsa.incomeReliability,
     pendingSuspiciousCount: bsa.pendingSuspiciousCount,
     activeLoanCount: credit?.activeLoanCount ?? null,

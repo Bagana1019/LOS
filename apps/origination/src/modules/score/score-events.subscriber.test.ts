@@ -31,12 +31,12 @@ describe('ScoreEventsSubscriber · бүртгэл (unit)', () => {
   const db = {} as PrismaService;
   const clock = { now: () => new Date('2026-10-28T02:00:00Z') };
 
-  it("'origination' group-д зөвхөн ScoringCompleted-д бүртгүүлнэ", async () => {
+  it("'origination.score' group-д зөвхөн ScoringCompleted-д бүртгүүлнэ", async () => {
     const { bus, subscribe } = fakeBus();
     await new ScoreEventsSubscriber(bus, db, clock).onApplicationBootstrap();
-    expect(EVENT_GROUP).toBe('origination');
+    expect(EVENT_GROUP).toBe('origination.score');
     expect(subscribe).toHaveBeenCalledTimes(1);
-    expect(subscribe.mock.calls[0]!.slice(0, 2)).toEqual(['origination', ['ScoringCompleted']]);
+    expect(subscribe.mock.calls[0]!.slice(0, 2)).toEqual(['origination.score', ['ScoringCompleted']]);
   });
 
   it('bus байхгүй (Redis-гүй) бол чимээгүй алгасна; subscribe унавал bootstrap унана', async () => {

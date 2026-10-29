@@ -4,7 +4,7 @@ import { annuityPayment } from '@los/calc';
 import { ScoreRequest, SoscoInput, type ScoreLimits } from '@los/contracts';
 import {
   aggregateIncome, buildScoreRequest, buildSoscoInput, existingDebtService, limitViolations, newMonthlyPayment, readBsaFacts, resolveLimits, resolvePolicy, resolveStress, resolveTerms,
-  sanitizeCreditHistory, termsBlockers, LOAN_TERMS_MISSING_REASON, type BsaFacts, type ProductRow,
+  sanitizeCreditHistory, SOSCO_UNSERVICEABLE_DTI_PERCENT, termsBlockers, LOAN_TERMS_MISSING_REASON, type BsaFacts, type ProductRow,
 } from './score-input.assembler';
 import { methodVerdict, underwriteResult } from './testing/scoring-fixtures';
 
@@ -317,8 +317,9 @@ describe('buildSoscoInput · docs/05 §3, §5', () => {
     expect(buildSoscoInput(credit, NO_BSA, result, 'C_COMBINED').dtiPercent).toBe(20);
   });
 
-  it('арга сонгогдоогүй (орлого байхгүй) бол dtiPercent null', () => {
-    expect(buildSoscoInput(credit, NO_BSA, result, null).dtiPercent).toBeNull();
+  it('арга сонгогдоогүй (орлого байхгүй) бол dtiPercent = хамгийн муу (мэдэгдэхгүй биш → жин дахин хуваарилагдахгүй)', () => {
+    expect(buildSoscoInput(credit, NO_BSA, result, null).dtiPercent).toBe(SOSCO_UNSERVICEABLE_DTI_PERCENT);
+    expect(() => SoscoInput.parse(buildSoscoInput(credit, NO_BSA, result, null))).not.toThrow();
   });
 
   it('ЗМС байхгүй (real горим) → fico/түүх мэдэгдэхгүй; ltv null (барьцаагүй) хэвээр', () => {
@@ -328,9 +329,9 @@ describe('buildSoscoInput · docs/05 §3, §5', () => {
     });
   });
 
-  it('арга хэрэглэгдэхгүй бол burdenPercent null → dtiPercent null', () => {
+  it('арга хэрэглэгдэхгүй бол burdenPercent null → dtiPercent = хамгийн муу', () => {
     const r = { ...result, methods: [methodVerdict('A_SALARY', request, { applicable: false }), result.methods[1]!, result.methods[2]!] };
-    expect(buildSoscoInput(credit, NO_BSA, r, 'A_SALARY').dtiPercent).toBeNull();
+    expect(buildSoscoInput(credit, NO_BSA, r, 'A_SALARY').dtiPercent).toBe(SOSCO_UNSERVICEABLE_DTI_PERCENT);
   });
 });
 

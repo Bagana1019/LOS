@@ -540,8 +540,8 @@ describe.skipIf(!hasTestDb)('origination · score (Модуль 8)', () => {
       expect(row.selectedCalcMethod).toBeNull();
       expect(row.calcSnapshotJson).toMatchObject({ selectedMethod: null, ratio: null, pass: null, ltv: 0.5 });
       expect(await step(app.id)).toMatchObject({ status: 'PENDING', completedAt: null });
-      // Sosco-ийн dtiPercent: сонгогдсон арга байхгүй → мэдэгдэхгүй
-      expect(scoring.callsOf('scoreSosco')[0]!.args[0]).toMatchObject({ input: { dtiPercent: null } });
+      // Sosco-ийн dtiPercent: сонгогдсон арга байхгүй (орлогогүй) → хамгийн муу утга, «мэдэгдэхгүй» биш (жин дахин хуваарилагдаж оноо өсөхөөс сэргийлнэ)
+      expect(scoring.callsOf('scoreSosco')[0]!.args[0]).toMatchObject({ input: { dtiPercent: 999.9 } });
     });
 
     it('нөхцөл дутуу → 422 LOAN_TERMS_MISSING; scoring дуудагдахгүй, өгөгдөл өөрчлөгдөхгүй', async () => {

@@ -205,10 +205,11 @@ export const UnderwritePersistRequest = z.object({
 });
 export type UnderwritePersistRequest = z.infer<typeof UnderwritePersistRequest>;
 
-export const SelectMethodRequest = z.object({ method: CalcMethodCode, reason: z.string().trim().max(500).nullish() });
+const noNul = (s: string) => !s.includes('\u0000'); // PostgreSQL text NUL-г хүлээн авдаггүй → 500/503 биш 400 VALIDATION_FAILED
+export const SelectMethodRequest = z.object({ method: CalcMethodCode, reason: z.string().trim().max(500).refine(noNul, 'NUL тэмдэгт зөвшөөрөгдөхгүй').nullish() });
 export type SelectMethodRequest = z.infer<typeof SelectMethodRequest>;
 
-export const MarkCalculationStaleRequest = z.object({ reason: z.string().trim().min(1).max(200) });
+export const MarkCalculationStaleRequest = z.object({ reason: z.string().trim().min(1).max(200).refine(noNul, 'NUL тэмдэгт зөвшөөрөгдөхгүй') });
 export type MarkCalculationStaleRequest = z.infer<typeof MarkCalculationStaleRequest>;
 
 // ───────────────────────────── Sosco Score ─────────────────────────────
