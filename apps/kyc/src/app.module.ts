@@ -8,7 +8,7 @@ import { XypModule } from './modules/xyp/xyp.module';
 // import { DanModule } from './modules/dan/dan.module';
 // import { CibModule } from './modules/cib/cib.module';
 // import { NdshModule } from './modules/ndsh/ndsh.module';
-// import { AmlModule } from './modules/aml/aml.module';
+import { AmlModule } from './modules/aml/aml.module';
 
 @Module({
   imports: [
@@ -22,7 +22,7 @@ import { XypModule } from './modules/xyp/xyp.module';
     // DanModule,
     // CibModule,
     // NdshModule,
-    // AmlModule,
+    AmlModule,
   ],
 })
 export class AppModule {}

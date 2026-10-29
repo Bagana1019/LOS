@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { blindIndex } from '@los/database';
-import { normalizeRegisterNo, type BlacklistWarning } from '@los/contracts';
+import { hashRegisterNo } from '@los/database';
+import type { BlacklistWarning } from '@los/contracts';
 import { PrismaService } from '../../prisma.service';
 
 /**
  * FR-13.1 (хайлт), BR-9: хар жагсаалт нь бүх шалтгаанд зөвхөн АНХААРУУЛГА — хориг биш, батлагч шийднэ.
- * Тулгалт регистрийн blind index-ээр (`blacklist.register_no_hash`): бичлэгийг үүсгэгч (M13 CRUD/импорт, AML) `blindIndex(normalizeRegisterNo(r))`-ээр хэшлэх ёстой.
- * CRUD/импорт Модуль 13-д энэ модульд нэмэгдэнэ.
+ * Тулгалт регистрийн blind index-ээр (`blacklist.register_no_hash`): бичлэг (CRUD/импорт, `BlacklistService`), kyc-ийн AML, хайлт бүгд `hashRegisterNo` (@los/database)-ийг ашиглана.
+ * Иргэний бүртгэлд (`customer.registerNoHash`) хадгалсан `blindIndex(normalizeRegisterNo(r))` (@los/contracts) нь хүчинтэй регистрт үүнтэй ижил хэш өгнө (register-no.test.ts-д шалгагдана).
  */
 @Injectable()
 export class BlacklistLookupService {
@@ -14,7 +14,7 @@ export class BlacklistLookupService {
 
   /** Идэвхтэй бичлэг бүр = нэг анхааруулга (шинэ нь түрүүлж). */
   async warningsForRegisterNo(orgId: string, registerNo: string): Promise<BlacklistWarning[]> {
-    return this.warningsForHash(orgId, blindIndex(normalizeRegisterNo(registerNo)));
+    return this.warningsForHash(orgId, hashRegisterNo(registerNo));
   }
 
   async warningsForHash(orgId: string, registerNoHash: string): Promise<BlacklistWarning[]> {

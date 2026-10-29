@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AmlRiskLevel, AmlSubjectType, ScreeningList, ScreeningStatus } from './compliance';
 import { MakerCheckerEvents } from './maker-checker';
 import { ESignProvider, SigningFailureReason } from './enums';
 // Event каталог — CLAUDE.md §4. Нэр: <Aggregate><PastTenseVerb>, version заавал.
@@ -18,6 +19,14 @@ export const ValuationCompleted = base.extend({ type: z.literal('ValuationComple
 export const DocumentUploaded = base.extend({ type: z.literal('DocumentUploaded'), documentId: z.string(), applicationId: z.string().nullable(), kind: z.string() });
 // CLAUDE.md §3.2.8: нийтлэг тохиргоо өөрчлөгдөхөд бусад сервис projection-аа шинэчилнэ
 export const SettingsChanged = base.extend({ type: z.literal('SettingsChanged'), key: z.string(), productId: z.string().nullable() });
+export const AmlScreeningCompleted = base.extend({ type: z.literal('AmlScreeningCompleted'), screeningId: z.string(), customerId: z.string(), applicationId: z.string().nullable(), status: z.enum(ScreeningStatus), blocking: z.boolean(), riskScore: z.number(), riskLevel: z.enum(AmlRiskLevel), hitCount: z.number() });
+export const AmlHitReviewed = base.extend({ type: z.literal('AmlHitReviewed'), screeningId: z.string(), hitId: z.string(), customerId: z.string(), applicationId: z.string().nullable(), list: z.enum(ScreeningList), decision: z.enum(['CONFIRMED','FALSE_POSITIVE']), screeningStatus: z.enum(ScreeningStatus), blocking: z.boolean(), riskScore: z.number(), riskLevel: z.enum(AmlRiskLevel) });
+// origination → kyc: хар жагсаалтын projection. Регистр plain-ээр явахгүй — HMAC hash (64 жижиг hex; plain регистр schema-д няцна).
+// changedAt нь нэг entry-д хатуу өсөх ёстой: kyc зөвхөн илүү шинэ changedAt-тай event-ийг хэрэглэнэ.
+export const BlacklistEntryChanged = base.extend({ type: z.literal('BlacklistEntryChanged'), entryId: z.string(), registerNoHash: z.string().regex(/^[0-9a-f]{64}$/), customerType: z.enum(AmlSubjectType), name: z.string(), listType: z.string(), reasonCode: z.string(), isActive: z.boolean(), changedAt: z.string().datetime() });
+export type AmlScreeningCompleted = z.infer<typeof AmlScreeningCompleted>;
+export type AmlHitReviewed = z.infer<typeof AmlHitReviewed>;
+export type BlacklistEntryChanged = z.infer<typeof BlacklistEntryChanged>;
 // FR-11.4 Цахим гарын үсэг (dms гаргана → origination, dwh). correlationId нь origination-ы эхлүүлсэн хүсэлтийнхтэй ижил.
 export const ContractSigningRequested = base.extend({ type: z.literal('ContractSigningRequested'), signingRequestId: z.string(), applicationId: z.string(), contractId: z.string(), contractNo: z.string(), linkExpiresAt: z.string().datetime() });
 export const ContractSigned = base.extend({ type: z.literal('ContractSigned'), signingRequestId: z.string(), applicationId: z.string(), contractId: z.string(), contractNo: z.string(), provider: z.enum(ESignProvider), signedFileId: z.string(), signatureFileId: z.string(), originalSha256: z.string(), signedSha256: z.string(), signedAt: z.string().datetime(), verificationCode: z.string() });
@@ -32,6 +41,6 @@ export const PosLeaseSettled = base.extend({ type: z.literal('PosLeaseSettled'),
 export const PosLeaseCancelled = base.extend({ type: z.literal('PosLeaseCancelled'), leaseId: z.string(), leaseNo: z.string(), merchantId: z.string(), fromStatus: z.string(), reason: z.string() });
 export const MerchantStatusChanged = base.extend({ type: z.literal('MerchantStatusChanged'), merchantId: z.string(), from: z.string(), to: z.string(), reason: z.string() });
 export const DomainEvent = z.discriminatedUnion('type', [ApplicationSubmitted, ApplicationApproved, ApplicationReturned, ApplicationStatusChanged, DisbursementApproved, KycCompleted, StatementImported, ScoringCompleted, ValuationCompleted, DocumentUploaded, SettingsChanged, BorrowersChanged, PaymentReceived, ...MakerCheckerEvents, PosLeaseDecided, PosLeaseAccepted, PosLeaseDelivered, PosLeaseSettled, PosLeaseCancelled, MerchantStatusChanged,
-  ContractSigningRequested, ContractSigned, ContractSigningFailed]);
+  ContractSigningRequested, ContractSigned, ContractSigningFailed, AmlScreeningCompleted, AmlHitReviewed, BlacklistEntryChanged]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export const EVENT_STREAM = 'los:events';

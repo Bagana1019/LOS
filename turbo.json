@@ -6,6 +6,8 @@
     "MINIO_ENDPOINT",
     "JWT_SECRET",
     "INTEGRATION_MODE",
+    "DEFAULT_ORG_ID",
+    "AML_LIST_REFRESH_MINUTES",
     "NEXT_PUBLIC_GATEWAY_URL"
   ],
   "globalPassThroughEnv": [

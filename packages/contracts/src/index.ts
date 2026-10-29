@@ -3,6 +3,7 @@ export * from './events';
 export * from './auth';
 export * from './settings';
 export * from './dto';
+export * from './compliance';
 export * from './maker-checker';
 export * from './merchant';
 export * from './bsa';

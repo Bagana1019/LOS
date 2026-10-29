@@ -124,3 +124,79 @@ model AmlScreening {
   @@map("aml_screening")
   @@schema("kyc")
 }
+
+/// Compliance & AML (docs/05): нэг шалгалтын нэгтгэл (UN SC + FATF + дотоод хар жагсаалт) ба hit-үүд. docs/03-ийн `aml_screening` (жагсаалт тус бүрийн мөр) өөрчлөгдөөгүй.
+model AmlCheck {
+  id                  String   @id @default(uuid()) @db.Uuid
+  orgId               String   @map("org_id")
+  customerId          String   @map("customer_id")
+  applicationId       String?  @map("application_id")
+  trigger             String
+  status              String
+  blocking            Boolean
+  riskScore           Decimal  @map("risk_score") @db.Decimal(5, 2)
+  riskLevel           String   @map("risk_level")
+  riskFactorsJson     Json     @map("risk_factors_json")
+  subjectName         String   @map("subject_name")
+  registerNoMasked    String   @map("register_no_masked")
+  registerNoHash      String   @map("register_no_hash")
+  registerNoEncrypted String   @map("register_no_encrypted")
+  subjectJson         Json     @map("subject_json")
+  listVersionsJson    Json     @map("list_versions_json")
+  screenedAt          DateTime @map("screened_at")
+  screenedBy          String?  @map("screened_by")
+  correlationId       String   @map("correlation_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  hits                AmlHit[]
+
+  @@index([orgId, customerId, screenedAt(sort: Desc)])
+  @@index([orgId, registerNoHash])
+  @@map("aml_check")
+  @@schema("kyc")
+}
+
+model AmlHit {
+  id            String       @id @default(uuid()) @db.Uuid
+  screeningId   String       @map("screening_id") @db.Uuid
+  screening     AmlCheck @relation(fields: [screeningId], references: [id], onDelete: Cascade)
+  position      Int
+  list          String
+  matchType     String       @map("match_type")
+  score         Decimal      @db.Decimal(5, 4)
+  severity      String
+  status        String
+  entryRef      String       @map("entry_ref")
+  entryName     String       @map("entry_name")
+  matchedValue  String?      @map("matched_value")
+  detailsJson   Json         @map("details_json")
+  listVersion   String       @map("list_version")
+  reviewedBy    String?      @map("reviewed_by")
+  reviewedAt    DateTime?    @map("reviewed_at")
+  reviewComment String?      @map("review_comment")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  @@index([screeningId, position])
+  @@index([status, list])
+  @@map("aml_hit")
+  @@schema("kyc")
+}
+
+// origination.blacklist-ийн read model (BlacklistEntryChanged event-ээр). id = origination blacklist id, FK-гүй (CLAUDE.md §3.2.3).
+model BlacklistProjection {
+  id             String   @id
+  orgId          String   @map("org_id")
+  registerNoHash String   @map("register_no_hash")
+  customerType   String   @map("customer_type")
+  name           String
+  listType       String   @map("list_type")
+  reasonCode     String   @map("reason_code")
+  isActive       Boolean  @map("is_active")
+  changedAt      DateTime @map("changed_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([orgId, registerNoHash])
+  @@map("blacklist_projection")
+  @@schema("kyc")
+}
