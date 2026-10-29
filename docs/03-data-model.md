@@ -1,5 +1,7 @@
 # LOS Radix — Өгөгдлийн загвар
 
+> Мерчант POS (B2B2C) хүснэгтүүд: `docs/05-merchant-pos.md` §7.
+
 Бүх хүснэгт: `id` (bigserial/uuid), `created_at`, `updated_at`, `created_by`, `updated_by`, `org_id` (multi-tenant), `branch_id` (хаана хамаатай). Мөнгө `numeric(18,2)`, хувь `numeric(7,4)` (0.55 = 55%). Soft delete хэрэггүй — төлвөөр удирдана. Шифрлэх талбар: `*_encrypted` (pgcrypto).
 
 ## Enum
