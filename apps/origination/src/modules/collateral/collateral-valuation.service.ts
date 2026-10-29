@@ -122,7 +122,7 @@ export class CollateralValuationService {
     if (!(VALUATION_STATUSES as readonly string[]).includes(app.status)) return false;
     const row = await db.collateral.findFirst({ where: { id: event.collateralId, applicationId: app.id }, include: { documents: true } });
     if (!row) return false;
-    const decision = decideValuationEvent(row, event, await this.settings.get(event.orgId, 'collateral.revaluation_interval_days'));
+    const decision = decideValuationEvent(row, event, await this.settings.getIn(db, event.orgId, 'collateral.revaluation_interval_days'));
     if (!decision.apply) return false;
     const updated = await db.collateral.update({ where: { id: row.id }, data: { ...decision.columns }, include: { documents: true } });
     await this.tx.finish(db, ctx, app, {
