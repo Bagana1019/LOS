@@ -10,3 +10,4 @@ export * from './payment-allocation';
 export * from './reminders';
 export * from './pos-lease';
 export * from './bsa-dti';
+export * from './market-price';

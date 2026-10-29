@@ -25,3 +25,4 @@ export * from './payment';
 export * from './notification';
 export * from './report';
 export * from './esign';
+export * from './valuation';
