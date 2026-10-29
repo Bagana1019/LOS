@@ -1,5 +1,5 @@
 import type { Page, Route } from '@playwright/test';
-import { menuFor, permissionsFor, type AuthResponse, type NotificationFeed, type UserRole } from '@los/contracts';
+import { menuFor, permissionsFor, type AuthResponse, type NotificationView, type UserRole } from '@los/contracts';
 
 export const PASSWORD = 'correct horse';
 
@@ -17,13 +17,18 @@ export interface Gateway {
   /** Cookie `los_rt`-ийг дууриана: true бол /auth/refresh амжилттай. */
   signedIn: boolean;
   role: UserRole;
-  /** `null` = endpoint байхгүй (404, M13 хүртэл). */
-  notifications: NotificationFeed | null;
+  /** Хонх (FR-13.2): `GET /origination/notifications`, `/origination/notifications/unread-count` (gateway зөвхөн `/api/<service>/*`). Уншаагүй тоо = readAt нь null-уудын тоо. */
+  notifications: NotificationView[];
   /** /auth/refresh сүлжээний алдаа өгөх (gateway унасан). */
   down: boolean;
   /** Access token хүчингүй болсон: хамгаалагдсан endpoint бүр 401 (бодит gateway-н SESSION_ENDED). */
   rejectAccess: boolean;
   requests: string[];
+  /**
+   * true бол зөвхөн `/auth/*`-ийг дуурайж, бусад `/api/*`-г дараагийн route handler-д (`route.fallback()`) шилжүүлнэ.
+   * Өөрийн `page.route('**\/api/**')`-тай модулийн e2e (MockApi) энэ горимоор нэвтэрсэн ажилтныг дуурайна.
+   */
+  authOnly: boolean;
 }
 
 const cors = (route: Route) => ({
@@ -35,12 +40,13 @@ const cors = (route: Route) => ({
 
 /** Gateway-г Playwright-ийн route-аар дуурайна (CORS-той, бодит хэлбэр — `@los/contracts`-аас). */
 export async function mockGateway(page: Page, init: Partial<Gateway> = {}): Promise<Gateway> {
-  const gw: Gateway = { signedIn: false, role: 'OFFICER', notifications: null, down: false, rejectAccess: false, requests: [], ...init };
+  const gw: Gateway = { signedIn: false, role: 'OFFICER', notifications: [], down: false, rejectAccess: false, requests: [], authOnly: false, ...init };
   await page.route(
     (url) => url.pathname.startsWith('/api/'),
     async (route) => {
       const req = route.request();
       const path = new URL(req.url()).pathname.replace(/^\/api/, '');
+      if (gw.authOnly && !path.startsWith('/auth/')) return route.fallback();
       const headers = cors(route);
       const reply = (status: number, body?: unknown) =>
         route.fulfill({ status, headers, ...(body === undefined ? {} : { contentType: 'application/json', body: JSON.stringify(body) }) });
@@ -72,7 +78,13 @@ export async function mockGateway(page: Page, init: Partial<Gateway> = {}): Prom
         const { accessToken: _t, expiresIn: _e, ...me } = authResponse(gw.role);
         return reply(200, me);
       }
-      if (path === '/origination/notifications') return gw.notifications ? reply(200, gw.notifications) : reply(404, { code: 'NOT_FOUND', message: 'Not Found' });
+      if (path === '/origination/notifications/unread-count') return reply(200, { unreadCount: gw.notifications.filter((n) => n.readAt === null).length });
+      if (path === '/origination/notifications') {
+        const page = Number(new URL(req.url()).searchParams.get('page') ?? 1);
+        const pageSize = Number(new URL(req.url()).searchParams.get('pageSize') ?? 20);
+        const items = gw.notifications.slice((page - 1) * pageSize, page * pageSize);
+        return reply(200, { items, total: gw.notifications.length, unreadCount: gw.notifications.filter((n) => n.readAt === null).length, page, pageSize });
+      }
       return reply(404, { code: 'NOT_FOUND', message: 'Not Found' });
     },
   );

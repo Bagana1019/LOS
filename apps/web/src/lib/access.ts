@@ -7,11 +7,19 @@ export const PUBLIC_PATHS: readonly string[] = ['/login'];
 export const isPublicPath = (pathname: string) => PUBLIC_PATHS.some((p) => matchesPrefix(pathname, p));
 
 /**
- * Staff shell-гүй, нэвтрэлт шаардахгүй, өөрийн token-той хуудас (жишээ нь зээлдэгчийн гарын үсгийн холбоос `/sign/<token>`).
- * Эдгээр дээр сесс сэргээх (`/auth/refresh`) дуудлага хийгдэхгүй, redirect хийгдэхгүй. Шинэ хуудас нэмэх бол prefix-ийг энд бич.
+ * Staff shell-гүй, нэвтрэлт шаардахгүй, өөрийн token-той нийтийн хуудас: зээлдэгчийн гарын үсгийн холбоос `/sign/<token>`,
+ * гэрээ баталгаажуулах `/verify/<code>` (FR-11.4). Эдгээр дээр сесс сэргээх (`/auth/refresh`) дуудлага хийгдэхгүй, redirect хийгдэхгүй.
+ * Шинэ нийтийн хуудас нэмэх бол prefix-ийг энд бич.
  */
-export const STANDALONE_PREFIXES: readonly string[] = [];
+export const STANDALONE_PREFIXES: readonly string[] = ['/sign', '/verify'];
 export const isStandalonePath = (pathname: string, prefixes: readonly string[] = STANDALONE_PREFIXES) => prefixes.some((p) => matchesPrefix(pathname, p));
+
+/**
+ * Нэвтрэлт шаардах боловч staff-ийн sidebar/header-ийн оронд өөрийн shell-тэй хэсэг: мерчант POS портал (`/merchant/*`, docs/05 §12).
+ * Хаалга (нэвтрээгүй бол /login) хэвээр, зөвхөн Frame зурагдахгүй.
+ */
+export const OWN_SHELL_PREFIXES: readonly string[] = ['/merchant'];
+export const hasOwnShell = (pathname: string, prefixes: readonly string[] = OWN_SHELL_PREFIXES) => prefixes.some((p) => matchesPrefix(pathname, p));
 
 /** Нэвтэрсний дараах `next` зам — зөвхөн ижил origin-ийн зам (open redirect-ээс сэргийлнэ). */
 export function safeNext(raw: string | null | undefined): string {

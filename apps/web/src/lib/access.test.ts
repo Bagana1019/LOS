@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MENU, menuFor, permissionsFor } from '@los/contracts';
-import { activeHref, canAccess, contractSearchHref, flattenMenu, isPublicPath, isStandalonePath, looksLikeContractNo, requiredPermission, safeNext, searchMenu } from './access';
+import { activeHref, canAccess, contractSearchHref, flattenMenu, hasOwnShell, isPublicPath, isStandalonePath, looksLikeContractNo, requiredPermission, safeNext, searchMenu } from './access';
 
 describe('safeNext (open redirect)', () => {
   it.each([
@@ -99,6 +99,17 @@ describe('public and standalone paths', () => {
     expect(isStandalonePath('/sign/abc', ['/sign'])).toBe(true);
     expect(isStandalonePath('/sign', ['/sign'])).toBe(true);
     expect(isStandalonePath('/signature', ['/sign'])).toBe(false);
-    expect(isStandalonePath('/sign/abc')).toBe(false); // анхдагч жагсаалт хоосон
+  });
+  it('the default standalone list is the public e-sign pages (FR-11.4) and nothing that needs a login', () => {
+    for (const p of ['/sign/abc', '/verify/XYZ-1', '/sign', '/verify']) expect(isStandalonePath(p), p).toBe(true);
+    for (const p of ['/', '/login', '/signature', '/verifyx', '/los/loan-application', '/merchant', '/settings/merchants', '/notifications']) expect(isStandalonePath(p), p).toBe(false);
+  });
+  it('the merchant portal has its own shell but still needs a login; staff merchant pages keep the staff shell', () => {
+    for (const p of ['/merchant', '/merchant/leases', '/merchant/leases/new']) {
+      expect(hasOwnShell(p), p).toBe(true);
+      expect(isStandalonePath(p), p).toBe(false);
+      expect(isPublicPath(p), p).toBe(false);
+    }
+    for (const p of ['/merchants', '/settings/merchants', '/los/pos-leases', '/']) expect(hasOwnShell(p), p).toBe(false);
   });
 });

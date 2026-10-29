@@ -14,10 +14,6 @@
   "shell.search.menu": "Цэс",
   "shell.search.contract": "Гэрээ",
   "shell.search.contract_option": "Гэрээний дугаараар хайх: «{q}»",
-  "shell.notifications": "Мэдэгдэл",
-  "shell.notifications.aria": "Мэдэгдэл, {n} уншаагүй",
-  "shell.notifications.empty": "Шинэ мэдэгдэл алга",
-  "shell.notifications.error": "Мэдэгдэл ачаалж чадсангүй",
   "shell.user.menu": "Хэрэглэгчийн цэс",
   "shell.nav": "Үндсэн цэс",
   "shell.skip": "Агуулга руу шилжих",
@@ -25,11 +21,5 @@
   "shell.home.role": "Дүр",
   "shell.home.scope": "Харах хүрээ",
   "shell.home.quick_links": "Хандах боломжтой хэсгүүд",
-  "shell.notifications.type.APPROVAL_REQUESTED": "Батлах хүсэлт ирлээ",
-  "shell.notifications.type.RETURNED": "Хүсэлт буцаагдлаа",
-  "shell.notifications.type.APPROVED": "Хүсэлт батлагдлаа",
-  "shell.notifications.type.DISBURSEMENT_APPROVED": "Олголт зөвшөөрөгдлөө",
-  "shell.notifications.type.SLA_BREACH": "Шийдвэрлэх хугацаа хэтэрлээ",
-  "shell.notifications.type.MENTION": "Танийг тайлбарт дурдлаа",
   "shell.nav.toggle": "Цэсийг нээх, хаах"
 }

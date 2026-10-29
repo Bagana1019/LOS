@@ -1,13 +1,24 @@
 import { t } from '@los/ui';
 import { API } from './config';
 
-/** Gateway-ийн алдааны хариу: `{ code, message }` (DomainError / HttpException). `status 0` = сүлжээний алдаа. */
+export interface ApiIssue {
+  path: string;
+  message: string;
+}
+
+/**
+ * Gateway-ийн алдааны хариу: `{ code, message }` (DomainError / HttpException). `status 0` = сүлжээний алдаа.
+ * `issues` = zod шалгалтын алдаа (`VALIDATION_FAILED`), feature-ийн алдааны хэсгүүд (`e.issues`) уншина.
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string | null,
     message: string,
+    readonly issues?: ApiIssue[],
     readonly correlationId: string | null = null,
+    /** Сүлжээний алдаа (status 0) үед fetch-ийн анхны `TypeError`. */
+    readonly cause?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -26,18 +37,22 @@ export function newCorrelationId(): string {
 export async function readError(res: Response, correlationId: string): Promise<ApiError> {
   let code: string | null = null;
   let message = res.statusText || `HTTP ${res.status}`;
+  let issues: ApiIssue[] | undefined;
   try {
     const body: unknown = await res.json();
     if (body && typeof body === 'object') {
-      const b = body as { code?: unknown; message?: unknown };
+      const b = body as { code?: unknown; message?: unknown; details?: unknown; issues?: unknown };
       if (typeof b.code === 'string') code = b.code;
       if (typeof b.message === 'string') message = b.message;
       else if (Array.isArray(b.message)) message = b.message.map(String).join('; ');
+      // Module 0 AllExceptionsFilter: zod алдаа = { code: 'VALIDATION_FAILED', details: [{ path, message }] }
+      const raw = code === 'VALIDATION_FAILED' && Array.isArray(b.details) ? b.details : b.issues;
+      if (Array.isArray(raw)) issues = raw as ApiIssue[];
     }
   } catch {
     // JSON биш хариу: statusText хэвээр
   }
-  return new ApiError(res.status, code, message, res.headers.get('x-correlation-id') ?? correlationId);
+  return new ApiError(res.status, code, message, issues, res.headers?.get?.('x-correlation-id') ?? correlationId);
 }
 
 export interface SendOptions {
@@ -64,6 +79,6 @@ export async function send(path: string, o: SendOptions = {}): Promise<{ res: Re
     return { res, correlationId };
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e;
-    throw new ApiError(0, NETWORK_ERROR, t('shell.unreachable.title'), correlationId);
+    throw new ApiError(0, NETWORK_ERROR, t('shell.unreachable.title'), undefined, correlationId, e);
   }
 }

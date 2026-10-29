@@ -149,6 +149,101 @@ describe('apiFetch', () => {
   });
 });
 
+describe('apiFetch · feature-үүдийн хэрэглээ (өмнөх `lib/api` нийцтэй)', () => {
+  it('accepts `json` as an alias of `body`', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValueOnce(json({ ok: true }));
+    await api.apiFetch('/x', { method: 'POST', json: { a: 1 } });
+    const init = calls('/x')[0]![1] as { method: string; body: string; headers: Record<string, string> };
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ a: 1 });
+    expect(init.headers['content-type']).toBe('application/json');
+  });
+  it('VALIDATION_FAILED `details` and a plain `issues` array both end up in ApiError.issues', async () => {
+    const { api } = await load();
+    fetchMock.mockResolvedValueOnce(json({ code: 'VALIDATION_FAILED', message: 'x', details: [{ path: 'amount', message: 'required' }] }, 400));
+    await expect(api.apiFetch('/x')).rejects.toMatchObject({ status: 400, code: 'VALIDATION_FAILED', issues: [{ path: 'amount', message: 'required' }] });
+    fetchMock.mockResolvedValueOnce(json({ code: 'OTHER', message: 'x', issues: [{ path: 'a', message: 'b' }] }, 422));
+    await expect(api.apiFetch('/y')).rejects.toMatchObject({ status: 422, issues: [{ path: 'a', message: 'b' }] });
+    fetchMock.mockResolvedValueOnce(json({ code: 'PLAIN', message: 'x' }, 409));
+    await expect(api.apiFetch('/z')).rejects.toMatchObject({ status: 409, issues: undefined });
+  });
+  it('a network failure surfaces as the original TypeError (features map `error instanceof TypeError` to their NETWORK message and retry); login/refresh keep ApiError(0)', async () => {
+    const { api, session, http } = await load();
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+    await expect(api.apiFetch('/x')).rejects.toBeInstanceOf(TypeError);
+    await expect(session.refreshSession()).rejects.toMatchObject({ status: 0, code: http.NETWORK_ERROR });
+  });
+  it('qs skips empty values', async () => {
+    const { api } = await load();
+    expect(api.qs({ a: 1, b: '', c: undefined, d: null, e: false, f: 'x y' })).toBe('?a=1&e=false&f=x+y');
+    expect(api.qs({})).toBe('');
+  });
+});
+
+describe('authFetch', () => {
+  const headersOf = (call: unknown[]) => (call[1] as { headers: Record<string, string> }).headers;
+  const signedIn = async () => {
+    const loaded = await load();
+    fetchMock.mockResolvedValueOnce(json(authResponse('old')));
+    await loaded.session.refreshSession();
+    return loaded;
+  };
+
+  it('adds the bearer token and a correlation id, keeps the caller headers as a plain object and sends the cookie', async () => {
+    const { api } = await signedIn();
+    fetchMock.mockResolvedValueOnce(json({ ok: true }));
+    const res = await api.authFetch('https://gw.test/api/x', { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: '{}' });
+    expect(res.status).toBe(200);
+    const call = calls('/x')[0]!;
+    expect(headersOf(call)).toMatchObject({ Accept: 'application/json', 'Content-Type': 'application/json', authorization: 'Bearer old' });
+    expect(headersOf(call)['x-correlation-id']).toBeTruthy();
+    expect(call[1]).toMatchObject({ method: 'POST', credentials: 'include', body: '{}' });
+  });
+  it('never overrides the caller correlation id or Authorization', async () => {
+    const { api } = await signedIn();
+    fetchMock.mockResolvedValueOnce(json({}));
+    await api.authFetch('https://gw.test/api/x', { headers: { 'X-Correlation-Id': 'mine', Authorization: 'Basic abc' } });
+    const h = headersOf(calls('/x')[0]!);
+    expect(h['X-Correlation-Id']).toBe('mine');
+    expect(h['x-correlation-id']).toBeUndefined();
+    expect(h.Authorization).toBe('Basic abc');
+    expect(h.authorization).toBeUndefined();
+  });
+  it('on 401 refreshes once and retries with the NEW token; the caller gets the retry Response', async () => {
+    const { api } = await signedIn();
+    fetchMock.mockResolvedValueOnce(json({ code: 'SESSION_ENDED' }, 401)).mockResolvedValueOnce(json(authResponse('new'))).mockResolvedValueOnce(json({ ok: true }));
+    const res = await api.authFetch('https://gw.test/api/x');
+    expect(await res.json()).toEqual({ ok: true });
+    expect(headersOf(calls('/x')[0]!).authorization).toBe('Bearer old');
+    expect(headersOf(calls('/x')[1]!).authorization).toBe('Bearer new');
+    expect(calls('/auth/refresh')).toHaveLength(2); // ачаалалт + 401-ийн дараах
+  });
+  it('hands non-401 errors back untouched (the feature maps its own error body); no refresh', async () => {
+    const { api } = await signedIn();
+    fetchMock.mockResolvedValueOnce(json({ code: 'FORBIDDEN' }, 403));
+    const res = await api.authFetch('https://gw.test/api/x');
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ code: 'FORBIDDEN' });
+    expect(calls('/auth/refresh')).toHaveLength(1);
+  });
+  it('ends the session when refresh fails and still returns the 401 for the feature to map', async () => {
+    const { session, api } = await signedIn();
+    const ended = vi.fn();
+    session.onSessionEnded(ended);
+    fetchMock.mockResolvedValueOnce(json({ code: 'SESSION_ENDED' }, 401)).mockResolvedValueOnce(json({ code: 'INVALID_REFRESH_TOKEN' }, 401));
+    const res = await api.authFetch('https://gw.test/api/x');
+    expect(res.status).toBe(401);
+    expect(ended).toHaveBeenCalledTimes(1);
+    expect(session.getAccessToken()).toBeNull();
+  });
+  it('rethrows a network failure so the feature can map it', async () => {
+    const { api } = await signedIn();
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await expect(api.authFetch('https://gw.test/api/x')).rejects.toThrow('Failed to fetch');
+  });
+});
+
 describe('logoutRequest', () => {
   it('clears the token on success', async () => {
     const { session } = await load();

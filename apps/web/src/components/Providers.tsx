@@ -14,7 +14,7 @@ import { antdTheme } from '../theme/brand';
 const shouldRetry = (count: number, e: unknown) => !(e instanceof ApiError && e.status >= 400 && e.status < 500) && count < 2;
 
 export function Providers({ children }: { children: ReactNode }) {
-  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: shouldRetry, staleTime: 30_000 } } }));
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: shouldRetry, staleTime: 30_000, refetchOnWindowFocus: false } } }));
   return (
     <AntdRegistry>
       <ConfigProvider locale={mnMN} theme={antdTheme}>

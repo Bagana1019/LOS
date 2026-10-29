@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DataScope, MENU, NotificationType, UserRole } from '@los/contracts';
+import { DataScope, MENU, UserRole } from '@los/contracts';
 import { mn, mnSources, t } from '@los/ui';
 import { flattenMenu } from './lib/access';
 
@@ -20,13 +20,15 @@ describe('mn i18n', () => {
   it('translates every menu label the gateway can send', () => {
     for (const i of flattenMenu(MENU)) expect(t(i.labelKey), i.labelKey).not.toBe(i.labelKey);
   });
-  it('translates roles, data scopes and notification types', () => {
-    const keys = [...UserRole.map((r) => `auth.role.${r}`), ...DataScope.map((s) => `auth.scope.${s}`), ...NotificationType.map((n) => `shell.notifications.type.${n}`)];
+  it('translates roles and data scopes', () => {
+    const keys = [...UserRole.map((r) => `auth.role.${r}`), ...DataScope.map((s) => `auth.scope.${s}`)];
     for (const k of keys) expect(t(k), k).not.toBe(k);
   });
   it('interpolates {params} and falls back to the key', () => {
     expect(t('shell.home.welcome', { name: 'Бат' })).toBe('Сайн байна уу, Бат');
-    expect(t('shell.notifications.aria', { n: 3 })).toBe('Мэдэгдэл, 3 уншаагүй');
     expect(t('no.such.key')).toBe('no.such.key');
+  });
+  it('never resolves a key through Object.prototype', () => {
+    for (const k of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) expect(t(k), k).toBe(k);
   });
 });

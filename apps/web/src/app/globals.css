@@ -31,3 +31,18 @@ body {
     display: none;
   }
 }
+/* lg-ээс нарийн дэлгэц: нээгдсэн sidebar контентыг шахахгүй, давхарлан гарна (antd `below` анги = breakpoint-ээс доош) */
+.ant-layout-sider-below:not(.ant-layout-sider-collapsed) {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 100;
+  height: 100vh;
+}
+.los-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+  background: rgba(0, 0, 0, 0.45);
+}

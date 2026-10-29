@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { AutoComplete, Input, Space, Typography, type InputRef } from 'antd';
+import { AutoComplete, Input, Space, Typography } from 'antd';
+import type { RefSelectProps } from 'antd/es/select';
 import { SearchOutlined } from '@ant-design/icons';
 import type { MeResponse } from '@los/contracts';
 import { t } from '@los/ui';
@@ -16,7 +17,8 @@ interface Group { label: string; options: Opt[] }
 /** FR-1.4 Нэгдсэн хайлт: цэс болон гэрээний дугаар. Гэрээний хайлт жагсаалтын `?q=` руу шилжинэ (жагсаалтыг M2 хэрэгжүүлнэ). */
 export function HeaderSearch({ me }: { me: MeResponse }) {
   const router = useRouter();
-  const input = useRef<InputRef>(null);
+  // ref нь AutoComplete дээр: хүүхэд <Input ref> нь rc-select-ийн `element.ref` уншилтаар React 19-ийн анхааруулга (dev) өгдөг
+  const select = useRef<RefSelectProps>(null);
   const [q, setQ] = useState('');
   const canSearchContracts = me.permissions.includes('application:read');
 
@@ -27,7 +29,7 @@ export function HeaderSearch({ me }: { me: MeResponse }) {
       const typing = el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
       if (e.key === '/' && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
         e.preventDefault();
-        input.current?.focus();
+        select.current?.focus();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -51,12 +53,13 @@ export function HeaderSearch({ me }: { me: MeResponse }) {
   const go = (value: string) => {
     router.push(value.startsWith(CONTRACT) ? contractSearchHref(value.slice(CONTRACT.length)) : value);
     setQ('');
-    input.current?.blur();
+    select.current?.blur();
   };
 
   return (
     // Сонголтын `label` нь string (screen reader үүнийг уншдаг); дүрсийг зөвхөн харагдах хэсэгт optionRender-ээр нэмнэ.
     <AutoComplete
+      ref={select}
       value={q}
       options={options}
       optionRender={(o) => (
@@ -73,7 +76,6 @@ export function HeaderSearch({ me }: { me: MeResponse }) {
       popupMatchSelectWidth
     >
       <Input
-        ref={input}
         allowClear
         prefix={<SearchOutlined />}
         suffix={<Typography.Text className="los-kbd-hint" keyboard type="secondary" aria-hidden>/</Typography.Text>}

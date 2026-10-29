@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import type { NotificationView } from '@los/contracts';
 import { mockGateway, PASSWORD } from './mock-gateway';
 
 async function signIn(page: Page, username = 'officer.a', password = PASSWORD) {
@@ -77,13 +78,13 @@ test.describe('нэвтрэлт', () => {
   });
 
   test('сесс дундаа дуусвал (refresh 401) нэвтрэх хуудас руу, "дууссан" мэдэгдэлтэй', async ({ page }) => {
-    const gw = await mockGateway(page, { signedIn: true, notifications: { unreadCount: 0, items: [] } });
+    const gw = await mockGateway(page, { signedIn: true });
     await page.clock.install();
     await page.goto('/los/report');
     await expect(menuItem(page, 'Тайлан')).toBeVisible();
     gw.signedIn = false;
     gw.rejectAccess = true;
-    await page.clock.fastForward(61_000); // хонхны 60с-ийн polling → 401 → refresh 401
+    await page.clock.fastForward(31_000); // хонхны 30с-ийн polling → 401 → refresh 401
     await expect(page).toHaveURL(/\/login\?next=%2Flos%2Freport$/);
     await expect(page.getByText('Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү.')).toBeVisible();
   });
@@ -191,35 +192,144 @@ test.describe('дээд хайлт ба мэдэгдлийн хонх', () => {
     await expect(search).toBeFocused();
   });
 
-  test('хонх: endpoint хараахан байхгүй (404) үед "мэдэгдэл алга", алдаа харуулахгүй', async ({ page }) => {
-    const gw = await mockGateway(page, { signedIn: true, notifications: null });
-    const answered = page.waitForResponse((r) => r.url().includes('/origination/notifications'));
+  test('хонх: мэдэгдэл байхгүй үед "мэдэгдэл алга", алдаа харуулахгүй', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
     await page.goto('/');
-    expect((await answered).status()).toBe(404);
-    await page.getByRole('button', { name: /Мэдэгдэл/ }).click();
+    const bell = page.getByRole('button', { name: 'Мэдэгдэл', exact: true });
+    await expect(bell).toBeVisible();
+    await bell.click();
     await expect(page.getByText('Шинэ мэдэгдэл алга')).toBeVisible();
-    await expect(page.getByText('Мэдэгдэл ачаалж чадсангүй')).toHaveCount(0);
-    expect(gw.requests.filter((r) => r.includes('/notifications'))).toHaveLength(1);
+    await expect(page.getByText('Мэдэгдлийг ачаалж чадсангүй')).toHaveCount(0);
   });
 
   test('хонх: уншаагүй тоо ба жагсаалт', async ({ page }) => {
+    const note = (id: string, title: string, readAt: string | null, createdAt: string): NotificationView => ({ id, type: 'RETURNED', applicationId: null, title, body: `${title} — тайлбар`, payload: {}, readAt, createdAt });
     await mockGateway(page, {
       signedIn: true,
-      notifications: {
-        unreadCount: 2,
-        items: [
-          { id: 'n1', type: 'RETURNED', applicationId: 'a1', payload: {}, readAt: null, createdAt: '2026-10-28T08:00:00.000Z' },
-          { id: 'n2', type: 'APPROVAL_REQUESTED', applicationId: 'a2', payload: {}, readAt: null, createdAt: '2026-10-28T09:00:00.000Z' },
-          { id: 'n3', type: 'APPROVED', applicationId: 'a3', payload: {}, readAt: '2026-10-27T09:00:00.000Z', createdAt: '2026-10-27T08:00:00.000Z' },
-        ],
-      },
+      notifications: [
+        note('n1', 'Хүсэлт буцаагдлаа', null, '2026-10-28T08:00:00.000Z'),
+        note('n2', 'Батлах хүсэлт ирлээ', null, '2026-10-28T09:00:00.000Z'),
+        note('n3', 'Хүсэлт батлагдлаа', '2026-10-27T09:00:00.000Z', '2026-10-27T08:00:00.000Z'),
+      ],
     });
     await page.goto('/');
-    const bell = page.getByRole('button', { name: 'Мэдэгдэл, 2 уншаагүй' });
+    const bell = page.getByRole('button', { name: 'Мэдэгдэл, уншаагүй 2' });
     await expect(bell).toBeVisible();
     await bell.click();
-    await expect(page.getByText('Хүсэлт буцаагдлаа')).toBeVisible();
-    await expect(page.getByText('Батлах хүсэлт ирлээ')).toBeVisible();
-    await expect(page.getByText('Хүсэлт батлагдлаа')).toBeVisible();
+    await expect(page.locator('.ant-popover').getByRole('button', { name: new RegExp('Хүсэлт буцаагдлаа — тайлбар') })).toBeVisible();
+    await expect(page.locator('.ant-popover').getByRole('button', { name: new RegExp('Батлах хүсэлт ирлээ — тайлбар') })).toBeVisible();
+    await expect(page.locator('.ant-popover').getByRole('button', { name: new RegExp('Хүсэлт батлагдлаа — тайлбар') })).toBeVisible();
+  });
+
+  test('хонх: дахин нээхэд харьцангуй хугацаа шинэчлэгдэнэ (өгөгдөл өөрчлөгдөөгүй байсан ч)', async ({ page }) => {
+    await mockGateway(page, {
+      signedIn: true,
+      notifications: [{ id: 'n1', type: 'RETURNED', applicationId: null, title: 'Хүсэлт буцаагдлаа', body: 'тайлбар', payload: {}, readAt: null, createdAt: '2026-10-28T09:00:00.000Z' }],
+    });
+    await page.clock.install({ time: new Date('2026-10-28T09:00:10.000Z') });
+    await page.goto('/');
+    const bell = page.getByRole('button', { name: /^Мэдэгдэл/ });
+    await bell.click();
+    const popover = page.locator('.ant-popover');
+    await expect(popover.getByText('Дөнгөж сая')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden();
+    await page.clock.fastForward(30 * 60_000);
+    await bell.click();
+    await expect(popover.getByText('30 минутын өмнө')).toBeVisible();
+  });
+});
+
+test.describe('нийтийн хуудас ба өөрийн shell-тэй хэсэг', () => {
+  const search = (page: Page) => page.getByPlaceholder('Гэрээний дугаар эсвэл цэс хайх');
+
+  test('/sign, /verify (FR-11.4): нэвтрэлт шаардахгүй — /login руу явуулахгүй, сесс сэргээх дуудлага хийхгүй, staff shell-гүй', async ({ page }) => {
+    const gw = await mockGateway(page, { authOnly: true });
+    await page.goto('/sign/abc-123');
+    await expect(page).toHaveURL(/\/sign\/abc-123$/);
+    await page.waitForLoadState('networkidle');
+    await expect(search(page)).toHaveCount(0);
+    await page.goto('/verify/XYZ-1');
+    await expect(page).toHaveURL(/\/verify\/XYZ-1$/);
+    await page.waitForLoadState('networkidle');
+    await expect(search(page)).toHaveCount(0);
+    expect(gw.requests, 'нийтийн хуудас /auth/*-д хүрэхгүй').toEqual([]);
+  });
+
+  test('/merchant: нэвтрээгүй бол /login руу (next-тэй)', async ({ page }) => {
+    await mockGateway(page, { authOnly: true });
+    await page.goto('/merchant/leases');
+    await expect(page).toHaveURL(/\/login\?next=%2Fmerchant%2Fleases$/);
+  });
+
+  test('/merchant: нэвтэрсэн бол мерчантын өөрийн shell — staff sidebar/хайлт/хонхгүй', async ({ page }) => {
+    await mockGateway(page, { signedIn: true, authOnly: true });
+    await page.goto('/merchant');
+    await expect(page.locator('.mp-shell')).toBeVisible();
+    await expect(page.locator('.ant-layout-sider')).toHaveCount(0);
+    await expect(search(page)).toHaveCount(0);
+  });
+
+  test('/settings/merchants (staff-ийн мерчант удирдлага): staff shell-тэй', async ({ page }) => {
+    await mockGateway(page, { signedIn: true, role: 'ADMIN', authOnly: true });
+    await page.goto('/settings/merchants');
+    await expect(menuItem(page, 'Тохиргоо')).toBeVisible();
+    await expect(search(page)).toBeVisible();
+    await expect(page.getByText('Эрх хүрэхгүй')).toHaveCount(0);
+  });
+});
+
+test.describe('утас (lg-ээс нарийн)', () => {
+  test.use({ viewport: { width: 320, height: 700 } });
+
+  test('sidebar контентыг шахахгүй: хаалттай, товчоор давхарлан нээгдэж, цэс сонгоход хаагдана; хэвтээ гүйлгэлтгүй', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: /Сайн байна уу/ })).toBeVisible();
+    const toggle = page.getByRole('button', { name: 'Цэсийг нээх, хаах' });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(menuItem(page, 'Зээл')).not.toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(menuItem(page, 'Зээл')).toBeInViewport();
+    await menuItem(page, 'Зээл').click();
+    await expect(page).toHaveURL(/\/los\/loan\/list$/);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(menuItem(page, 'Зээл')).not.toBeInViewport();
+  });
+
+  test('брэндийн холбоос дээр дарахад sidebar хаагдана', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/los/report');
+    const toggle = page.getByRole('button', { name: 'Цэсийг нээх, хаах' });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await page.locator('.ant-layout-sider').getByRole('link').first().click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('хонх нээгдэхэд popup дэлгэцээс хэтрэхгүй, хэвтээ гүйлгэлт үүсэхгүй', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/');
+    await page.getByRole('button', { name: /^Мэдэгдэл/ }).click();
+    const popup = page.locator('.ant-popover:not(.ant-popover-hidden)').first();
+    await expect(popup.getByText('Шинэ мэдэгдэл алга')).toBeVisible();
+    const box = (await popup.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(320);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  });
+
+  test('backdrop дээр дарахад sidebar хаагдана', async ({ page }) => {
+    await mockGateway(page, { signedIn: true });
+    await page.goto('/');
+    const toggle = page.getByRole('button', { name: 'Цэсийг нээх, хаах' });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await page.mouse.click(310, 650);
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 });

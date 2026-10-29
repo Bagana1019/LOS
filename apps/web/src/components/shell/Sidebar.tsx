@@ -26,10 +26,12 @@ interface Props {
   menu: readonly MenuItem[];
   collapsed: boolean;
   onCollapse(collapsed: boolean): void;
+  /** lg-ээс нарийн дэлгэц: sidebar нь контентыг шахахгүй, нээгдэхэд давхарлан гарч, цэс сонгоход хаагдана. */
+  mobile?: boolean;
 }
 
 /** Цэсийг web өөрөө шийддэггүй: `GET /api/auth/me`-ийн `menu` (дүрээр шүүгдсэн)-ийг л зурна. */
-export function Sidebar({ menu, collapsed, onCollapse }: Props) {
+export function Sidebar({ menu, collapsed, onCollapse, mobile = false }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const { token } = theme.useToken();
@@ -37,7 +39,8 @@ export function Sidebar({ menu, collapsed, onCollapse }: Props) {
   // Anchor дээр дарсан бол Link өөрөө шилжүүлнэ (давхар history бичлэг үүсгэхгүй)
   const go = useMemo<Go>(() => (href, e) => {
     if (!(e.target as HTMLElement).closest('a')) router.push(href);
-  }, [router]);
+    if (mobile) onCollapse(true);
+  }, [router, mobile, onCollapse]);
   const items = useMemo<Item[]>(
     () => [{ key: '/', icon: menuIcon('home'), label: <Link href="/">{homeLabel}</Link> }, ...toItems(menu, go)],
     [menu, homeLabel, go],
@@ -49,7 +52,7 @@ export function Sidebar({ menu, collapsed, onCollapse }: Props) {
   return (
     <Layout.Sider
       breakpoint="lg"
-      collapsedWidth={64}
+      collapsedWidth={mobile ? 0 : 64}
       width={232}
       theme="dark"
       collapsible
@@ -58,7 +61,7 @@ export function Sidebar({ menu, collapsed, onCollapse }: Props) {
       onCollapse={onCollapse}
       aria-label={t('shell.nav')}
     >
-      <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, height: 56, padding: '0 16px', color: token.colorTextLightSolid, fontWeight: 600, fontSize: 16, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+      <Link href="/" onClick={() => { if (mobile) onCollapse(true); }} style={{ display: 'flex', alignItems: 'center', gap: 10, height: 56, padding: '0 16px', color: token.colorTextLightSolid, fontWeight: 600, fontSize: 16, overflow: 'hidden', whiteSpace: 'nowrap' }}>
         <BrandLogo size={32} />
         <span className="los-brand-name">{brand.name}</span>
       </Link>

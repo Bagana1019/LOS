@@ -3,14 +3,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Button, Layout, Result, Spin, theme } from 'antd';
+import { Button, Grid, Layout, Result, Spin, theme } from 'antd';
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import type { MeResponse } from '@los/contracts';
 import { t } from '@los/ui';
-import { canAccess, isPublicPath, isStandalonePath, safeNext } from '../../lib/access';
+import { canAccess, hasOwnShell, isPublicPath, isStandalonePath, safeNext } from '../../lib/access';
 import { useAuth } from '../../lib/auth/auth-context';
+import { NotificationBellContainer } from '../../features/notifications/NotificationBellContainer';
 import { HeaderSearch } from './HeaderSearch';
-import { NotificationBell } from './NotificationBell';
 import { Sidebar } from './Sidebar';
 import { UserMenu } from './UserMenu';
 
@@ -20,10 +20,13 @@ function Frame({ me, children }: { me: MeResponse; children: ReactNode }) {
   const pathname = usePathname();
   const { token } = theme.useToken();
   const [collapsed, setCollapsed] = useState(false);
+  // lg-ээс нарийн (утас, таблет): sidebar давхарлан гарна, контент бүтэн өргөнөөр (320px хүртэл хэвтээ гүйлгэлтгүй)
+  const mobile = Grid.useBreakpoint().lg === false;
   return (
     <Layout hasSider style={{ minHeight: '100vh' }}>
       <a className="los-skip" href="#main">{t('shell.skip')}</a>
-      <Sidebar menu={me.menu} collapsed={collapsed} onCollapse={setCollapsed} />
+      {mobile && !collapsed ? <div className="los-backdrop" onClick={() => setCollapsed(true)} aria-hidden /> : null}
+      <Sidebar menu={me.menu} collapsed={collapsed} onCollapse={setCollapsed} mobile={mobile} />
       <Layout style={{ minWidth: 0 }}>
         <Layout.Header style={{ display: 'flex', alignItems: 'center', gap: 12, height: 56, lineHeight: 'normal', borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
           <Button
@@ -35,11 +38,11 @@ function Frame({ me, children }: { me: MeResponse; children: ReactNode }) {
           />
           <HeaderSearch me={me} />
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <NotificationBell />
+            <NotificationBellContainer />
             <UserMenu user={me.user} />
           </div>
         </Layout.Header>
-        <Layout.Content id="main" style={{ padding: 24, minWidth: 0 }}>
+        <Layout.Content id="main" style={{ padding: mobile ? 12 : 24, minWidth: 0 }}>
           {canAccess(pathname, me.permissions) ? (
             children
           ) : (
@@ -77,5 +80,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
   if (isPublic) return status === 'anonymous' ? <>{children}</> : <Loading />;
   if (status !== 'authenticated' || !me) return <Loading />;
+  if (hasOwnShell(pathname)) return <>{children}</>;
   return <Frame me={me}>{children}</Frame>;
 }
