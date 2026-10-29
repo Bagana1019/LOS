@@ -53,12 +53,14 @@ describe('IntegrationsModule', () => {
 
   it('warns at bootstrap that mock mode serves simulated data, and stays quiet in real mode', async () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    // Only our own message is counted: Nest itself warns when a module takes > 10 ms to serialize, which a slow CI runner can trigger.
+    const simulated = () => warn.mock.calls.map((args) => String(args[0])).filter((message) => /SIMULATED/.test(message));
     try {
       await compile({ INTEGRATION_MODE: 'real' });
-      expect(warn).not.toHaveBeenCalled();
+      expect(simulated()).toEqual([]);
       await compile({ INTEGRATION_MODE: 'mock' });
-      expect(warn).toHaveBeenCalledOnce();
-      expect(String(warn.mock.calls[0][0])).toMatch(/INTEGRATION_MODE=mock.*SIMULATED/);
+      expect(simulated()).toHaveLength(1);
+      expect(simulated()[0]).toMatch(/INTEGRATION_MODE=mock.*SIMULATED/);
     } finally {
       warn.mockRestore();
     }
