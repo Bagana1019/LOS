@@ -14,6 +14,8 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { service: 'origination', prefix: '/api/origination/loan-terms/pricing/tiers', writeOnly: true, permission: 'settings:manage' }, // FR-5.5
   // Policy өөрчлөх (4 нүдтэй хүсэлт үүсгэнэ); service давхар шалгана (maker=ADMIN)
   { service: 'origination', prefix: '/api/origination/maker-checker/policies', writeOnly: true, permission: 'settings:manage' },
+  // ERP синкийн ops API (FIN-SYNC): унших/бичих бүгд ADMIN. Service давхар шалгана (@Permissions('erp-sync:manage'))
+  { service: 'origination', prefix: '/api/origination/erp-sync', permission: 'erp-sync:manage' },
   { service: 'scoring', prefix: '/api/scoring/sosco/models', writeOnly: true, permission: 'settings:manage' },
   { service: 'scoring', prefix: '/api/scoring/bsa/categories', writeOnly: true, permission: 'settings:manage' },
   { service: 'scoring', prefix: '/api/scoring/bsa/rules', writeOnly: true, permission: 'settings:manage' },
