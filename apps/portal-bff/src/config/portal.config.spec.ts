@@ -1,0 +1,96 @@
+import { describe, expect, it } from 'vitest';
+import { ConfigError, loadConfig } from './portal.config';
+
+const prodEnv = {
+  NODE_ENV: 'production',
+  INTEGRATION_MODE: 'real',
+  REDIS_URL: 'redis://redis:6379',
+  ORIGINATION_URL: 'http://origination:4001',
+  PORTAL_JWT_SECRET: 'j'.repeat(40),
+  PORTAL_HASH_SECRET: 'h'.repeat(40),
+  PORTAL_CORS_ORIGINS: 'https://app.example.mn',
+};
+
+describe('loadConfig', () => {
+  it('has safe development defaults (mock integrations, memory store, port 4007, Ulaanbaatar time)', () => {
+    const c = loadConfig({});
+    expect(c).toMatchObject({ env: 'development', port: 4007, integrationMode: 'mock', timezone: 'Asia/Ulaanbaatar', trustProxy: 0 });
+    expect(c.store.kind).toBe('memory');
+    expect(c.internalTimeoutMs).toBe(3000); // CLAUDE.md §3.1: дотоод timeout 3с
+    expect(c.auth).toMatchObject({ accessTtlSec: 600, otpTtlSec: 300, otpMaxAttempts: 5 });
+  });
+
+  it('uses redis when REDIS_URL is present', () => {
+    expect(loadConfig({ REDIS_URL: 'redis://localhost:6379' }).store).toEqual({ kind: 'redis', redisUrl: 'redis://localhost:6379' });
+  });
+
+  it('accepts a complete production configuration', () => {
+    const c = loadConfig(prodEnv);
+    expect(c.store.kind).toBe('redis');
+    expect(c.auth.jwtSecret).toBe('j'.repeat(40));
+    expect(c.cors.origins).toEqual(['https://app.example.mn']);
+  });
+
+  it.each([
+    ['missing JWT secret', { PORTAL_JWT_SECRET: undefined }],
+    ['missing hash secret', { PORTAL_HASH_SECRET: undefined }],
+    ['same secret for jwt and hash', { PORTAL_HASH_SECRET: 'j'.repeat(40) }],
+    ['short secret', { PORTAL_JWT_SECRET: 'short' }],
+    ['mock integrations', { INTEGRATION_MODE: 'mock' }],
+    ['memory store', { PORTAL_STORE: 'memory' }],
+    ['mock otp code', { PORTAL_MOCK_OTP_CODE: '123456' }],
+    ['http cors origin', { PORTAL_CORS_ORIGINS: 'http://app.example.mn' }],
+    ['implicit origination url', { ORIGINATION_URL: undefined }],
+    ['jwt secret shared with the staff gateway', { JWT_SECRET: 'j'.repeat(40) }],
+    ['hash secret shared with the staff gateway', { JWT_SECRET: 'h'.repeat(40) }],
+    ['public development jwt secret', { PORTAL_JWT_SECRET: 'dev-only-portal-jwt-secret-change-me!!' }],
+    ['public development hash secret', { PORTAL_HASH_SECRET: 'dev-only-portal-hash-secret-change-me!' }],
+  ])('refuses to start in production with %s', (_name, patch) => {
+    expect(() => loadConfig({ ...prodEnv, ...patch })).toThrow(ConfigError);
+  });
+
+  // NODE_ENV тавигдаагүй (Dockerfile-д заагаагүй) боловч жинхэнэ интеграцитай deploy dev нууц/тогтмол OTP-тэй босож болохгүй
+  it.each([
+    ['dev secrets', { PORTAL_JWT_SECRET: undefined, PORTAL_HASH_SECRET: undefined }],
+    ['implicit origination url', { ORIGINATION_URL: undefined }],
+    ['a fixed mock OTP code', { PORTAL_MOCK_OTP_CODE: '123456' }],
+    ['no redis (implicit memory store would break multi-instance auth)', { REDIS_URL: undefined }],
+    ['same secret for jwt and hash', { PORTAL_HASH_SECRET: 'j'.repeat(40) }],
+  ])('refuses INTEGRATION_MODE=real even without NODE_ENV=production: %s', (_n, patch) => {
+    const { NODE_ENV: _drop, ...realEnv } = prodEnv;
+    expect(() => loadConfig({ ...realEnv, ...patch })).toThrow(ConfigError);
+    expect(() => loadConfig(realEnv)).not.toThrow();
+  });
+
+  it('mock mode (dev/test): fixed OTP 123456 by default so the documented flow works; real mode never has one', () => {
+    expect(loadConfig({}).auth.mockOtpCode).toBe('123456');
+    expect(loadConfig({ PORTAL_MOCK_OTP_CODE: '654321' }).auth.mockOtpCode).toBe('654321');
+    const { NODE_ENV: _drop, ...realEnv } = prodEnv;
+    expect(loadConfig(realEnv).auth.mockOtpCode).toBeUndefined();
+  });
+
+  it('OTP quotas default to 5/hour per (register, phone) pair and 20/hour per IP', () => {
+    expect(loadConfig({}).auth).toMatchObject({ otpRequestsPerHour: 5, otpRequestsPerHourPerIp: 20 });
+  });
+
+  it('never allows a wildcard CORS origin', () => {
+    expect(() => loadConfig({ PORTAL_CORS_ORIGINS: '*' })).toThrow(ConfigError);
+  });
+
+  it('rejects out-of-range numbers and malformed values', () => {
+    expect(() => loadConfig({ PORTAL_BFF_PORT: '99999' })).toThrow(ConfigError);
+    expect(() => loadConfig({ PORTAL_ACCESS_TTL_SEC: '5' })).toThrow(ConfigError);
+    expect(() => loadConfig({ PORTAL_MOCK_OTP_CODE: '12' })).toThrow(ConfigError);
+    expect(() => loadConfig({ ORIGINATION_URL: 'not a url' })).toThrow(ConfigError);
+  });
+
+  it('error messages never echo secret values', () => {
+    try {
+      loadConfig({ ...prodEnv, PORTAL_JWT_SECRET: 'secret-but-too-short' });
+    } catch (e) {
+      expect((e as Error).message).not.toContain('secret-but-too-short');
+      return;
+    }
+    throw new Error('expected failure');
+  });
+});

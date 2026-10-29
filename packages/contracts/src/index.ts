@@ -9,3 +9,4 @@ export * from './merchant';
 export * from './bsa';
 export * from './customer';
 export * from './erp-sync';
+export * from './portal';
