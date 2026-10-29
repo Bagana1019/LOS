@@ -6,6 +6,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
 import { ValuationModule } from './modules/valuation/valuation.module';
 import { BasePriceModule } from './modules/base-price/base-price.module';
 import { HaircutModule } from './modules/haircut/haircut.module';
+import { CollateralValuationModule } from './modules/collateral-valuation/collateral-valuation.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { HaircutModule } from './modules/haircut/haircut.module';
     ValuationModule,
     BasePriceModule,
     HaircutModule,
+    CollateralValuationModule,
   ],
 })
 export class AppModule {}

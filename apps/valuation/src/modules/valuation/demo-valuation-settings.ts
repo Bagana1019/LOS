@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import type { ValuationSettings, VehiclePricingSettings } from './valuation-settings.port';
 
-// DEMO values. To be replaced by a projection of origination.settings (CLAUDE.md §3.2 rule 8, docs/01 §8);
+// DEMO: values. To be replaced by a projection of origination.settings (CLAUDE.md §3.2 rule 8, docs/01 §8);
 // the keys are proposed as valuation.vehicle.* and must be confirmed by the business before go-live (docs/DECISIONS.md).
 @Injectable()
 export class DemoValuationSettings implements ValuationSettings {
+  readonly demo = true;
+
   async vehiclePricing(): Promise<VehiclePricingSettings> {
     return {
       usdMnt: 3500,
