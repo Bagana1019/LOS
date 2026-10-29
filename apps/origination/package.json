@@ -10,7 +10,8 @@
     "db:generate": "node ../../scripts/prisma.mjs origination generate",
     "db:migrate": "node ../../scripts/prisma.mjs origination migrate deploy",
     "db:migrate:dev": "node ../../scripts/prisma.mjs origination migrate dev",
-    "db:seed": "node ../../scripts/prisma.mjs origination seed"
+    "db:seed": "node ../../scripts/prisma.mjs origination seed",
+    "demo:merchant": "tsx scripts/merchant-demo.ts"
   },
   "dependencies": {
     "@los/contracts": "workspace:*",
