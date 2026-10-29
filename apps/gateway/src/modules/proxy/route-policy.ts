@@ -39,8 +39,9 @@ export function requiredPermission(method: string, path: string): Permission | n
  * FR-8 / NFR-3: scoring нь `applicationId`-ийн хүрээг (өөрийн хүсэлт / салбар) мэдэхгүй тул `underwrite`, `sosco/score`, `sosco/results`-ийг
  * ажилтан шууд дуудахгүй — хүрээг шалгадаг origination фасад (`/api/origination/applications/:id/score…`)-аар л. `sosco/models` (унших/тохируулах) нээлттэй.
  */
+// `dms/documents`: баримтыг origination (хүсэлтийн хүрээ/төлвийн шалгалттай) дамжуулан л үүсгэнэ. `valuation/valuate/collateral`: үнэлгээг origination л хадгална (хүрээ, төлөв, G0).
 export const INTERNAL_ONLY_PREFIXES: readonly string[] = [
-  '/api/dms/esign', '/api/dms/public', '/api/dms/dev',
+  '/api/dms/esign', '/api/dms/public', '/api/dms/dev', '/api/dms/documents', '/api/valuation/valuate/collateral',
   '/api/scoring/underwrite', '/api/scoring/sosco/score', '/api/scoring/sosco/results',
 ];
 

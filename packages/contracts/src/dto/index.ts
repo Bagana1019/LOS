@@ -19,3 +19,7 @@ export * from './notification';
 export * from './report';
 export * from './esign';
 export * from './valuation';
+export * from './collateral';
+export * from './collateral-valuation';
+export * from './collateral-registry';
+export * from './document';

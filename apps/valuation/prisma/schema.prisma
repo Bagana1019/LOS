@@ -72,6 +72,12 @@ model CollateralValuation {
   methodJson      Json?     @map("method_json")
   reportFileId    String?   @map("report_file_id") // dms.file.id
   overrideReason  String?   @map("override_reason")
+  // ── өргөтгөл (docs/03-д байхгүй, DECISIONS.md 2026-10-29 · M6)
+  method          String? // ValuationMethod
+  suggestedValue  Decimal?  @map("suggested_value") @db.Decimal(18, 2) // тухайн үеийн системийн санал (override-тай харьцуулах)
+  haircutSource   String?   @map("haircut_source") // HaircutSource
+  externalRequired Boolean  @default(false) @map("external_required")
+  licenseNo       String?   @map("license_no")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   createdBy       String?   @map("created_by")
