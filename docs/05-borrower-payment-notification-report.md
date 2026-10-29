@@ -78,5 +78,5 @@ Integration тест Module 0-ийн `test/global-setup.ts`-ээр `TEST_DATABAS
 - Dashboard/тайлан Core-ийн бодит үлдэгдлийг бус LOS-ийн ЭТХ ба `payment`-ийг үндэслэнэ; DWH ETL (`dwh-sync`) энэ хүрээнд хийгдээгүй.
 - **Gateway callback:** `payments/callbacks/*` нь `@Public` боловч gateway-н global JWT guard-ийн ард тул QPay/SocialPay-аас шууд дуудагдахгүй. Gateway-д зөвхөн эдгээр замыг JWT-гүй дамжуулах allowlist (+ provider IP/signature шалгалт) нэмэх **follow-up** хэрэгтэй (DECISIONS.md).
 - Web shell (нэвтрэх хуудас, layout) M0-д ороогүй тул хонх layout-д залгагдаагүй (`NotificationBellContainer` зөвхөн экспортлогдсон); web-ийг gateway-ээр дамжуулан e2e ажиллуулаагүй.
-- Prisma миграци: M0-ийн суурь дээр **нэг инкремент** `20261028120000_borrower_payment_notification_report` (`prisma migrate diff`-ээр үүсгэсэн). Дараагийн өөрчлөлт тус бүр шинэ миграци.
+- Prisma миграци: M0-ийн суурь дээр **нэг инкремент** `20261029010000_borrower_payment_notification_report` (`prisma migrate diff`-ээр үүсгэсэн). Дараагийн өөрчлөлт тус бүр шинэ миграци.
 - Web компонентууд бодит хөтөч дээр интерактивээр шалгагдаагүй (SSR render + цэвэр логикийн тест).
