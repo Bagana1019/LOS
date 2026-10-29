@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { menuFor, permissionsFor, type AuthResponse } from '@los/contracts';
 
 const authResponse = (token: string): AuthResponse => ({
@@ -15,6 +15,13 @@ async function load() {
   vi.resetModules(); // access token ба in-flight refresh нь модулийн төлөв
   return { session: await import('./session'), api: await import('../api'), http: await import('../http') };
 }
+
+// Тест бүр `load()`-оор модулийн графыг шинээр ачаалдаг: эхний ачаалал (transform) ачаалалтай CI runner дээр 5с-ийн анхдагч хугацаанаас хэтэрч,
+// "эхний тест унадаг" байсан. Графыг урьдчилан дулаацуулж, энэ файлд хугацааг өргөтгөнө.
+vi.setConfig({ testTimeout: 20_000 });
+beforeAll(async () => {
+  await load();
+}, 60_000);
 
 beforeEach(() => {
   fetchMock = vi.fn();
