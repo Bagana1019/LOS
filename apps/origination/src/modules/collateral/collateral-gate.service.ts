@@ -54,9 +54,10 @@ export class CollateralGateService {
     const product = app.productId ? await tx.product.findFirst({ where: { id: app.productId, orgId: app.orgId } }) : null;
     const gateProduct = toGateProduct(product);
 
-    const [staleDays, ltvMax, insuranceReminderDays] = [
-      await this.settings.get(app.orgId, 'inquiry.stale_days'), await this.settings.get(app.orgId, 'br3.ltv_max'), await this.settings.get(app.orgId, 'collateral.insurance_reminder_days'),
-    ];
+    // Тохиргоог ЭНЭ холболтоор уншина (tx дотор өөр pool холболт авбал зэрэгцээ мутаци pool-д түгжигдэнэ; OrgSettings.getIn)
+    const staleDays = await this.settings.getIn(tx, app.orgId, 'inquiry.stale_days');
+    const ltvMax = await this.settings.getIn(tx, app.orgId, 'br3.ltv_max');
+    const insuranceReminderDays = await this.settings.getIn(tx, app.orgId, 'collateral.insurance_reminder_days');
 
     // Давхар барьцаа: хатуу (өөр идэвхтэй хүсэлт) → G0 issue; зөөлөн (өөр ноорог) → анхааруулга.
     const live = rows.filter((r) => r.releasedAt == null);
