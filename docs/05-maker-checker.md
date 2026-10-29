@@ -97,9 +97,9 @@ stateDiagram-v2
 | `change_request_history` | append-only: seq, event, from/to status, actor_id/roles, comment, data, at |
 | `maker_checker_policy` | org, target_type, action, enabled, checker_roles[], expires_in_hours |
 
-Migration: foundation-ийн `20261028000000_init` (`origination` schema + `outbox` + `audit_log`)-ийн дараах нэмэлт `20261028100000_maker_checker` (baseline нэмээгүй — `docs/00-foundation.md`). Хоосон DB дээр `prisma migrate deploy` ажиллана. Миграци нь Prisma schema-тай ижил (`prisma migrate diff --from-url <db> --to-schema-datamodel prisma/schema.prisma --exit-code`).
+Migration: foundation-ийн `20261028000000_init` (`origination` schema + `outbox` + `audit_log`)-ийн дараах нэмэлт `20261029000000_maker_checker` (baseline нэмээгүй — `docs/00-foundation.md`). Хоосон DB дээр `prisma migrate deploy` ажиллана. Миграци нь Prisma schema-тай ижил (`prisma migrate diff --from-url <db> --to-schema-datamodel prisma/schema.prisma --exit-code`).
 
-`20261028100000_maker_checker/migration.sql`-д Prisma илэрхийлж чадахгүй хамгаалалтууд: CHECK (maker≠checker, шалтгаан/тайлбар, DIRECT, PENDING-д шийдвэр байхгүй), partial unique index (нэг зорилтод нэг PENDING), `change_request_guard` trigger (устгахгүй, терминалаас буцахгүй, илгээсэн агуулга өөрчлөгдөхгүй), history/хүснэгтийн append-only trigger (UPDATE, DELETE, TRUNCATE). Дүрийн `TEXT[]` багана бүр `NOT NULL` (NULL нь CHECK-үүдийг тойрдог тул). Дүрийн жагсаалт (`OFFICER/BRANCH_MANAGER/APPROVER/ADMIN`) SQL CHECK-д давтагдсан — `UserRole`-д дүр нэмбэл шинэ migration-аар `maker_checker_policy_roles`-ийг шинэчилнэ.
+`20261029000000_maker_checker/migration.sql`-д Prisma илэрхийлж чадахгүй хамгаалалтууд: CHECK (maker≠checker, шалтгаан/тайлбар, DIRECT, PENDING-д шийдвэр байхгүй), partial unique index (нэг зорилтод нэг PENDING), `change_request_guard` trigger (устгахгүй, терминалаас буцахгүй, илгээсэн агуулга өөрчлөгдөхгүй), history/хүснэгтийн append-only trigger (UPDATE, DELETE, TRUNCATE). Дүрийн `TEXT[]` багана бүр `NOT NULL` (NULL нь CHECK-үүдийг тойрдог тул). Дүрийн жагсаалт (`OFFICER/BRANCH_MANAGER/APPROVER/ADMIN`) SQL CHECK-д давтагдсан — `UserRole`-д дүр нэмбэл шинэ migration-аар `maker_checker_policy_roles`-ийг шинэчилнэ.
 
 ## 8. Домэйн модуль handler бүртгэх
 

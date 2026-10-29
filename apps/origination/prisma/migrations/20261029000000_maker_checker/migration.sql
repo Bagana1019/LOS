@@ -1,6 +1,6 @@
 -- Maker-Checker (docs/05-maker-checker.md). Эхний хэсэг нь `prisma migrate diff`-ээр үүссэн; доорх "Invariants" хэсэг нь
 -- Prisma-д илэрхийлэгдэхгүй, гэхдээ 4 нүдний зарчмыг аппликейшний алдаанаас үл хамааран DB түвшинд хамгаалдаг.
--- `origination` schema болон outbox нь өмнөх `20261028090000_baseline` migration-аас ирнэ. Дүрүүдийн (TEXT[]) багана NOT NULL —
+-- `origination` schema, outbox болон audit_log нь `20261028000000_init`, `pricing_tier` нь `20261028161107_pricing_tier` migration-аас ирнэ. Дүрүүдийн (TEXT[]) багана NOT NULL —
 -- NULL нь доорх CHECK-үүдийг тойрч гардаг тул (CHECK нь NULL-д "тэнцэхгүй" биш "үл мэдэгдэх" гэж үнэлэгддэг).
 
 -- CreateEnum

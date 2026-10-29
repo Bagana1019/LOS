@@ -9,4 +9,4 @@ Maker-Checker ("4 нүдний зарчим"): нэг хэрэглэгчийн �
 - `change-handler.ts` — домэйн модулийн гэрээ + registry
 - `change-request.store.ts` — persistence port; `infra/` Prisma хэрэгжүүлэлт; `testing/` санах ойн хэрэгжүүлэлт
 - `handlers/policy-change.handler.ts` — policy өөрчлөх (өөрөө 4 нүдтэй)
-- DB хамгаалалт: `prisma/migrations/20261028100000_maker_checker/migration.sql`
+- DB хамгаалалт: `prisma/migrations/20261029000000_maker_checker/migration.sql`
