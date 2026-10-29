@@ -1,7 +1,8 @@
 # scoring: Prisma schema, migration, seed (BSA)
 
 `scoring` сервис нэг PostgreSQL-ийн `scoring` schema-г ашиглана (schema-per-service; өөр schema руу FK хориотой). Энэ баримт нь
-BSA (Bank Statement Analysis, модуль 10) хүснэгтүүд, migration/seed ажиллуулах заавар, `docs/03-data-model.md`-ээс ялгааг тайлбарлана.
+BSA (Bank Statement Analysis, модуль 10) хүснэгтүүд, Модуль 8-ийн (`calculation`, `sosco_*`) нэмэлт баганууд, migration/seed ажиллуулах заавар,
+`docs/03-data-model.md`-ээс ялгааг тайлбарлана.
 
 Хадгалалтын давхарга (repository): `src/modules/bsa/common/persistence/README.md`.
 
@@ -18,7 +19,8 @@ BSA (Bank Statement Analysis, модуль 10) хүснэгтүүд, migration/s
 | `bsa_rule` | Ангиллын дүрэм | `bsa_rule_natural_uq`: (org_id, direction, match_type, pattern, category_code, source) |
 | `bsa_analysis_event` | Шинжилгээний өөрчлөлтийн түүх (append-only) | байхгүй |
 
-`outbox`, `processed_events`, `calculation`, `sosco_*` болон `bsa_suspicion` нь Модуль 0-ийн baseline-д; энэ модуль тэдгээрийг ӨӨРЧИЛӨХГҮЙ.
+`outbox`, `processed_events`, `calculation`, `sosco_*` болон `bsa_suspicion` нь Модуль 0-ийн baseline-д; BSA модуль тэдгээрийг ӨӨРЧИЛӨХГҮЙ
+(`calculation`, `sosco_model`-ийн нэмэлт баганууд — Модуль 8, доорх «Модуль 8» хэсэг).
 
 Гадаад түлхүүр: `bsa_import_job`, `bsa_transaction`, `bsa_analysis_event` -> `bsa_analysis` (ON DELETE CASCADE);
 `bsa_transaction.import_job_id` -> `bsa_import_job` (ON DELETE CASCADE). Тиймээс шинжилгээг устгахад (retention purge, NFR-5) хүүхэд мөрүүд
@@ -61,6 +63,25 @@ BSA (Bank Statement Analysis, модуль 10) хүснэгтүүд, migration/s
 
 `bsa_suspicion` (baseline-д байгаа) нь энэ модульд ашиглагдахгүй — сэжигтэй гүйлгээний 8 дохио (M12c) бичнэ; `pendingSuspiciousCount` одоохондоо 0.
 
+## Модуль 8 — `calculation`, `sosco_model` (Тооцоолол, Sosco Score)
+
+Модуль 8-ийн `20261029070000_underwriting_sosco` migration (ЗӨВХӨН `ALTER TABLE` / `CREATE INDEX`; baseline, BSA migration-ийг засаагүй). Бүх шинэ багана nullable.
+
+| Хүснэгт | Нэмэлт | Утга |
+| --- | --- | --- |
+| `calculation` | `customer_id` | Үндсэн зээлдэгч (Sosco Score-ийн субьект; `ScoringCompleted.soscoScore`-ийн түлхүүр). origination-ийн ID — FK биш |
+| | `result_json` | `UnderwriteResult` бүтнээрээ (`CalculationRecord.result`). `inputs_json` = `ScoreRequest`; `method_a/b/c_json` = 3 `MethodVerdict` |
+| | `selected_reason`, `selected_at` | Сонголтын тайлбар (Q-M8-8, заавал биш), сонгосон цаг. `selected_by` null + `selected_method` байгаа = AUTO, үгүй бол MANUAL |
+| | `stale_reason` | Хуучирсан шалтгаан (FR-7.3). `is_stale` baseline-д |
+| | индекс `calculation_org_id_application_id_computed_at_idx` (`org_id`, `application_id`, `computed_at`) | "Сүүлийн тооцоолол" (байгууллага × хүсэлт). Baseline-ийн `(application_id, computed_at)` индекс хэвээр |
+| `sosco_model` | `params_json` | `SoscoCurves` (муруй, `minCoverage`). NULL (Модуль 0-ийн хуучин v1) => сервис `DEFAULT_SOSCO_CURVES`-ийг хэрэглэнэ |
+
+`policy_check_json` = `{ dti, dscr, dscrCombined, ltv }` (тус бүр `{ value, limit, pass }`; `dti` = A, `dscr` = B, `dscrCombined` = C, `ltv` = BR-3), `stress_json` = `{ rateDeltaPoints, incomeChange, stressedMonthlyPayment, outcomes }`.
+Дэлгэрэнгүй: `src/modules/underwriting/README.md`, `src/modules/sosco/README.md`.
+
+Migration нь шинэ DB дээр baseline + BSA-ийн дараа хэрэглэгдэж, `prisma migrate diff --from-url <migrated DB> --to-schema-datamodel prisma/schema.prisma` хоосон (drift байхгүй) гэдгийг шалгасан
+(multiSchema дээр `--from-migrations` бүтэлгүйтдэг тул мигрэйт хийсэн DB-ийг datamodel-тэй харьцуулна).
+
 ## Migration
 
 Модуль 0-ийн зарчим (`docs/00-foundation.md` §5): baseline `20261028000000_init`-ийг ЗАСАХГҮЙ, зөвхөн шинэ migration нэмнэ.
@@ -87,6 +108,7 @@ SEED_BSA_REFRESH=1 pnpm --filter @los/scoring db:seed  # анхдагч утга
 - Идемпотент: хоёр дахь ажиллуулалт юу ч өөрчлөхгүй. Анхдагчаар зөвхөн ДУТУУ мөрийг нэмнэ, байгааг ӨӨРЧИЛЖ ДАРАХГҮЙ (admin засварласан
   дайчлах хувь, босгыг хамгаална). Ангиллын түлхүүр (org, code); дүрмийн түлхүүр (org, direction, match_type, pattern, category_code, source).
 - `SEED_BSA_REFRESH=1`: ялгаатай мөрийг анхдагч утга руу буцаана (ангилалын талбарууд; дүрмийн `priority`, `is_active`).
+- Sosco Score загвар v1 (`seedSoscoModel`): жин, босго, муруй (`params_json`) нь `@los/calc`-ийн `DEFAULT_SOSCO_WEIGHTS` / `GRADE_THRESHOLDS` / `CURVES` (DEMO). Create-only — байгаа загварыг дарахгүй.
 - Бүгд нэг транзакцид; хэвлэх мэдээлэл зөвхөн тоо (PII байхгүй).
 - Каталогийн загварын шалгалт: `default-catalog.persistence.test.ts` (schema хүчинтэй, дүрэм-ангиллын чиглэл таарна, байгалийн түлхүүр давтагдахгүй).
 

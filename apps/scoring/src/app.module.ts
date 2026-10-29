@@ -4,8 +4,8 @@ import { CommonModule, EventsModule, HealthModule, envFilePaths } from '@los/nes
 import { PrismaModule, PrismaService } from './prisma.service';
 // Feature модуль бүр: өөрийн мөрийг `import` + `imports` хоёрт задлана (мөр тус бүр тусдаа тул зэрэгцээ салбар мерж хийхэд зөрчилгүй).
 import { BsaModule } from './modules/bsa/bsa.module';
-// import { UnderwritingModule } from './modules/underwriting/underwriting.module';
-// import { SoscoModule } from './modules/sosco/sosco.module';
+import { UnderwritingModule } from './modules/underwriting/underwriting.module';
+import { SoscoModule } from './modules/sosco/sosco.module';
 // import { ImportModule } from './modules/bsa/import/import.module';
 // import { ClassifyModule } from './modules/bsa/classify/classify.module';
 // import { DtiModule } from './modules/bsa/dti/dti.module';
@@ -20,8 +20,8 @@ import { BsaModule } from './modules/bsa/bsa.module';
     EventsModule.forRoot({ schema: 'scoring', db: PrismaService }),
     HealthModule.forServiceAsync({ service: 'scoring', inject: [PrismaService], useFactory: (db: PrismaService) => ({ db: () => db.$queryRaw`SELECT 1` }) }),
     BsaModule,
-    // UnderwritingModule,
-    // SoscoModule,
+    UnderwritingModule,
+    SoscoModule,
     // ImportModule,
     // ClassifyModule,
     // DtiModule,
