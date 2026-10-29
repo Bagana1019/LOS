@@ -53,7 +53,7 @@ flowchart LR
   ORI --> BANK & CORE
 ```
 
-### 2.1 apps/ (8)
+### 2.1 apps/ (9)
 | App | Port | Үүрэг | DB schema | docs/01 модуль |
 | --- | --- | --- | --- | --- |
 | `web` | 3000 | Next.js UI — бүх дэлгэц; зөвхөн gateway руу дуудна | — | UI бүгд |
@@ -64,6 +64,7 @@ flowchart LR
 | `valuation` | 4004 | Барьцааны үнэлгээ: суурь үнэ, арга, haircut, гадны үнэлгээ, дахин үнэлгээ | `valuation` | 5 (FR-14) |
 | `dms` | 4005 | Файл сан, checklist, гэрээний загвар docx→PDF, албан бичиг, retention | `dms` | 9, 11 (файл) |
 | `dwh-sync` | 4006 | Event + CDC → DWH; operational DB руу хэзээ ч бичихгүй | DWH (тусдаа) | — |
+| `portal-bff` | 4007 | Харилцагчийн өөртөө үйлчлэх BFF (гар утасны апп/вэб): OTP нэвтрэлт, зээлийн үлдэгдэл, ЭТХ, гэрээ татах, төлбөр. Зөвхөн `origination` дотоод API-г дууддаг; өөрийн DB-гүй (Redis) | — | `docs/05-portal-bff.md` |
 
 ### 2.2 packages/ (5)
 | Package | Агуулга | Дүрэм |
@@ -84,7 +85,7 @@ flowchart LR
 | **Job queue** | Нэг сервис доторх урт ажил | BullMQ (Redis) | BSA импорт, PDF үүсгэх, retention, ноорог архивлах |
 
 ### 3.2 Хатуу дүрэм
-1. `web` → зөвхөн `gateway`. Сервис рүү шууд дуудахгүй.
+1. `web` → зөвхөн `gateway`. Сервис рүү шууд дуудахгүй. Харилцагчийн клиент (гар утасны апп, өөртөө үйлчлэх вэб) → зөвхөн `portal-bff`; `portal-bff` → зөвхөн `origination`.
 2. Сервис хоорондын sync дуудлага зөвхөн `origination → {kyc, scoring, valuation, dms}` чиглэлтэй. Бусад сервис бие биенээ sync дуудахгүй; хэрэгтэй бол event.
 3. **Cross-schema FK хориотой.** Өөр сервисийн entity-г `string id`-аар хадгална; хэрэгтэй бол өөрийн schema-д projection (read model) хийж event-ээр шинэчилнэ.
 4. Event-ийг бизнес транзакцтай **нэг транзакцид outbox-д** бичнэ; relay worker нийтэлнэ. Шууд publish хийхгүй.
