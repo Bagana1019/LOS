@@ -8,6 +8,7 @@ import { SharedModule } from './shared/shared.module';
 import { BorrowerModule } from './modules/borrower/borrower.module';
 // import { IncomeModule } from './modules/income/income.module';
 import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
+import { ScoreModule } from './modules/score/score.module';
 // import { ScheduleModule } from './modules/schedule/schedule.module';
 // import { ApprovalModule } from './modules/approval/approval.module';
 import { ContractModule } from './modules/contract/contract.module';
@@ -34,6 +35,7 @@ import { ErpSyncModule } from './modules/erp-sync/erp-sync.module';
     BorrowerModule,
     // IncomeModule,
     LoanTermsModule,
+    ScoreModule,
     // ScheduleModule,
     // ApprovalModule,
     ContractModule,
