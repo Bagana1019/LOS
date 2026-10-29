@@ -94,6 +94,10 @@ RiskBand          GREEN | YELLOW | RED
 **audit_log** — entity, entity_id, action, actor_id, at, before_json, after_json, application_id (index)
 **file** — storage_key (MinIO), name, mime, size, sha256, uploaded_by
 
+## ERP синк (FIN-SYNC)
+**erp_event** — id (uuid), seq (bigserial, дараалал), org_id, branch_id, idempotency_key (unique org_id-тай), content_hash, event_type (DISBURSEMENT | FEE_DEDUCTION | REPAYMENT), source_id, application_id, contract_no, core_loan_id, customer_id, currency, business_date, correlation_id, amount (numeric(18,2)), data (jsonb — үйл явдлын төрлөөр: олголт `{amount}`, шимтгэл `{fees[], totalAmount}`, төлөлт `{receivedAmount, principal, interest, penalty, fee, overpayment}`), status (PENDING | SENT | DEAD | CANCELLED), attempts, next_attempt_at, locked_until, locked_by, last_error_code, last_error, sent_at, external_ref, target, resolution_note, created_at/updated_at/created_by/updated_by. **Журналын мөр, дансны код байхгүй** — журналыг ERP үүсгэнэ (DECISIONS 2026-10-29).
+**erp_delivery_attempt** — event_id (FK erp_event), attempt_no, outcome (SENT | DUPLICATE | RETRY | DEAD | REQUEUED | CANCELLED), target, external_ref, http_status, error_code, error_message, started_at, finished_at, duration_ms, actor_id, note
+
 ## Хэрэглэгч, эрх
 **user** — org_id, branch_id, username, password_hash, full_name, roles (OFFICER | BRANCH_MANAGER | APPROVER | ADMIN), is_active
 **branch** — org_id, code, name

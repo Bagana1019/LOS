@@ -104,6 +104,16 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
     expect(seen[0]!.raw.includes(bytes)).toBe(true);
   });
 
+  it('route policy: the ERP sync API (reads and writes) is ADMIN only', async () => {
+    const path = '/api/origination/erp-sync/events';
+    for (const u of ['officer.a', 'manager', 'approver']) {
+      expect((await api().get(path).set(bearer(u))).status, `GET ${u}`).toBe(403);
+      expect((await api().post(`${path}/dispatch`).set(bearer(u)).send({})).status, `POST ${u}`).toBe(403);
+    }
+    expect(seen).toHaveLength(0);
+    expect((await api().get(path).set(bearer('admin'))).status).toBe(200);
+  });
+
   it('route policy: settings/blacklist writes need the permission; reads stay open', async () => {
     const put = (u: string, path: string) => api().put(path).set(bearer(u)).send({ value: 1 });
     expect((await put('officer.a', '/api/origination/settings/x')).status).toBe(403);
