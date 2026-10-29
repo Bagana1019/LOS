@@ -4,6 +4,8 @@ import { PrismaClient, type Prisma } from '.prisma/client-scoring';
 /** scoring сервисийн цорын ганц PrismaClient (schema: scoring). */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  // `query` лог ХЭЗЭЭ Ч идэвхжүүлэхгүй (параметрт PII/шифр текст орно, CLAUDE.md §6.5); errorFormat 'minimal' нь алдааны мессежид аргумент хэвлэхгүй.
+  constructor() { super({ log: ['warn'], errorFormat: 'minimal' }); }
   async onModuleInit() { await this.$connect(); }
   async onModuleDestroy() { await this.$disconnect(); }
 }

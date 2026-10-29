@@ -54,13 +54,13 @@ Header мөр заавал: `registerNo,customerType,name,listType,reasonCode,re
 
 ## Өгөгдөл
 
-`origination.blacklist` (`prisma/schema.prisma`, `model Blacklist`). docs/03-ийн `register_no`-г `register_no_encrypted` (AES-256-GCM, aad `blacklist.register_no`, CLAUDE.md §6.5) + `register_no_hash` (`hashRegisterNo` = `blindIndex(normalizeRegisterNo(x))` = HMAC-SHA256, `DATA_INDEX_KEY`) болгосон; давхардал `unique(org_id, register_no_hash, list_type)`. Регистрийг нормчилсон хэлбэрээр (`normalizeRegisterNo`) хадгална. Нэрээр тулгахгүй — зөвхөн регистрээр (нийтлэг нэрээр хуурамч тохирол их).
+`origination.blacklist` (`prisma/schema.prisma`, `model Blacklist`). docs/03-ийн `register_no`-г `register_no_encrypted` (AES-256-GCM, aad `blacklist.register_no`, CLAUDE.md §6.5) + `register_no_hash` (`hashRegisterNo` = `blindIndex(normalizeRegisterNo(x))` = HMAC-SHA256, `DATA_INDEX_KEY`) болгосон; давхардал `unique(org_id, register_no_hash, list_type) WHERE is_active` (partial: идэвхтэй мөр ганц, идэвхгүй түүхэн мөр олон байж болно — Модуль 1/6-ийн тестүүд ч ингэж бичдэг; Prisma partial index-ийг илэрхийлж чадахгүй тул schema.prisma-д `@@unique` гэж тэмдэглэсэн, introspection-д WHERE харагдахгүй). Регистрийг нормчилсон хэлбэрээр (`normalizeRegisterNo`) хадгална. Нэрээр тулгахгүй — зөвхөн регистрээр (нийтлэг нэрээр хуурамч тохирол их).
 
-Migration: baseline `20261028000000_init`-д `register_no_encrypted`, `register_no_hash`, `index(org_id, register_no_hash)` байсан; `20261029000000_blacklist_aml` нь `branch_id` багана, `unique(org_id, register_no_hash, list_type)` ба `index(org_id, is_active)` нэмсэн. `version` багана нэмээгүй: `updatedAt` (миллисекундийн нарийвчлалтай, service тодорхой тавьдаг) нь хувилбар.
+Migration: baseline `20261028000000_init`-д `register_no_encrypted`, `register_no_hash`, `index(org_id, register_no_hash)` байсан; `20261029050000_blacklist_aml` нь `branch_id` багана, `unique(org_id, register_no_hash, list_type) WHERE is_active` (partial: идэвхтэй мөр ганц, идэвхгүй түүхэн мөр олон байж болно) ба `index(org_id, is_active)` нэмсэн. `version` багана нэмээгүй: `updatedAt` (миллисекундийн нарийвчлалтай, service тодорхой тавьдаг) нь хувилбар.
 
 `BlacklistRepository.saveWithEvent(row, event, expectedUpdatedAt: Date | null)`: `null` = шинэ мөр (create), огноо = `row`-г үндэслэсэн мөрийн `updatedAt` (compare-and-set). Алдаа: `DuplicateBlacklistEntryError` (unique зөрчил), `StaleBlacklistEntryError` (`updatedAt` таарахгүй эсвэл мөр алга) — аль аль нь 409 болно. Prisma ба in-memory repository ижил семантиктай. PrismaClient нь origination-ийн нийтлэг `PrismaService` (`PrismaModule`, глобал; `blacklist.prisma.ts` нь `useExisting`-ээр холбоно) — холболт/унтраалтыг апп (`bootstrapService`) удирдана.
 
-Нормчлол өөрчлөгдсөн (`Ү`, үл үзэгдэх/compatibility тэмдэгт, ASCII биш цифр агуулсан регистрийн hash өөрчлөгдсөн) тул өмнөх normaliser-ээр хадгалсан мөрийг дахин hash хийх (backfill) шаардлагатай; скрипт одоогоор байхгүй (`docs/05` §10).
+Нормчлол өөрчлөгдсөн (үл үзэгдэх/compatibility тэмдэгт, ASCII биш цифр агуулсан регистрийн hash өөрчлөгдсөн) тул өмнөх normaliser-ээр хадгалсан мөрийг дахин hash хийх (backfill) шаардлагатай; скрипт одоогоор байхгүй (`docs/05` §10).
 
 ## Орчны хувьсагч
 
@@ -100,3 +100,9 @@ DB-тэй тестийн хаалга нь **`TEST_DATABASE_URL`** (`DATABASE_UR
 - Нэг бичлэгийн endpoint дээрх гэнэтийн DB/шифрийн алдаа 500 (`INTERNAL`); `P2002` → 409, `P2025` → 404 (nest-common filter). Origination-д DB-ийн оролтын алдааг (sqlstate `22021` гэх мэт) 400 болгох interceptor байхгүй (kyc-д `DbInputErrorInterceptor` бий): оролтын хил дээр (NUL, U+FFFD, дан surrogate, `offset`) 500-ын эх үүсвэрийг хаасан.
 - origination-ийн жинхэнэ event-үүдийг kyc-ийн `BlacklistProjectionService`-д өгдөг cross-service тест байхгүй (CLAUDE.md сервис хоорондын import-ыг хориглодог); origination талд event бүр `DomainEvent.parse`-аар шалгагддаг. Дарааллыг kyc талд `hashRegisterNo`-оор бүтээсэн event-ээр тестлэнэ.
 - `BlacklistEntryInput` schema `isUsableRegisterNo`-г ашигладаггүй: түүхий утга ≤ 32, `hasContent` (нормчилсны дараа ≥ 1 үсэг/цифр), `hasOnlyRegisterChars`-ыг л шалгадаг; "нормчилсон урт ≤ 32" дүрэм зөвхөн kyc-ийн `AmlSubject`-д.
+
+## Хайлт (Модуль 1) ба `GET /api/blacklist/check`
+
+* `BlacklistLookupService` (`blacklist-lookup.service.ts`) — `register_no_hash`-аар идэвхтэй бичлэгийг `BlacklistWarning[]` болгоно (BR-9: зөвхөн анхааруулга). `CustomerModule` ашиглана, тиймээс `BlacklistModule` үүнийг export хийнэ.
+* `GET /api/blacklist/check?registerNo=` (`blacklist:read`) — маягтад регистр бичих үед автомат шалгалт. Хүчинтэй хэлбэр биш бол 400 `INVALID_REGISTER_NO`. Маршрут `:id`-ээс өмнө зарлагдсан.
+* **Hash нэг: `customer.registerNoHash`-тай ижил.** `hashRegisterNo` (@los/database) нь хүчинтэй регистрт `blindIndex(normalizeRegisterNo(r))` (@los/contracts)-тай ижил утга өгнө (Ү хэвээр). Тиймээс иргэний бүртгэлийн анхааруулга ба CRUD/импортын бичлэг бие биенээ олно. Оператор Ү-ийн оронд У/Y бичсэн тохиолдлыг зөвхөн kyc-ийн AML (`registerNoHashVariants`) нөхөж харна; `warningsForHash(customer.registerNoHash)` яг таарахыг л олно.

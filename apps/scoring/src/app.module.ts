@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { CommonModule, EventsModule, HealthModule, envFilePaths } from '@los/nest-common';
 import { PrismaModule, PrismaService } from './prisma.service';
 // Feature модуль бүр: өөрийн мөрийг `import` + `imports` хоёрт задлана (мөр тус бүр тусдаа тул зэрэгцээ салбар мерж хийхэд зөрчилгүй).
+import { BsaModule } from './modules/bsa/bsa.module';
 // import { UnderwritingModule } from './modules/underwriting/underwriting.module';
 // import { SoscoModule } from './modules/sosco/sosco.module';
 // import { ImportModule } from './modules/bsa/import/import.module';
@@ -18,6 +19,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
     PrismaModule,
     EventsModule.forRoot({ schema: 'scoring', db: PrismaService }),
     HealthModule.forServiceAsync({ service: 'scoring', inject: [PrismaService], useFactory: (db: PrismaService) => ({ db: () => db.$queryRaw`SELECT 1` }) }),
+    BsaModule,
     // UnderwritingModule,
     // SoscoModule,
     // ImportModule,

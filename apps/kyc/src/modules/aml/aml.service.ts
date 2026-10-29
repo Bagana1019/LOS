@@ -4,7 +4,7 @@ import {
   ScreeningList, type AmlHit, type AmlHitReviewRequest, type AmlListStatus, type AmlPolicy, type AmlScreenRequest,
   type AmlScreeningResult, type AmlSubject, type DomainEvent, type HitStatus,
 } from '@los/contracts';
-import { hashRegisterNo, maskRegisterNoStrict, normalizeRegisterNo } from '@los/database';
+import { hashRegisterNo, maskRegisterNoStrict, normalizeRegisterNo, registerNoHashVariants } from '@los/database';
 import type { RequestContext } from './aml.context';
 import {
   AML_CLOCK, AML_IDS, AML_POLICY_PROVIDER, AML_REPOSITORY, PII_CIPHER, ScreeningRaceError,
@@ -108,7 +108,7 @@ export class AmlService {
         throw new ConflictException('The customer has a blocking screening for a different identity; resolve the open hits first');
       }
       // Fail closed: жагсаалтыг уншиж чадаагүй бол "цэвэр" гэж хэзээ ч хариулахгүй (WatchlistUnavailableError → 503).
-      computed ??= await this.computeHits(req, subject, policy, registerNoHash);
+      computed ??= await this.computeHits(req, subject, policy);
       const hits = carryOverDecisions(previous, registerNoHash, identityKey, computed.fresh);
       const status = deriveScreeningStatus(hits);
       const risk = amlRisk(riskInputOf(subject, hits), policy.risk);
@@ -139,11 +139,13 @@ export class AmlService {
   }
 
   /** Жагсаалтуудаар шалгаж, hit бүрт нотолгооны хуруун мөр (evidenceDigest) тамгалах. Өмнөх шалгалтаас хамаарахгүй тул оролдлого бүрт дахин бодохгүй. */
-  private async computeHits(req: AmlScreenRequest, subject: AmlSubject, policy: AmlPolicy, registerNoHash: string): Promise<ComputedHits> {
+  private async computeHits(req: AmlScreenRequest, subject: AmlSubject, policy: AmlPolicy): Promise<ComputedHits> {
     const wl = { maxStaleHours: policy.maxStaleListHours };
     const un = await this.watchlists.getUn(wl);
     const fatf = await this.watchlists.getFatf(wl);
-    const blacklist = await this.repo.findBlacklistByRegisterHash(req.orgId, registerNoHash);
+    // Оператор Ү-ийн оронд У/Y бичсэн байж болно: У/Ү хослол бүрээр хайж, давхардлыг id-аар хасна (дараалал тогтвортой).
+    const found = await Promise.all(registerNoHashVariants(subject.registerNo).map((hash) => this.repo.findBlacklistByRegisterHash(req.orgId, hash)));
+    const blacklist = [...new Map(found.flat().map((entry) => [entry.id, entry])).values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     const listVersions: Record<string, string> = { UN_SC: stampedVersion(un), FATF: stampedVersion(fatf), INTERNAL_BLACKLIST: 'live' };
     const fresh: AmlHit[] = runScreening({ subject, policy, lists: ScreeningList, un: un.snapshot, fatf: fatf.snapshot, blacklist }).map((c) => ({
       ...c, id: this.ids.uuid(), status: 'OPEN', reviewedBy: null, reviewedAt: null, reviewComment: null,

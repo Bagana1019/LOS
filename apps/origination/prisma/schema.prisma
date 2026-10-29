@@ -330,6 +330,8 @@ model LoanApplication {
   letters          OfficialLetter[]
   disbursements    DisbursementRequest[]
   comments         Comment[]
+  invoices PaymentInvoice[]
+  payments Payment[]
 
   @@unique([orgId, appNo])
   @@unique([orgId, contractNo])
@@ -348,6 +350,15 @@ model LoanApplicationBorrower {
   customerId    String   @map("customer_id")
   role          String // BorrowerRole
   isPrimary     Boolean  @default(false) @map("is_primary")
+  // ── өргөтгөл (docs/03-д байхгүй, DECISIONS.md 2026-10-28): хамтран зээлдэгч / батлан даагчийн нөхцөл
+  relationToPrimary String?   @map("relation_to_primary") // BorrowerRelation
+  liabilityShare    Decimal?  @map("liability_share") @db.Decimal(7, 4) // CO_BORROWER: 0.5 = 50%; null = хамтын хариуцлага
+  guaranteeType     String?   @map("guarantee_type") // GuaranteeType
+  guaranteeAmount   Decimal?  @map("guarantee_amount") @db.Decimal(18, 2) // LIMITED баталгааны дээд дүн
+  consentFileId     String?   @map("consent_file_id") // dms.file.id (гарын үсэгтэй зөвшөөрөл)
+  consentSignedAt   DateTime? @map("consent_signed_at")
+  incomeIncluded    Boolean   @default(false) @map("income_included") // орлого нэгтгэнэ (PRIMARY, CO_BORROWER)
+  note              String?
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   createdBy     String?  @map("created_by")
@@ -357,6 +368,7 @@ model LoanApplicationBorrower {
   customer    Customer        @relation(fields: [customerId], references: [id])
 
   @@unique([applicationId, customerId, role])
+  @@index([applicationId])
   @@index([customerId])
   @@map("loan_application_borrower")
   @@schema("origination")
@@ -547,6 +559,7 @@ model RepaymentScheduleRow {
   balance      Decimal  @db.Decimal(18, 2)
 
   schedule RepaymentSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  allocations PaymentAllocation[]
 
   @@unique([scheduleId, seq])
   @@index([dueDate])
@@ -630,8 +643,14 @@ model Contract {
   contractNo      String    @map("contract_no")
   templateVersion Int?      @map("template_version")
   generatedFileId String?   @map("generated_file_id") // dms.file.id
-  signedFileId    String?   @map("signed_file_id")
+  signedFileId    String?   @map("signed_file_id") // G4: гарын үсэгтэй PDF (e-sign) эсвэл скан (цаас)
   signedAt        DateTime? @map("signed_at")
+  // FR-11.4 цахим гарын үсэг (dms.signing_request-ийн тусгал; CHECK constraint нь migration-д)
+  signChannel          String    @default("PAPER") @map("sign_channel") // PAPER | ESIGN
+  signingRequestId     String?   @map("signing_request_id") // dms.signing_request.id — stale event шүүх түлхүүр
+  signingStatus        String?   @map("signing_status") // SigningStatus; хүсэлт илгээгээгүй бол null
+  signingFailureReason String?   @map("signing_failure_reason") // SigningFailureReason
+  signingSentAt        DateTime? @map("signing_sent_at") // зээлдэгчид линк (SMS) хүрсэн
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   createdBy       String?   @map("created_by")
@@ -717,6 +736,7 @@ model Blacklist {
   createdBy           String?  @map("created_by")
   updatedBy           String?  @map("updated_by")
 
+  // DB-д энэ нь partial unique (WHERE is_active): идэвхтэй мөр ганц, идэвхгүй түүхэн мөр олон (migration 20261029050000_blacklist_aml).
   @@unique([orgId, registerNoHash, listType])
   @@index([orgId, registerNoHash])
   @@index([orgId, isActive])
@@ -760,3 +780,593 @@ model Comment {
   @@map("comment")
   @@schema("origination")
 }
+
+/// FR-5.5 Эрсдэлд суурилсан үнэ: Sosco Score → хүү/шимтгэлийн шатлал. Хадгалах бүрд шинэ version, өмнөх нь is_active=false (түүх хадгална).
+/// product_id = null → байгууллагын нийтлэг шатлал. Хүү, шимтгэл бутархай (0.2399 = 23.99%) — docs/03.
+model PricingTier {
+  id           String    @id @default(uuid())
+  orgId        String    @map("org_id")
+  productId    String?   @map("product_id")
+  version      Int
+  code         String
+  name         String
+  band         String
+  minScore     Int       @map("min_score")
+  interestRate Decimal   @map("interest_rate") @db.Decimal(7, 4)
+  feeRate      Decimal   @map("fee_rate") @db.Decimal(7, 4)
+  isDefault    Boolean   @default(false) @map("is_default")
+  isActive     Boolean   @default(true) @map("is_active")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdBy    String?   @map("created_by")
+  updatedBy    String?   @map("updated_by")
+
+  @@index([orgId, productId, isActive])
+  @@index([orgId, productId, version])
+  @@map("pricing_tier")
+  @@schema("origination")
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Maker-Checker ("4 нүдний зарчим") — docs/05-maker-checker.md. Модуль: src/modules/maker-checker.
+// DB-ийн CHECK / partial unique index / trigger нь migrations/*_maker_checker/migration.sql-д (Prisma илэрхийлж чадахгүй).
+// ───────────────────────────────────────────────────────────────────────────────
+enum ChangeRequestStatus {
+  PENDING
+  APPLIED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  FAILED
+
+  @@map("change_request_status")
+  @@schema("origination")
+}
+
+enum ChangeRequestMode {
+  FOUR_EYES
+  DIRECT
+
+  @@map("change_request_mode")
+  @@schema("origination")
+}
+
+enum ChangeRequestEvent {
+  SUBMITTED
+  APPLIED
+  DIRECT_APPLIED
+  REJECTED
+  CANCELLED
+  EXPIRED
+  FAILED
+
+  @@map("change_request_event")
+  @@schema("origination")
+}
+
+/// Нэг ажилтан (maker) санал болгосон өөрчлөлт/шийдвэр; өөр хэрэглэгч (checker) батласны дараа л хэрэгжинэ.
+model ChangeRequest {
+  id                   String              @id @default(uuid()) @db.Uuid
+  orgId                String              @map("org_id")
+  branchId             String?             @map("branch_id")
+  targetType           String              @map("target_type")
+  targetId             String              @map("target_id")
+  action               String
+  applicationId        String?             @map("application_id")
+  mode                 ChangeRequestMode   @default(FOUR_EYES)
+  status               ChangeRequestStatus @default(PENDING)
+  payload              Json
+  /// Maker илгээх үеийн зорилтын төлөв (handler.snapshot)
+  before               Json?
+  /// Maker харсан үеийн зорилтын хувилбар; apply үед handler харьцуулна (MC-BR-7)
+  baseVersion          String?             @map("base_version")
+  reason               String
+  makerId              String              @map("maker_id")
+  makerRoles           String[]            @map("maker_roles")
+  /// Илгээх үеийн policy-н checkerRoles (snapshot) — дараа policy өөрчлөгдсөн ч хүчинтэй
+  requiredCheckerRoles String[]            @map("required_checker_roles")
+  checkerId            String?             @map("checker_id")
+  checkerRoles         String[]            @map("checker_roles")
+  checkerComment       String?             @map("checker_comment")
+  failureReason        String?             @map("failure_reason")
+  correlationId        String              @map("correlation_id")
+  expiresAt            DateTime            @map("expires_at") @db.Timestamptz(6)
+  decidedAt            DateTime?           @map("decided_at") @db.Timestamptz(6)
+  version              Int                 @default(0)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy            String              @map("created_by")
+  updatedBy            String              @map("updated_by")
+
+  history ChangeRequestHistory[]
+
+  @@index([orgId, status, expiresAt])
+  @@index([orgId, targetType, targetId])
+  @@index([makerId, status])
+  @@index([checkerId])
+  @@index([applicationId])
+  @@map("change_request")
+  @@schema("origination")
+}
+
+/// Append-only аудит түүх (MC-BR-9). UPDATE/DELETE-г trigger хориглоно.
+model ChangeRequestHistory {
+  id              String               @id @default(uuid()) @db.Uuid
+  changeRequestId String               @map("change_request_id") @db.Uuid
+  seq             Int
+  event           ChangeRequestEvent
+  fromStatus      ChangeRequestStatus? @map("from_status")
+  toStatus        ChangeRequestStatus  @map("to_status")
+  actorId         String?              @map("actor_id")
+  actorRoles      String[]             @map("actor_roles")
+  comment         String?
+  data            Json?
+  at              DateTime             @default(now()) @db.Timestamptz(6)
+
+  changeRequest ChangeRequest @relation(fields: [changeRequestId], references: [id], onDelete: Restrict)
+
+  @@unique([changeRequestId, seq])
+  @@map("change_request_history")
+  @@schema("origination")
+}
+
+/// (targetType, action) тус бүрийн 4 нүдний тохиргоо (admin). Мөр байхгүй бол handler-ийн defaultPolicy.
+model MakerCheckerPolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  orgId          String   @map("org_id")
+  targetType     String   @map("target_type")
+  action         String
+  enabled        Boolean  @default(true)
+  checkerRoles   String[] @map("checker_roles")
+  expiresInHours Int      @map("expires_in_hours")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdBy      String   @map("created_by")
+  updatedBy      String   @map("updated_by")
+
+  @@unique([orgId, targetType, action])
+  @@map("maker_checker_policy")
+  @@schema("origination")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// Төлбөр (payment) — QPay / SocialPay / банкны шилжүүлгээр эргэн төлөлт цуглуулах
+// ════════════════════════════════════════════════════════════════════════════════════
+
+model PaymentInvoice {
+  id                   String    @id @default(uuid())
+  orgId                String    @map("org_id")
+  applicationId        String    @map("application_id")
+  scheduleRowId        String?   @map("schedule_row_id")
+  provider             String // PaymentProvider
+  status               String    @default("PENDING") // PaymentInvoiceStatus
+  amount               Decimal   @db.Decimal(18, 2)
+  currency             String    @default("MNT")
+  senderInvoiceNo      String    @unique @map("sender_invoice_no")
+  providerInvoiceId    String?   @map("provider_invoice_id")
+  qrText               String?   @map("qr_text")
+  qrImage              String?   @map("qr_image")
+  deeplinksJson        Json?     @map("deeplinks_json")
+  bankTransferJson     Json?     @map("bank_transfer_json")
+  providerResponseJson Json?     @map("provider_response_json")
+  expiresAt            DateTime  @map("expires_at")
+  paidAt               DateTime? @map("paid_at")
+  note                 String?
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+  createdBy            String?   @map("created_by")
+  updatedBy            String?   @map("updated_by")
+
+  application LoanApplication @relation(fields: [applicationId], references: [id])
+  payments    Payment[]
+
+  @@index([applicationId])
+  @@index([status, expiresAt])
+  @@index([provider, providerInvoiceId])
+  @@map("payment_invoice")
+  @@schema("origination")
+}
+
+model Payment {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  applicationId      String   @map("application_id")
+  invoiceId          String?  @map("invoice_id")
+  provider           String // PaymentProvider
+  providerPaymentId  String   @map("provider_payment_id")
+  amount             Decimal  @db.Decimal(18, 2)
+  currency           String   @default("MNT")
+  paidAt             DateTime @map("paid_at")
+  payerName          String?  @map("payer_name")
+  payerAccountMasked String?  @map("payer_account_masked")
+  unallocatedAmount  Decimal  @default(0) @map("unallocated_amount") @db.Decimal(18, 2)
+  rawJson            Json?    @map("raw_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+  createdBy          String?  @map("created_by")
+
+  application LoanApplication     @relation(fields: [applicationId], references: [id])
+  invoice     PaymentInvoice?     @relation(fields: [invoiceId], references: [id])
+  allocations PaymentAllocation[]
+
+  @@unique([provider, providerPaymentId])
+  @@index([applicationId, paidAt])
+  @@map("payment")
+  @@schema("origination")
+}
+
+model PaymentAllocation {
+  id            String  @id @default(uuid())
+  paymentId     String  @map("payment_id")
+  scheduleRowId String  @map("schedule_row_id")
+  interestPaid  Decimal @map("interest_paid") @db.Decimal(18, 2)
+  principalPaid Decimal @map("principal_paid") @db.Decimal(18, 2)
+  totalPaid     Decimal @map("total_paid") @db.Decimal(18, 2)
+
+  payment Payment              @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  row     RepaymentScheduleRow @relation(fields: [scheduleRowId], references: [id])
+
+  @@index([paymentId])
+  @@index([scheduleRowId])
+  @@map("payment_allocation")
+  @@schema("origination")
+}
+
+// Банкны данснаас орж ирсэн шилжүүлэг (тулгалт). Тааруулж чадсан бол MATCHED + payment_id, үгүй бол UNMATCHED (гараар шийднэ).
+model BankTransferEntry {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  bankCode           String   @map("bank_code")
+  bankReference      String   @map("bank_reference") // банкны гүйлгээний дугаар
+  accountNo          String   @map("account_no") // манай хүлээн авах данс
+  amount             Decimal  @db.Decimal(18, 2)
+  currency           String   @default("MNT")
+  valueDate          DateTime @map("value_date")
+  description        String?
+  payerName          String?  @map("payer_name")
+  payerAccountMasked String?  @map("payer_account_masked")
+  status             String   @default("UNMATCHED") // MATCHED | UNMATCHED | FAILED
+  paymentId          String?  @map("payment_id")
+  rawJson            Json?    @map("raw_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@unique([bankCode, bankReference])
+  @@index([status])
+  @@map("bank_transfer_entry")
+  @@schema("origination")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// Мэдэгдэл (notification) — in-app хонх (docs/03) + SMS / Email / Push хүргэлт
+// ════════════════════════════════════════════════════════════════════════════════════
+
+model NotificationTemplate {
+  id        String   @id @default(uuid())
+  orgId     String   @map("org_id")
+  type      String // NotificationType
+  channel   String // NotificationChannel
+  locale    String   @default("mn")
+  subject   String?
+  body      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  @@unique([orgId, type, channel, locale])
+  @@map("notification_template")
+  @@schema("origination")
+}
+
+model NotificationDelivery {
+  id                String    @id @default(uuid())
+  orgId             String    @map("org_id")
+  type              String // NotificationType
+  channel           String // NotificationChannel (SMS | EMAIL | PUSH)
+  recipientType     String    @map("recipient_type") // RecipientType
+  recipientId       String    @map("recipient_id")
+  address           String? // утас / имэйл / push token — хүлээн авагчийн мэдээлэл (PII), лог-д бичихгүй
+  applicationId     String?   @map("application_id")
+  branchId          String?   @map("branch_id") // хүсэлтийн салбар (denormalized) — BRANCH_MANAGER өөрийн салбарын хүргэлтийг шүүхэд
+  subject           String?
+  body              String
+  payloadJson       Json      @default("{}") @map("payload_json")
+  dedupeKey         String    @unique @map("dedupe_key") // ижил мэдэгдлийг давхар илгээхгүй (event/reminder бүр нэг удаа)
+  status            String    @default("QUEUED") // DeliveryStatus
+  attempts          Int       @default(0)
+  nextAttemptAt     DateTime? @map("next_attempt_at")
+  lastError         String?   @map("last_error")
+  providerMessageId String?   @map("provider_message_id")
+  scheduledFor      DateTime  @default(now()) @map("scheduled_for")
+  sentAt            DateTime? @map("sent_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, nextAttemptAt])
+  @@index([applicationId])
+  @@index([recipientType, recipientId])
+  @@index([orgId, branchId, scheduledFor])
+  @@map("notification_delivery")
+  @@schema("origination")
+}
+
+model NotificationPreference {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  subjectType String   @map("subject_type") // RecipientType
+  subjectId   String   @map("subject_id")
+  channel     String // NotificationChannel
+  enabled     Boolean  @default(true)
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([orgId, subjectType, subjectId, channel]) // байгууллага тус бүрийн тохиргоо тусдаа: өөр org-ийн ADMIN хөндөж чадахгүй
+  @@map("notification_preference")
+  @@schema("origination")
+}
+
+model PushDevice {
+  id         String   @id @default(uuid())
+  orgId      String   @map("org_id")
+  ownerType  String   @map("owner_type") // RecipientType
+  ownerId    String   @map("owner_id")
+  token      String   @unique
+  platform   String // PushPlatform
+  isActive   Boolean  @default(true) @map("is_active")
+  lastSeenAt DateTime @default(now()) @map("last_seen_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([ownerType, ownerId, isActive])
+  @@map("push_device")
+  @@schema("origination")
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════
+// Тайлан (report) — гүйцэтгэл/экспортын аудит (NFR-4, NFR-5: хувийн мэдээлэл гаргасан үйлдэл)
+// ════════════════════════════════════════════════════════════════════════════════════
+
+model ReportRun {
+  id         String   @id @default(uuid())
+  orgId      String   @map("org_id")
+  reportKey  String   @map("report_key")
+  format     String // JSON | XLSX
+  paramsJson Json     @map("params_json")
+  rowCount   Int      @map("row_count")
+  runBy      String?  @map("run_by")
+  runAt      DateTime @default(now()) @map("run_at")
+
+  @@index([reportKey, runAt])
+  @@map("report_run")
+  @@schema("origination")
+}
+
+// ===== Мерчант POS (docs/05 section 7) =====
+// Модуль: apps/origination/src/modules/merchant. docs/03 дүрэм: snake_case, id uuid, created_at/updated_at/created_by/updated_by, org_id; мөнгө numeric(18,2), хувь numeric(7,4).
+// Cross-schema FK хориотой: branch_id, product_id, application_id, created_by нь string ID. Энэ хэсгийн дотоод хамаарал (мерчант → дэлгүүр → лизинг …) л FK-тэй.
+// status/decision/category нь String (Prisma enum биш): утгыг application давхарга (@los/contracts zod) шалгана — enum нь @@schema болон бусад сервисийн схемтэй merge-д төвөгтэй.
+// updated_at-ийг Prisma `@updatedAt`-аар биш repository (Clock) тавина: домэйн бичлэгийн updatedAt яг хадгалагдана (OTP-д л @updatedAt).
+// Нарийссан хүснэгтүүд: pos_lease_otp = created_at/updated_at; pos_lease_event = append-only тул created_at л (хэн: actor_id/actor_label).
+
+model Merchant {
+  id                         String    @id @default(uuid()) @db.Uuid
+  orgId                      String    @map("org_id")
+  version                    Int       @default(1) // optimistic lock (CAS: saveMerchant)
+  code                       String
+  name                       String
+  legalName                  String?   @map("legal_name")
+  companyRegisterNo          String?   @map("company_register_no")
+  category                   String?
+  contactName                String    @map("contact_name")
+  phone                      String
+  email                      String?
+  branchId                   String    @map("branch_id")
+  status                     String
+  statusReason               String?   @map("status_reason")
+  commissionRate             Decimal   @map("commission_rate") @db.Decimal(7, 4)
+  maxTicketAmount            Decimal   @map("max_ticket_amount") @db.Decimal(18, 2)
+  dailyLimitAmount           Decimal?  @map("daily_limit_amount") @db.Decimal(18, 2)
+  settlementBankCode         String    @map("settlement_bank_code")
+  settlementAccountEncrypted String    @map("settlement_account_encrypted")
+  settlementAccountLast4     String    @map("settlement_account_last4")
+  settlementHolderName       String    @map("settlement_holder_name")
+  contractNo                 String?   @map("contract_no")
+  contractSignedAt           DateTime? @map("contract_signed_at") @db.Timestamptz(6)
+  createdAt                  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  createdBy                  String?   @map("created_by")
+  updatedBy                  String?   @map("updated_by")
+
+  stores MerchantStore[]
+  plans  PosLeasePlan[]
+  leases PosLease[]
+
+  @@unique([orgId, code])
+  @@index([orgId, status])
+  @@index([branchId])
+  @@map("merchant")
+  @@schema("origination")
+}
+
+model MerchantStore {
+  id          String   @id @default(uuid()) @db.Uuid
+  orgId       String   @map("org_id")
+  version     Int      @default(1) // optimistic lock (CAS: saveStore)
+  merchantId  String   @map("merchant_id") @db.Uuid
+  code        String
+  name        String
+  addressJson Json     @map("address_json")
+  phone       String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  createdBy   String?  @map("created_by")
+  updatedBy   String?  @map("updated_by")
+
+  merchant Merchant   @relation(fields: [merchantId], references: [id])
+  leases   PosLease[]
+
+  @@unique([merchantId, code])
+  @@map("merchant_store")
+  @@schema("origination")
+}
+
+model PosLeasePlan {
+  id                  String    @id @default(uuid()) @db.Uuid
+  orgId               String    @map("org_id")
+  version             Int       @default(1) // optimistic lock (CAS: savePlan)
+  merchantId          String?   @map("merchant_id") @db.Uuid // null = бүх мерчантад
+  code                String
+  name                String
+  productId           String?   @map("product_id") // origination.product (Модуль 5) — string ID, FK биш
+  goodsCategoriesJson Json      @map("goods_categories_json")
+  minAmount           Decimal   @map("min_amount") @db.Decimal(18, 2)
+  maxAmount           Decimal   @map("max_amount") @db.Decimal(18, 2)
+  termOptionsJson     Json      @map("term_options_json")
+  annualRate          Decimal   @map("annual_rate") @db.Decimal(7, 4)
+  feeRate             Decimal   @map("fee_rate") @db.Decimal(7, 4)
+  minDownPaymentRate  Decimal   @map("min_down_payment_rate") @db.Decimal(7, 4)
+  commissionRate      Decimal?  @map("commission_rate") @db.Decimal(7, 4) // null → мерчантын commission_rate
+  policyJson          Json      @default("{}") @map("policy_json")
+  validFrom           DateTime? @map("valid_from") @db.Timestamptz(6)
+  validTo             DateTime? @map("valid_to") @db.Timestamptz(6)
+  isActive            Boolean   @default(true) @map("is_active")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  createdBy           String?   @map("created_by")
+  updatedBy           String?   @map("updated_by")
+
+  merchant Merchant?  @relation(fields: [merchantId], references: [id])
+  leases   PosLease[]
+
+  @@unique([orgId, code])
+  @@index([orgId, merchantId])
+  @@map("pos_lease_plan")
+  @@schema("origination")
+}
+
+model PosLease {
+  id         String @id @default(uuid()) @db.Uuid
+  orgId      String @map("org_id")
+  branchId   String @map("branch_id") // BR-12: merchant.branch_id
+  leaseNo    String @unique @map("lease_no")
+  version    Int    @default(1) // optimistic lock
+  merchantId String @map("merchant_id") @db.Uuid
+  storeId    String @map("store_id") @db.Uuid
+  planId     String @map("plan_id") @db.Uuid
+  planCode   String @map("plan_code")
+  planName   String @map("plan_name")
+  status     String
+
+  idempotencyKey String @map("idempotency_key")
+  requestHash    String @map("request_hash")
+
+  // POS-BR-7: регистр шифрлэгдсэн + хайлтын HMAC hash + масклагдсан; API/лог/event-д бүтнээр нь гаргахгүй
+  buyerRegisterEncrypted String  @map("buyer_register_encrypted")
+  buyerRegisterHash      String  @map("buyer_register_hash")
+  buyerRegisterMasked    String  @map("buyer_register_masked")
+  buyerPhone             String  @map("buyer_phone")
+  buyerLastName          String? @map("buyer_last_name")
+  buyerFirstName         String? @map("buyer_first_name")
+
+  goodsCategory String  @map("goods_category")
+  goodsName     String  @map("goods_name")
+  goodsSerialNo String? @map("goods_serial_no")
+  goodsPrice    Decimal @map("goods_price") @db.Decimal(18, 2)
+
+  // quote_json = PosQuote snapshot (эх сурвалж). Доорх талбарууд нь тайлан/нийлбэр/индексэд зориулсан денормализаци (quote-оос repository бөглөнө).
+  quoteJson                Json    @map("quote_json")
+  downPayment              Decimal @map("down_payment") @db.Decimal(18, 2)
+  financedAmount           Decimal @map("financed_amount") @db.Decimal(18, 2)
+  feeAmount                Decimal @map("fee_amount") @db.Decimal(18, 2)
+  principal                Decimal @db.Decimal(18, 2)
+  termMonths               Int     @map("term_months")
+  annualRate               Decimal @map("annual_rate") @db.Decimal(7, 4)
+  monthlyPayment           Decimal @map("monthly_payment") @db.Decimal(18, 2)
+  merchantCommissionAmount Decimal @map("merchant_commission_amount") @db.Decimal(18, 2)
+  merchantNetAmount        Decimal @map("merchant_net_amount") @db.Decimal(18, 2)
+
+  decision            String?
+  decisionReasonsJson Json      @default("[]") @map("decision_reasons_json")
+  dtiRatio            Decimal?  @map("dti_ratio") @db.Decimal(12, 4) // ratio (хувь биш): ӨОХ хэт өндөр байхад numeric(7,4) халих эрсдэлтэй тул өргөн
+  affordabilityJson   Json?     @map("affordability_json")
+  screeningJson       Json?     @map("screening_json") // PII-гүй хураангуй
+  decidedAt           DateTime? @map("decided_at") @db.Timestamptz(6)
+  decidedBy           String?   @map("decided_by")
+  decisionComment     String?   @map("decision_comment")
+  consentVerifiedAt   DateTime? @map("consent_verified_at") @db.Timestamptz(6)
+  consentTextVersion  String?   @map("consent_text_version")
+  expiresAt           DateTime? @map("expires_at") @db.Timestamptz(6)
+  acceptedAt          DateTime? @map("accepted_at") @db.Timestamptz(6)
+  deliveredAt         DateTime? @map("delivered_at") @db.Timestamptz(6)
+  deliveredBy         String?   @map("delivered_by")
+  settledAt           DateTime? @map("settled_at") @db.Timestamptz(6)
+  settlementRef       String?   @map("settlement_ref")
+  cancelledAt         DateTime? @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason        String?   @map("cancel_reason")
+  applicationId       String?   @map("application_id") // loan_application.id (string, FK биш); Модуль 2 хүртэл хоосон
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  createdBy String?  @map("created_by")
+  updatedBy String?  @map("updated_by")
+
+  merchant Merchant        @relation(fields: [merchantId], references: [id])
+  store    MerchantStore   @relation(fields: [storeId], references: [id])
+  plan     PosLeasePlan    @relation(fields: [planId], references: [id])
+  otps     PosLeaseOtp[]
+  events   PosLeaseEvent[]
+
+  @@unique([merchantId, idempotencyKey])
+  @@index([merchantId, status])
+  @@index([merchantId, createdAt])
+  @@index([storeId, createdAt])
+  @@index([orgId, createdAt])
+  @@index([branchId])
+  @@index([buyerRegisterHash])
+  @@index([status, expiresAt])
+  @@map("pos_lease")
+  @@schema("origination")
+}
+
+model PosLeaseOtp {
+  id           String    @id @default(uuid()) @db.Uuid
+  orgId        String    @map("org_id")
+  leaseId      String    @map("lease_id") @db.Uuid
+  purpose      String // CONSENT | ACCEPT
+  codeHash     String    @map("code_hash") // HMAC (POS_OTP_SECRET); код өөрөө хадгалагдахгүй
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(6)
+  attempts     Int       @default(0)
+  sentToMasked String    @map("sent_to_masked")
+  sentAt       DateTime  @map("sent_at") @db.Timestamptz(6)
+  verifiedAt   DateTime? @map("verified_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6) // OtpRecord-д stamp байхгүй тул Prisma автоматаар
+
+  lease PosLease @relation(fields: [leaseId], references: [id])
+
+  @@index([leaseId, purpose, sentAt])
+  @@map("pos_lease_otp")
+  @@schema("origination")
+}
+
+// Append-only timeline (POS-FR-11). id нь цаг-эрэмбэтэй (UUIDv7) тул (at, id) эрэмбэ нь ижил `at`-тай бичлэгүүдэд оруулсан дарааллыг хадгална.
+model PosLeaseEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  orgId      String   @map("org_id")
+  leaseId    String   @map("lease_id") @db.Uuid
+  at         DateTime @db.Timestamptz(6)
+  action     String
+  fromStatus String?  @map("from_status")
+  toStatus   String?  @map("to_status")
+  actorId    String?  @map("actor_id") // SYSTEM / BUYER-д null
+  actorLabel String   @map("actor_label") // `SYSTEM` | `BUYER` | `MERCHANT:<userId>` | `LENDER:<userId>`
+  dataJson   Json?    @map("data_json")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  lease PosLease @relation(fields: [leaseId], references: [id])
+
+  @@index([leaseId, at])
+  @@map("pos_lease_event")
+  @@schema("origination")
+}
+
+// ===== Мерчант POS төгсгөл =====

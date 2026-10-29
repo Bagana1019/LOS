@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import request from 'supertest';
 import { BlacklistEntry, BlacklistImportResult, DomainEvent } from '@los/contracts';
 import { hashRegisterNo } from '@los/database';
+import { BlacklistLookupService } from './blacklist-lookup.service';
 import { BlacklistModule } from './blacklist.module';
 import { BLACKLIST_PRISMA } from './blacklist.prisma';
 import { BLACKLIST_REPOSITORY } from './blacklist.repository';
@@ -89,6 +90,7 @@ type LogLine = { level: 'log' | 'error' | 'warn' | 'debug' | 'verbose'; text: st
 describe('BlacklistController (HTTP)', () => {
   let app: INestApplication;
   let repo: InMemoryBlacklistRepository;
+  let lookup: { warningsForRegisterNo: ReturnType<typeof vi.fn> };
   let logs: LogLine[];
   const api = () => request(app.getHttpServer());
   /** Nest-ийн бүх лог (route mapping зэрэг), түвшинтэй нь: "алдаа/лог-д регистр орохгүй", "ERROR лог гарахгүй" гэж шалгахад. */
@@ -103,12 +105,14 @@ describe('BlacklistController (HTTP)', () => {
   beforeEach(async () => {
     vi.stubEnv('DEFAULT_ORG_ID', '');
     repo = new InMemoryBlacklistRepository();
+    lookup = { warningsForRegisterNo: vi.fn(async () => []) };
     const moduleRef = await Test.createTestingModule({ imports: [BlacklistModule] })
       .overrideProvider(BLACKLIST_PRISMA).useValue({})
       .overrideProvider(BLACKLIST_REPOSITORY).useValue(repo)
       .overrideProvider(PII_CIPHER).useValue(fakeCipher)
       .overrideProvider(BLACKLIST_CLOCK).useValue(new FixedClock())
       .overrideProvider(BLACKLIST_IDS).useValue(new SequentialIds())
+      .overrideProvider(BlacklistLookupService).useValue(lookup)
       .compile();
     logs = [];
     app = moduleRef.createNestApplication({ logger: false });
@@ -208,6 +212,34 @@ describe('BlacklistController (HTTP)', () => {
     it('generates a correlation id when the header is absent', async () => {
       await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(201);
       expect(repo.events[0].correlationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/);
+    });
+  });
+
+  // Модуль 1: иргэний маягт регистр бичихэд дуудна. `:id`-ээс өмнө зарлагдсан тул "check" нь id гэж ойлгогдохгүй.
+  describe('GET /api/blacklist/check', () => {
+    const warning = { code: 'BLACKLISTED', severity: 'WARNING', listType: 'DELINQUENT', reasonCode: 'OVERDUE_90', reasonText: null, registeredAt: '2026-10-28T00:00:00.000Z' };
+
+    it('answers the normalised register with the warnings of the caller organisation (BR-9: warning only, still 200)', async () => {
+      lookup.warningsForRegisterNo.mockResolvedValueOnce([warning]);
+      const res = await api().get('/api/blacklist/check').query({ registerNo: ' уб 90010112 ' }).set(as('OFFICER')).expect(200);
+      expect(res.body).toEqual({ registerNo: 'УБ90010112', blacklisted: true, warnings: [warning] });
+      expect(lookup.warningsForRegisterNo).toHaveBeenCalledWith('org-1', 'УБ90010112');
+    });
+
+    it('answers blacklisted=false with no warnings for a clean register', async () => {
+      const res = await api().get('/api/blacklist/check').query({ registerNo: 'УБ90010113' }).set(as('OFFICER')).expect(200);
+      expect(res.body).toEqual({ registerNo: 'УБ90010113', blacklisted: false, warnings: [] });
+    });
+
+    // Query-ийн zod алдааг (регистр байхгүй / давхар) глобал AllExceptionsFilter 400 VALIDATION_FAILED болгоно: test/customer.e2e.test.ts-д шалгагдана.
+    it('answers 400 INVALID_REGISTER_NO for a malformed register, without a lookup', async () => {
+      const bad = await api().get('/api/blacklist/check').query({ registerNo: 'ABC' }).set(as('OFFICER')).expect(400);
+      expect(bad.body.code ?? bad.body.message?.code).toBe('INVALID_REGISTER_NO');
+      expect(lookup.warningsForRegisterNo).not.toHaveBeenCalled();
+    });
+
+    it('requires authentication', async () => {
+      await api().get('/api/blacklist/check').query({ registerNo: 'УБ90010112' }).set({ 'X-Org-Id': 'org-1' }).expect(401);
     });
   });
 

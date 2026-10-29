@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { AmlRiskLevel, AmlSubjectType, ScreeningList, ScreeningStatus } from './compliance';
+import { MakerCheckerEvents } from './maker-checker';
+import { ESignProvider, SigningFailureReason } from './enums';
 // Event каталог — CLAUDE.md §4. Нэр: <Aggregate><PastTenseVerb>, version заавал.
 const base = z.object({
   eventId: z.string().uuid(), occurredAt: z.string().datetime(), version: z.literal(1),
@@ -25,6 +27,20 @@ export const BlacklistEntryChanged = base.extend({ type: z.literal('BlacklistEnt
 export type AmlScreeningCompleted = z.infer<typeof AmlScreeningCompleted>;
 export type AmlHitReviewed = z.infer<typeof AmlHitReviewed>;
 export type BlacklistEntryChanged = z.infer<typeof BlacklistEntryChanged>;
-export const DomainEvent = z.discriminatedUnion('type', [ApplicationSubmitted, ApplicationApproved, ApplicationReturned, ApplicationStatusChanged, DisbursementApproved, KycCompleted, StatementImported, ScoringCompleted, ValuationCompleted, DocumentUploaded, SettingsChanged, AmlScreeningCompleted, AmlHitReviewed, BlacklistEntryChanged]);
+// FR-11.4 Цахим гарын үсэг (dms гаргана → origination, dwh). correlationId нь origination-ы эхлүүлсэн хүсэлтийнхтэй ижил.
+export const ContractSigningRequested = base.extend({ type: z.literal('ContractSigningRequested'), signingRequestId: z.string(), applicationId: z.string(), contractId: z.string(), contractNo: z.string(), linkExpiresAt: z.string().datetime() });
+export const ContractSigned = base.extend({ type: z.literal('ContractSigned'), signingRequestId: z.string(), applicationId: z.string(), contractId: z.string(), contractNo: z.string(), provider: z.enum(ESignProvider), signedFileId: z.string(), signatureFileId: z.string(), originalSha256: z.string(), signedSha256: z.string(), signedAt: z.string().datetime(), verificationCode: z.string() });
+export const ContractSigningFailed = base.extend({ type: z.literal('ContractSigningFailed'), signingRequestId: z.string(), applicationId: z.string(), contractId: z.string(), contractNo: z.string(), reason: z.enum(SigningFailureReason) });
+export const BorrowersChanged = base.extend({ type: z.literal('BorrowersChanged'), applicationId: z.string(), change: z.enum(['ADDED','UPDATED','REMOVED','PRIMARY_CHANGED']), customerId: z.string(), role: z.enum(['PRIMARY','CO_BORROWER','GUARANTOR','PLEDGOR']), borrowers: z.array(z.object({ customerId: z.string(), role: z.enum(['PRIMARY','CO_BORROWER','GUARANTOR','PLEDGOR']), incomeIncluded: z.boolean() })) });
+export const PaymentReceived = base.extend({ type: z.literal('PaymentReceived'), paymentId: z.string(), applicationId: z.string(), provider: z.enum(['QPAY','SOCIALPAY','BANK_TRANSFER']), amount: z.number(), currency: z.string(), paidAt: z.string().datetime(), unallocatedAmount: z.number(), scheduleRowIds: z.array(z.string()) });
+// Мерчант POS (docs/05-merchant-pos.md §7) — PII-гүй: дэлгэрэнгүйг origination-аас leaseId-аар авна.
+export const PosLeaseDecided = base.extend({ type: z.literal('PosLeaseDecided'), leaseId: z.string(), leaseNo: z.string(), merchantId: z.string(), decision: z.enum(['APPROVE', 'REFER', 'DECLINE']), decidedBy: z.enum(['SYSTEM', 'REVIEWER']), financedAmount: z.number(), decisionSeconds: z.number() });
+export const PosLeaseAccepted = base.extend({ type: z.literal('PosLeaseAccepted'), leaseId: z.string(), leaseNo: z.string(), merchantId: z.string(), financedAmount: z.number(), principal: z.number(), termMonths: z.number().int(), annualRate: z.number(), monthlyPayment: z.number() });
+export const PosLeaseDelivered = base.extend({ type: z.literal('PosLeaseDelivered'), leaseId: z.string(), leaseNo: z.string(), merchantId: z.string(), netAmount: z.number(), commissionAmount: z.number() });
+export const PosLeaseSettled = base.extend({ type: z.literal('PosLeaseSettled'), leaseId: z.string(), leaseNo: z.string(), merchantId: z.string(), netAmount: z.number(), settlementRef: z.string() });
+export const PosLeaseCancelled = base.extend({ type: z.literal('PosLeaseCancelled'), leaseId: z.string(), leaseNo: z.string(), merchantId: z.string(), fromStatus: z.string(), reason: z.string() });
+export const MerchantStatusChanged = base.extend({ type: z.literal('MerchantStatusChanged'), merchantId: z.string(), from: z.string(), to: z.string(), reason: z.string() });
+export const DomainEvent = z.discriminatedUnion('type', [ApplicationSubmitted, ApplicationApproved, ApplicationReturned, ApplicationStatusChanged, DisbursementApproved, KycCompleted, StatementImported, ScoringCompleted, ValuationCompleted, DocumentUploaded, SettingsChanged, BorrowersChanged, PaymentReceived, ...MakerCheckerEvents, PosLeaseDecided, PosLeaseAccepted, PosLeaseDelivered, PosLeaseSettled, PosLeaseCancelled, MerchantStatusChanged,
+  ContractSigningRequested, ContractSigned, ContractSigningFailed, AmlScreeningCompleted, AmlHitReviewed, BlacklistEntryChanged]);
 export type DomainEvent = z.infer<typeof DomainEvent>;
 export const EVENT_STREAM = 'los:events';

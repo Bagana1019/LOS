@@ -16,7 +16,7 @@ UN хориг арга хэмжээ, FATF өндөр эрсдэлтэй улс, 
 
 ## Хадгалалт
 
-kyc schema-д `aml_check` (нэг шалгалтын нэгтгэл), `aml_hit`, `blacklist_projection` (migration `20261029000000_aml_check`; baseline `20261028000000_init`-ийг хөндөөгүй). docs/03-ийн `aml_screening` өөрчлөгдөөгүй, энэ модуль ашигладаггүй. Регистр `aml_check.register_no_encrypted`-д AES-256-GCM (aad `aml_check.register_no`), lookup-д `register_no_hash` (HMAC-SHA256, `DATA_INDEX_KEY`).
+kyc schema-д `aml_check` (нэг шалгалтын нэгтгэл), `aml_hit`, `blacklist_projection` (migration `20261029050000_aml_check`; baseline `20261028000000_init`-ийг хөндөөгүй). docs/03-ийн `aml_screening` өөрчлөгдөөгүй, энэ модуль ашигладаггүй. Регистр `aml_check.register_no_encrypted`-д AES-256-GCM (aad `aml_check.register_no`), lookup-д `register_no_hash` (HMAC-SHA256, `DATA_INDEX_KEY`).
 
 ## Үндсэн дүрмүүд
 
@@ -42,7 +42,7 @@ Public API (`matching/index.ts`): `normalizeName`, `normalizeNameForms`, `tokeni
 
 Регистрийн таарал (`REGISTER_EXACT`): улсын шүүлтүүр зөвхөн Монгол хэлбэрийн регистрт (хувь хүн = 2 кирилл үсэг + 8 цифр, ААН = 7 цифр); бусад хэлбэр (гадаад паспорт) улсаар шүүгдэхгүй.
 
-`@los/contracts` нэмж экспортолсон: `isUsableRegisterNo`, `normalizedRegisterNoLength`, `nameTokenCount`, `REGISTER_NO_MAX_LENGTH` (32), `MAX_NAME_TOKENS` (12), `MAX_SUBJECT_NAME_TOKENS` (48), `AML_ID_MAX_LENGTH` (128). Регистрийн нормчлол нь `@los/database` `normalizeRegisterNo` (Cf устгах → NFKC → том үсэг → NFKC → үсэг/цифр биш бүгдийг устгах → цифр ASCII → look-alike, `Ү→У`); `engine/register-contract-parity.test.ts` contracts-ийн урт тооцоотой тулгана. `engine/subject-names.ts`-ийн `hasScreenableName` нь service-д холбогдсон (нормчлогдоод бүх нэр хоосон бол 400).
+`@los/contracts` нэмж экспортолсон: `isUsableRegisterNo`, `normalizedRegisterNoLength`, `nameTokenCount`, `REGISTER_NO_MAX_LENGTH` (32), `MAX_NAME_TOKENS` (12), `MAX_SUBJECT_NAME_TOKENS` (48), `AML_ID_MAX_LENGTH` (128). Регистрийн нормчлол нь `@los/database` `normalizeRegisterNo` (Cf устгах → NFKC → том үсэг → NFKC → үсэг/цифр биш бүгдийг устгах → цифр ASCII → look-alike; кирилл `Ү` хэвээр — @los/contracts `normalizeRegisterNo`-той ижил hash); UN-ийн таних тэмдэгт `foldRegisterNo` (`Ү→У`), дотоод хар жагсаалт `registerNoHashVariants` (У/Ү хослол, ≤ 4 hash) ашиглана; `engine/register-contract-parity.test.ts` contracts-ийн урт тооцоотой тулгана. `engine/subject-names.ts`-ийн `hasScreenableName` нь service-д холбогдсон (нормчлогдоод бүх нэр хоосон бол 400).
 
 ## Тест
 

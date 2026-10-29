@@ -100,6 +100,24 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
       expect(await repo.findById(orgId, clash.id)).toBeNull();
     });
 
+    // Unique нь partial (WHERE is_active): идэвхгүй түүхэн мөр олон байж болно (Модуль 1/6-ийн тестүүд ч ингэж бичдэг).
+    it('keeps inactive history rows beside one active row, rejects a second active one, and findByKey prefers the active row', async () => {
+      const old1 = makeRow({ isActive: false, updatedAt: new Date('2026-10-28T09:00:01.000Z'), reasonCode: 'OLD1' });
+      const old2 = makeRow({ isActive: false, updatedAt: new Date('2026-10-28T09:00:02.000Z'), reasonCode: 'OLD2' });
+      await repo.saveWithEvent(old1, makeEvent(old1), null);
+      await repo.saveWithEvent(old2, makeEvent(old2), null);
+      expect(await repo.findByKey(orgId, old1.registerNoHash, old1.listType)).toMatchObject({ id: old2.id });
+
+      const active = makeRow({ updatedAt: new Date('2026-10-28T09:00:00.500Z'), reasonCode: 'NOW' });
+      await repo.saveWithEvent(active, makeEvent(active), null);
+      expect(await repo.findByKey(orgId, active.registerNoHash, active.listType)).toMatchObject({ id: active.id, isActive: true });
+
+      const second = makeRow();
+      await expect(repo.saveWithEvent(second, makeEvent(second), null)).rejects.toBeInstanceOf(DuplicateBlacklistEntryError);
+      // Идэвхгүй мөрийг идэвхжүүлэх нь өөр идэвхтэй мөр байхад мөн няцна.
+      await expect(repo.saveWithEvent({ ...old2, isActive: true, updatedAt: new Date('2026-10-28T09:00:03.000Z') }, makeEvent(old2), old2.updatedAt)).rejects.toBeInstanceOf(DuplicateBlacklistEntryError);
+    });
+
     it('allows the same register under another listType or org', async () => {
       const row = makeRow();
       await repo.saveWithEvent(row, makeEvent(row), null);

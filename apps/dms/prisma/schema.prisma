@@ -146,3 +146,85 @@ model RetentionPolicy {
   @@map("retention_policy")
   @@schema("dms")
 }
+
+// FR-11.4 Цахим гарын үсгийн хүсэлт. Багана бүр SigningRequestRecord-той (modules/esign/ports/signing.store.ts) 1:1.
+// Enum-ууд (@los/contracts) Prisma enum биш String — status/provider/failure_reason-ийн CHECK constraint болон
+// "нэг гэрээнд ЗӨВХӨН нэг идэвхтэй хүсэлт" PARTIAL UNIQUE INDEX (signing_request_active_contract_key:
+// UNIQUE (contract_id) WHERE status IN ('PENDING','IN_PROGRESS','FINALIZING')) миграцид гараар нэмсэн — Prisma эдгээрийг schema-д
+// илэрхийлж чадахгүй (`prisma migrate diff` тэдгээрийг drift гэж үзэхгүй). Шинэ миграци үүсгэхдээ CHECK/partial index-ийг устгаагүй эсэхийг шалга.
+// org_id, application_id, contract_id, *_file_id, signer_customer_id — бусад сервис/модулийн id (string, FK-гүй).
+model SigningRequest {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  orgId                   String    @map("org_id")
+  applicationId           String    @map("application_id")
+  contractId              String    @map("contract_id")
+  contractNo              String    @map("contract_no")
+  /// SigningStatus
+  status                  String
+  /// ESignProvider; зээлдэгч сонгох хүртэл null
+  provider                String?
+  providerRef             String?   @map("provider_ref")
+  challengeCode           String?   @map("challenge_code")
+  deepLink                String?   @map("deep_link")
+  sessionExpiresAt        DateTime? @map("session_expires_at") @db.Timestamptz(3)
+  sourceFileId            String    @map("source_file_id")
+  signedFileId            String?   @map("signed_file_id")
+  signatureFileId         String?   @map("signature_file_id")
+  originalSha256          String    @map("original_sha256")
+  signedSha256            String?   @map("signed_sha256")
+  signerCustomerId        String    @map("signer_customer_id")
+  signerName              String    @map("signer_name")
+  /// SensitiveFieldCipher-ээр шифрлэгдсэн (CLAUDE.md §6.5)
+  signerRegisterEncrypted String    @map("signer_register_encrypted")
+  signerPhoneEncrypted    String    @map("signer_phone_encrypted")
+  signerRegisterMasked    String    @map("signer_register_masked")
+  signerPhoneMasked       String    @map("signer_phone_masked")
+  /// SHA-256(hex) of the one-time link token; токен өөрөө хадгалагдахгүй
+  tokenHash               String    @unique @map("token_hash")
+  linkExpiresAt           DateTime  @map("link_expires_at") @db.Timestamptz(3)
+  /// 12 тэмдэгт, SIGNED үед тавигдана
+  verificationCode        String?   @unique @map("verification_code")
+  documentViewedAt        DateTime? @map("document_viewed_at") @db.Timestamptz(3)
+  consentAt               DateTime? @map("consent_at") @db.Timestamptz(3)
+  attempts                Int       @default(0)
+  /// SignerCertificate (огноонууд ISO string)
+  certificate             Json?
+  providerTxnId           String?   @map("provider_txn_id")
+  providerMock            Boolean   @default(false) @map("provider_mock")
+  /// SigningFailureReason
+  failureReason           String?   @map("failure_reason")
+  failureDetail           String?   @map("failure_detail")
+  correlationId           String    @map("correlation_id")
+  createdBy               String?   @map("created_by")
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  signedAt                DateTime? @map("signed_at") @db.Timestamptz(3)
+
+  events SigningEvent[]
+
+  @@unique([provider, providerRef])
+  @@index([applicationId])
+  @@index([contractId, status])
+  @@map("signing_request")
+  @@schema("dms")
+}
+
+// FR-11.4 Гарын үсгийн хүсэлтийн аудит (SigningAuditEntry). PII-гүй: ip, user_agent, detail-д регистр/утас бичихгүй.
+model SigningEvent {
+  /// Оруулсан дарааллыг хадгална (listAudit: at, id)
+  id               BigInt         @id @default(autoincrement())
+  signingRequestId String         @map("signing_request_id") @db.Uuid
+  /// SigningAuditType
+  type             String
+  /// 'BORROWER' | 'SYSTEM' | 'PROVIDER' | хэрэглэгчийн id
+  actor            String
+  at               DateTime       @db.Timestamptz(3)
+  ip               String?
+  userAgent        String?        @map("user_agent")
+  detail           Json           @default("{}")
+  signingRequest   SigningRequest @relation(fields: [signingRequestId], references: [id])
+
+  @@index([signingRequestId, at])
+  @@map("signing_event")
+  @@schema("dms")
+}

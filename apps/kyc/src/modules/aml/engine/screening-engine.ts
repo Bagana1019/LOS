@@ -1,5 +1,5 @@
 import type { AmlHit, AmlPolicy, AmlSubject, FatfCategory, HitMatchType, HitSeverity, ScreeningList } from '@los/contracts';
-import { maskRegisterNoStrict, normalizeRegisterNo } from '@los/database';
+import { foldRegisterNo, maskRegisterNoStrict } from '@los/database';
 import type { FatfSnapshot } from '../../../integrations/fatf/fatf.client';
 import type { UnPartyIdentifier, UnPartyName, UnSanctionedParty, UnSanctionsSnapshot } from '../../../integrations/un-sc/un-sc.client';
 import type { BlacklistProjection } from '../aml.ports';
@@ -102,7 +102,7 @@ function identifierApplies(identifier: UnPartyIdentifier, countries: ReadonlySet
 }
 
 function matchUn(subject: AmlSubject, policy: AmlPolicy, snapshot: UnSanctionsSnapshot): HitCandidate[] {
-  const registerNo = normalizeRegisterNo(subject.registerNo);
+  const registerNo = foldRegisterNo(subject.registerNo);
   const countries = new Set((subject.countries.length ? subject.countries : [DEFAULT_COUNTRY]).map((c) => c.toUpperCase()));
   const gateByCountry = MONGOLIAN_REGISTER.test(registerNo);
   const legalEntity = subject.subjectType === 'LEGAL_ENTITY';
@@ -113,7 +113,7 @@ function matchUn(subject: AmlSubject, policy: AmlPolicy, snapshot: UnSanctionsSn
     // Хоосон нормчилсон регистр ('--') хоосон нормчилсон баримттай хэзээ ч таарахгүй (registerNo !== '' ⇒ нөгөө тал ч хоосон биш).
     const idMatch = registerNo === ''
       ? undefined
-      : entry.identifiers.find((i) => identifierApplies(i, countries, gateByCountry) && normalizeRegisterNo(i.value) === registerNo);
+      : entry.identifiers.find((i) => identifierApplies(i, countries, gateByCountry) && foldRegisterNo(i.value) === registerNo);
     const dob = entry.type === 'INDIVIDUAL' ? dobEvidence(subject.birthDate, entry.datesOfBirth) : 'UNKNOWN';
     const sameKind = (subject.subjectType === 'INDIVIDUAL') === (entry.type === 'INDIVIDUAL');
     const nameHit = sameKind ? bestNameHit(entry, variants, policy, dob) : null;

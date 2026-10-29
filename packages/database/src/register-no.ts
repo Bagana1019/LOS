@@ -2,10 +2,11 @@
 // Hash нь сервис хоорондын lookup-д (origination.blacklist → kyc projection) ашиглагдах тул DATA_INDEX_KEY (crypto.ts) бүх сервист нэг.
 import { blindIndex } from './crypto';
 
-// Латин үсгээр бичсэн, кирилл үсэгтэй ДҮРСЭЭРЭЭ адил тэмдэгтүүд (AO1234 → АО1234). Дуудлагаар биш: Б-д дүрс төстэй латин үсэг байхгүй.
-// Ү (U+04AE, straight u) нь латин Y-тэй дүрсээр адил тул У руу нэгтгэнэ: латин Y, кирилл Ү, кирилл У гурав нэг дугаар болно.
+// Латин үсгээр бичсэн, кирилл үсэгтэй ДҮРСЭЭРЭЭ адил тэмдэгтүүд (AO1234 → АО1234). Дуудлагаар биш: Б-д дүрс төстэй латин үсэг б
+// Кирилл Ү (U+04AE) энд ОРОХГҮЙ: хүчинтэй регистрт Ү өөрөө бодит үсэг бөгөөд customer.registerNoHash (@los/contracts normalizeRegisterNo)
+// түүнийг хэвээр хадгалдаг — blacklist hash тэрний хэштэй таарах ёстой. Ү/У/Y-ийн төөрөгдлийг foldRegisterNo, registerNoHashVariants зохицуулна.
 const LOOKALIKE: Record<string, string> = {
-  A: 'А', B: 'В', E: 'Е', K: 'К', M: 'М', H: 'Н', O: 'О', P: 'Р', C: 'С', T: 'Т', Y: 'У', X: 'Х', 'Ү': 'У',
+  A: 'А', B: 'В', E: 'Е', K: 'К', M: 'М', H: 'Н', O: 'О', P: 'Р', C: 'С', T: 'Т', Y: 'У', X: 'Х',
 };
 
 // Үсэг эсвэл аравтын цифр биш бүх тэмдэгт (зай, тусгаарлагч, зураас, _ . / ,, mark, үл үзэгдэх Cf) мөн \p{Lm} (ʼ гэх мэт апостроф-үсэг) устна.
@@ -43,6 +44,28 @@ export function normalizeRegisterNo(raw: string): string {
     else out += LOOKALIKE[ch] ?? ch;
   }
   return out;
+}
+
+/**
+ * Харьцуулалтын (hash биш) түлхүүр: normalizeRegisterNo-д Ү-г У-тай нэгтгэсэн. Латин Y, кирилл Ү, кирилл У гурав нэг дугаар болно
+ * (UN жагсаалтын таних тэмдэгтийн тулгалт). Хадгалах/hash-д ашиглахгүй.
+ */
+export const foldRegisterNo = (raw: string): string => normalizeRegisterNo(raw).replaceAll('Ү', 'У');
+
+/**
+ * Хар жагсаалтын хайлтад ашиглах hash-ууд: эхнийх нь `hashRegisterNo` (customer.registerNoHash-тай ижил). Оператор Ү-ийн оронд У (эсвэл
+ * латин Y) бичсэн байж болох тул регистрийн эхний хоёр үсгийн У/Ү хослол бүрийн hash-ийг нэмнэ (дээд тал нь 4).
+ */
+export function registerNoHashVariants(raw: string): string[] {
+  const canonical = normalizeRegisterNo(raw);
+  const forms = new Set([canonical]);
+  for (const i of [0, 1]) {
+    for (const form of [...forms]) {
+      const ch = form[i];
+      if (ch === 'У' || ch === 'Ү') forms.add(form.slice(0, i) + (ch === 'У' ? 'Ү' : 'У') + form.slice(i + 1));
+    }
+  }
+  return [...forms].map((form) => blindIndex(form));
 }
 
 /**

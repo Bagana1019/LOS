@@ -1,18 +1,35 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import type { z } from 'zod';
+import { z } from 'zod';
+import { customerTypeOfRegister, normalizeRegisterNo, type BlacklistWarning } from '@los/contracts';
+import { Permissions, ZodValidationPipe } from '@los/nest-common';
 import { BlacklistAccessGuard, Ctx, Roles, WRITE_ROLES, type RequestContext } from './blacklist.context';
 import { BlacklistCreateBody, BlacklistImportJsonBody, BlacklistListQuery, BlacklistPatchBody, MAX_IMPORT_ROWS } from './blacklist.schemas';
+import { BlacklistLookupService } from './blacklist-lookup.service';
 import { BlacklistService, importLimitError, type ImportItem } from './blacklist.service';
 import { CsvFormatError, CsvRowLimitError, parseBlacklistCsv } from './csv';
 import { PathParam, ZodPipe, assertCleanText } from './zod.pipe';
 
 const importJson = new ZodPipe(BlacklistImportJsonBody);
+const CheckQuery = z.object({ registerNo: z.string().trim().min(1, 'Регистр оруулна уу').max(32) });
 
 /** FR-13.1: хар жагсаалт CRUD, импорт (BR-9: зөвхөн анхааруулга). Эрх gateway-д шийдэгдэнэ; энд зөвхөн дүрийн шалгалт (CLAUDE.md §3.2.9). */
 @Controller('blacklist')
 @UseGuards(BlacklistAccessGuard)
 export class BlacklistController {
-  constructor(@Inject(BlacklistService) private readonly blacklist: BlacklistService) {}
+  constructor(
+    @Inject(BlacklistService) private readonly blacklist: BlacklistService,
+    @Inject(BlacklistLookupService) private readonly lookup: BlacklistLookupService,
+  ) {}
+
+  /** Регистрээр шалгах (маягтад регистр бичих үед автомат; Модуль 1). 200 + анхааруулгын жагсаалт (хоосон = цэвэр). `:id`-ээс өмнө зарлах ёстой. */
+  @Get('check')
+  @Permissions('blacklist:read')
+  async check(@Query(new ZodValidationPipe(CheckQuery)) q: z.infer<typeof CheckQuery>, @Ctx() ctx: RequestContext): Promise<{ registerNo: string; blacklisted: boolean; warnings: BlacklistWarning[] }> {
+    const registerNo = normalizeRegisterNo(q.registerNo);
+    if (!customerTypeOfRegister(registerNo)) throw new BadRequestException({ code: 'INVALID_REGISTER_NO', message: 'Регистрийн дугаар буруу (иргэн УБ12345678, байгууллага 7 орон)' });
+    const warnings = await this.lookup.warningsForRegisterNo(ctx.orgId, registerNo);
+    return { registerNo, blacklisted: warnings.length > 0, warnings };
+  }
 
   @Get()
   list(@Query(new ZodPipe(BlacklistListQuery)) q: BlacklistListQuery, @Ctx() ctx: RequestContext) {

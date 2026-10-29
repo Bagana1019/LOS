@@ -1,0 +1,170 @@
+{
+  "_synthetic": true,
+  "_note": "SYNTHETIC TEST DATA - NOT A REAL STATEMENT. assumed layout, oldest first, closing balance and row count printed at the end. Assumed GOLOMT layout (TODO(samples)).",
+  "transactions": [
+    {
+      "seq": 1,
+      "txnDate": "2026-02-26",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 22600,
+      "balanceAfter": 2977400,
+      "description": "Mobicom төлбөр",
+      "counterpartyAccount": "5693356919",
+      "counterpartyName": null
+    },
+    {
+      "seq": 2,
+      "txnDate": "2026-02-26",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 197800,
+      "balanceAfter": 3175200,
+      "description": "Цалин Salary March",
+      "counterpartyAccount": "5875298392",
+      "counterpartyName": null
+    },
+    {
+      "seq": 3,
+      "txnDate": "2026-02-27",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 2100,
+      "balanceAfter": 3173100,
+      "description": "ATM бэлэн авалт Khan Bank",
+      "counterpartyAccount": null,
+      "counterpartyName": "Тест Харилцагч"
+    },
+    {
+      "seq": 4,
+      "txnDate": "2026-02-28",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 300100,
+      "balanceAfter": 3473200,
+      "description": "Цалин",
+      "counterpartyAccount": "5860136827",
+      "counterpartyName": null
+    },
+    {
+      "seq": 5,
+      "txnDate": "2026-02-28",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 3700,
+      "balanceAfter": 3469500,
+      "description": "ATM бэлэн авалт Khan Bank",
+      "counterpartyAccount": "5515869144",
+      "counterpartyName": "Тест Харилцагч"
+    },
+    {
+      "seq": 6,
+      "txnDate": "2026-02-28",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 25400,
+      "balanceAfter": 3494900,
+      "description": "Хүү олгосон",
+      "counterpartyAccount": "5146199961",
+      "counterpartyName": null
+    },
+    {
+      "seq": 7,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 242300,
+      "balanceAfter": 3737200,
+      "description": "Хүү олгосон",
+      "counterpartyAccount": "5278501222",
+      "counterpartyName": null
+    },
+    {
+      "seq": 8,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 386100,
+      "balanceAfter": 4123300,
+      "description": "Цалин",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 9,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 15600,
+      "balanceAfter": 4107700,
+      "description": "ATM бэлэн авалт Khan Bank",
+      "counterpartyAccount": "5336625490",
+      "counterpartyName": null
+    },
+    {
+      "seq": 10,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 392800,
+      "balanceAfter": 4500500,
+      "description": "Цалин",
+      "counterpartyAccount": null,
+      "counterpartyName": null
+    },
+    {
+      "seq": 11,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 28600,
+      "balanceAfter": 4471900,
+      "description": "Mobicom төлбөр",
+      "counterpartyAccount": null,
+      "counterpartyName": "Тест Харилцагч"
+    },
+    {
+      "seq": 12,
+      "txnDate": "2026-03-01",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 25700,
+      "balanceAfter": 4446200,
+      "description": "Зээлийн төлбөр",
+      "counterpartyAccount": "5349925680",
+      "counterpartyName": null
+    },
+    {
+      "seq": 13,
+      "txnDate": "2026-03-02",
+      "txnTime": null,
+      "direction": "EXPENSE",
+      "amount": 33500,
+      "balanceAfter": 4412700,
+      "description": "Зээлийн төлбөр",
+      "counterpartyAccount": "5170760771",
+      "counterpartyName": null
+    },
+    {
+      "seq": 14,
+      "txnDate": "2026-03-02",
+      "txnTime": null,
+      "direction": "INCOME",
+      "amount": 325400,
+      "balanceAfter": 4738100,
+      "description": "Тэтгэвэр",
+      "counterpartyAccount": "5858280795",
+      "counterpartyName": "Тест Харилцагч"
+    }
+  ],
+  "openingBalance": 3000000,
+  "closingBalance": 4738100,
+  "periodFrom": "2026-02-26",
+  "periodTo": "2026-03-02",
+  "declaredRowCount": 14,
+  "accountNo": "5011223344",
+  "iban": "MN640005123456789012",
+  "holderName": "Бат-Эрдэнэ Болд",
+  "holderRegisterNo": null,
+  "currency": "MNT"
+}

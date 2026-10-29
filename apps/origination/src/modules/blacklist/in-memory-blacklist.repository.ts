@@ -26,7 +26,10 @@ export class InMemoryBlacklistRepository implements BlacklistRepository {
   }
 
   async findByKey(orgId: string, registerNoHash: string, listType: string) {
-    const row = [...this.rows.values()].find((r) => r.orgId === orgId && r.registerNoHash === registerNoHash && r.listType === listType);
+    // PrismaBlacklistRepository-тай ижил: идэвхтэй мөр түрүүлж, дараа нь хамгийн сүүлд өөрчлөгдсөн, дараа нь id.
+    const row = [...this.rows.values()]
+      .filter((r) => r.orgId === orgId && r.registerNoHash === registerNoHash && r.listType === listType)
+      .sort((a, b) => Number(b.isActive) - Number(a.isActive) || b.updatedAt.getTime() - a.updatedAt.getTime() || (a.id < b.id ? -1 : 1))[0];
     return row ? { ...row } : null;
   }
 
@@ -38,7 +41,7 @@ export class InMemoryBlacklistRepository implements BlacklistRepository {
     } else if (!current || current.updatedAt.getTime() !== expectedUpdatedAt.getTime()) {
       throw new StaleBlacklistEntryError();
     }
-    const clash = [...this.rows.values()].some((r) => r.id !== row.id && r.orgId === row.orgId && r.registerNoHash === row.registerNoHash && r.listType === row.listType);
+    const clash = row.isActive && [...this.rows.values()].some((r) => r.isActive && r.id !== row.id && r.orgId === row.orgId && r.registerNoHash === row.registerNoHash && r.listType === row.listType);
     if (clash) throw new DuplicateBlacklistEntryError();
     this.rows.set(row.id, { ...row });
     this.events.push(event);

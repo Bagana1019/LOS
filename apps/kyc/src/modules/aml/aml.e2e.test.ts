@@ -284,6 +284,16 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       expect((await screen(screenBody()).expect(201)).body.status).toBe('CLEAR');
     });
 
+    // Оператор Ү-ийн оронд У эсвэл латин Y бичсэн байж болно; customer.registerNoHash нь Ү-г хэвээр хадгалдаг тул хайлт У/Ү хослол бүрийг үзнэ.
+    it('finds an entry the operator typed with У or Latin Y where the register has Ү', async () => {
+      await projection().handle(event({ registerNoHash: hashRegisterNo('УБ12345678') }));
+      for (const registerNo of ['ҮБ12345678', 'УБ12345678', 'YБ12345678']) {
+        const res = await screen(screenBody({ customerId: `cust-${registerNo}` }, { registerNo })).expect(201);
+        expect(res.body.hits.map((h: { entryRef: string }) => h.entryRef)).toEqual(['bl-1']);
+      }
+      expect((await screen(screenBody({ customerId: 'cust-other' }, { registerNo: 'ЧА12345678' })).expect(201)).body.status).toBe('CLEAR');
+    });
+
     it('only matches rows of the caller organisation, in both directions', async () => {
       await projection().handle(event({ orgId: 'org-2' }));
       expect((await screen(screenBody()).expect(201)).body.status).toBe('CLEAR');

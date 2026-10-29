@@ -5,11 +5,12 @@
 ## 1. Баримтууд
 | Файл | Агуулга |
 | --- | --- |
-| `docs/01-los-requirements.md` | 12 модуль, төлвийн мөчлөг, процесс, FR-1…FR-14, BR-1…BR-13, NFR, шийдвэрүүд |
+| `docs/01-los-requirements.md` | 12 модуль, төлвийн мөчлөг, процесс, FR-1…FR-14, BR-1…BR-14, NFR, шийдвэрүүд |
 | `docs/02-bsa-requirements.md` | BSA: дэлгэц, 7 алхам, ангилал/DTI, 8 дохио, INT-1…10 |
 | `docs/03-data-model.md` | Enum, хүснэгт, талбар (§5-д сервис бүрт хуваарилсан) |
 | `docs/04-build-plan.md` | Модуль 0–14 дараалал, acceptance criteria |
 | `docs/DECISIONS.md` | Таамгийн бүртгэл — тодорхойгүй зүйл дээр энд бичээд үргэлжлүүл |
+| `docs/05-merchant-pos.md` | Мерчант POS портал (B2B2C): роль, төлөв, POS-BR/POS-FR, API, өгөгдөл, seam |
 
 ## 2. Архитектурын зураглал
 
@@ -112,7 +113,7 @@ flowchart LR
 | Сервис | Хүснэгтүүд |
 | --- | --- |
 | gateway (`iam`) | org, branch, user, role, session, audit_log (нэвтрэлт) |
-| origination | customer, customer_contact, customer_bank_account, loan_application, _borrower, _step, income_*, product, approval_level(_member), contract_number_template, setting, approval_request, approval_vote, decision_record, contract (meta), official_letter (meta), disbursement_request, repayment_schedule(_row), blacklist, notification, comment, audit_log |
+| origination | customer, customer_contact, customer_bank_account, loan_application, _borrower, _step, income_*, product, approval_level(_member), contract_number_template, setting, pricing_tier, approval_request, approval_vote, decision_record, contract (meta), official_letter (meta), disbursement_request, repayment_schedule(_row), blacklist, notification, comment, audit_log |
 | kyc | inquiry, unregistered_loan, kyc_check, aml_screening |
 | scoring | calculation, sosco_model, sosco_result, bsa_analysis, bsa_import_job, bsa_transaction, bsa_category, bsa_rule, bsa_suspicion |
 | valuation | collateral (үнэлгээний тал), collateral_valuation, base_price, haircut_rule |
@@ -120,6 +121,8 @@ flowchart LR
 | dwh | fact_application, fact_disbursement, fact_bsa_analysis, dim_customer, dim_product, dim_branch, dim_date |
 
 Барьцаа (collateral) нь origination (хүсэлттэй холбоо, KYC, ачаалал, ЭБ) ба valuation (үнэ) хоёрт хуваагдана: origination `collateral` эзэмшинэ, valuation `collateral_valuation`-ийг `collateralId` string-ээр холбоно.
+
+Мерчант POS хүснэгтүүд (schema `origination`): merchant, merchant_store, pos_lease_plan, pos_lease, pos_lease_otp, pos_lease_event — docs/05 §7. Модуль: `apps/origination/src/modules/merchant`.
 
 ## 5. Технологийн стек
 Node 22, pnpm 9, Turborepo 2 · NestJS 10 + Prisma 5 (schema-per-service) · Next.js 15 + React 19 + Ant Design 5 + TanStack Query · PostgreSQL 16 (operational + DWH тусдаа instance) · Redis 7 (Streams + BullMQ) · MinIO · zod · Vitest, Supertest, Playwright · Docker Compose · GitHub Actions. Хэл: UI монгол кирилл (`packages/ui/src/i18n/mn.json`), код/commit англи.

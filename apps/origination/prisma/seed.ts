@@ -3,6 +3,7 @@
 import { PrismaClient } from '.prisma/client-origination';
 import { SEED } from '@los/database';
 import { SETTING_REGISTRY, type SettingKey } from '@los/contracts';
+import { seedPricingTiers } from './seeds/pricing-tiers';
 
 const prisma = new PrismaClient();
 const orgId = SEED.org.id;
@@ -84,6 +85,7 @@ async function main() {
   if ((await prisma.contractNumberTemplate.count({ where: { orgId } })) === 0) {
     await prisma.contractNumberTemplate.create({ data: { orgId, pattern: '{PREFIX}{BRANCH}{YYMMDD}{SEQ:2}', prefix: 'B', seqScope: 'DAY', nextSeq: 1 } });
   }
-  console.log(`origination seed: ${Object.keys(SETTING_REGISTRY).length} settings, ${products.length} products, ${levels.length} approval levels`);
+  const pricing = await seedPricingTiers(prisma, orgId); // FR-5.5
+  console.log(`origination seed: ${Object.keys(SETTING_REGISTRY).length} settings, ${products.length} products, ${levels.length} approval levels, pricing tiers ${pricing ? 'created' : 'kept'}`);
 }
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());

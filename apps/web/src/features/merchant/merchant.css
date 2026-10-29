@@ -1,0 +1,377 @@
+/* Мерчант POS портал + back-office мерчант хуудсуудын стиль. Өнгө/хэмжээс: theme.ts-тэй нэг утга. Нэрийн угтвар: mp- */
+/* Токенууд :root дээр — antd-ийн Drawer/Modal/Select (document.body-д portal) ч ашиглана. */
+:root {
+  --mp-primary: #0b63ce;
+  --mp-primary-soft: #e8f1fc;
+  --mp-navy: #0f1f3d;
+  --mp-bg: #f4f6fa;
+  --mp-surface: #ffffff;
+  --mp-border: #e3e8ef;
+  --mp-border-strong: #cfd7e3;
+  --mp-text: #1a2433;
+  --mp-muted: #5b6778;
+  --mp-success: #0f7a55;
+  --mp-success-soft: #e6f5ee;
+  --mp-warning: #a96400;
+  --mp-warning-soft: #fdf3e0;
+  --mp-danger: #c0342b;
+  --mp-danger-soft: #fbeceb;
+  --mp-radius: 12px;
+  --mp-shadow: 0 1px 2px rgba(15, 31, 61, 0.06), 0 1px 3px rgba(15, 31, 61, 0.04);
+}
+.mp-root {
+  min-height: 100dvh;
+  color: var(--mp-text);
+  background: var(--mp-bg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'DejaVu Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+body:has(.mp-root) { margin: 0; background: #f4f6fa; }
+.mp-root *, .mp-root *::before, .mp-root *::after { box-sizing: border-box; }
+:where(.mp-root, .ant-drawer, .ant-modal) :where(h1, h2, h3) { margin: 0; }
+:where(.mp-root a) { color: var(--mp-primary); }
+.mp-boot { display: grid; place-items: center; min-height: 100dvh; color: var(--mp-muted); font-size: 15px; }
+.mp-muted { color: var(--mp-muted); }
+.mp-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mp-sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.mp-link-btn { background: none; border: 0; padding: 0; font: inherit; color: var(--mp-primary); cursor: pointer; text-decoration: none; }
+.mp-link-btn:hover { text-decoration: underline; }
+.mp-root :focus-visible { outline: 3px solid rgba(11, 99, 206, 0.45); outline-offset: 2px; border-radius: 4px; }
+
+/* ───────── Shell ───────── */
+.mp-shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: 60px 1fr; grid-template-areas: 'side head' 'side main'; min-height: 100dvh; }
+.mp-side { grid-area: side; position: sticky; top: 0; align-self: start; height: 100dvh; background: var(--mp-navy); color: #dbe4f5; padding: 16px 12px; display: flex; flex-direction: column; gap: 20px; }
+.mp-brand { display: flex; align-items: center; gap: 12px; padding: 6px 8px; color: #fff !important; text-decoration: none; }
+.mp-brand-mark, .mp-head-brand { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #1b7be0, #0b4aa3); color: #fff; font-weight: 800; font-size: 18px; flex: none; }
+.mp-brand-text { display: flex; flex-direction: column; font-weight: 700; font-size: 16px; line-height: 1.15; }
+.mp-brand-text small { font-weight: 500; font-size: 12px; color: #9fb2d4; margin-top: 2px; }
+.mp-nav { display: flex; flex-direction: column; gap: 4px; }
+.mp-nav-link { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 14px; border-radius: 10px; color: #c4d1ea !important; text-decoration: none; font-weight: 600; font-size: 15px; }
+.mp-nav-link:hover { background: rgba(255, 255, 255, 0.08); color: #fff !important; }
+.mp-nav-link[aria-current='page'] { background: rgba(255, 255, 255, 0.14); color: #fff !important; box-shadow: inset 3px 0 0 #5aa5f5; }
+.mp-head { grid-area: head; position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 24px; background: var(--mp-surface); border-bottom: 1px solid var(--mp-border); }
+.mp-head-brand { display: none; width: 32px; height: 32px; font-size: 16px; }
+.mp-head-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.mp-head-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.mp-head-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mp-head-store { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--mp-muted); }
+.mp-role-chip { flex: none; padding: 5px 12px; border-radius: 999px; background: var(--mp-primary-soft); color: #0a4f9f; font-weight: 600; font-size: 13px; }
+.mp-main { grid-area: main; min-width: 0; padding: 24px; width: 100%; max-width: 1360px; margin: 0 auto; }
+.mp-tabbar { display: none; }
+.mp-page { padding: 24px; max-width: 1360px; margin: 0 auto; width: 100%; }
+.mp-banner { margin-bottom: 16px; }
+
+@media (max-width: 767px) {
+  .mp-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px 1fr; grid-template-areas: 'head' 'main'; }
+  .mp-side { display: none; }
+  .mp-head { padding: 0 16px; }
+  .mp-head-brand { display: inline-grid; }
+  .mp-main { padding: 16px 16px 96px; }
+  .mp-page { padding: 16px; }
+  .mp-tabbar { display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--mp-surface); border-top: 1px solid var(--mp-border); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -2px 10px rgba(15, 31, 61, 0.06); }
+  .mp-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 64px; color: var(--mp-muted) !important; text-decoration: none; font-size: 12px; font-weight: 600; }
+  .mp-tab[aria-current='page'] { color: var(--mp-primary) !important; }
+  .mp-tab:nth-child(2) svg { background: var(--mp-primary); color: #fff; border-radius: 999px; padding: 4px; width: 32px; height: 32px; margin-top: -14px; box-shadow: 0 2px 8px rgba(11, 99, 206, 0.4); }
+}
+
+/* ───────── Хуудасны гарчиг, хэсэг ───────── */
+.mp-page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+.mp-page-header-main { min-width: 0; }
+.mp-page-title { font-size: 24px; line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; }
+.mp-page-subtitle { margin: 4px 0 0; color: var(--mp-muted); font-size: 14px; }
+.mp-page-extra { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mp-title-row { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mp-back-link { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 600; text-decoration: none; margin-bottom: 6px; min-height: 32px; }
+.mp-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mp-store-select { min-width: 190px; }
+.mp-section { margin-top: 24px; }
+.mp-section-title { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+.mp-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.mp-section-head .mp-section-title { margin-bottom: 0; }
+.mp-stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.mp-two-col { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 16px; align-items: start; }
+.mp-fetching { opacity: 0.85; transition: opacity 0.15s; }
+.mp-subtitle { font-size: 14px; font-weight: 700; margin: 18px 0 8px; color: var(--mp-text); }
+.mp-subtitle:first-child { margin-top: 0; }
+@media (max-width: 1023px) { .mp-two-col { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 767px) {
+  .mp-page-title { font-size: 21px; }
+  .mp-page-header { align-items: stretch; }
+  .mp-page-extra { width: 100%; }
+  .mp-page-extra .ant-btn { flex: 1 1 100%; }
+  .mp-store-select { flex: 1 1 100%; }
+}
+
+/* ───────── Картууд, төлөвийн самбар ───────── */
+.mp-root .ant-card { box-shadow: var(--mp-shadow); border-color: var(--mp-border); }
+.mp-card-flush > .ant-card-body { padding: 0; }
+.mp-filter-card { margin-bottom: 16px; }
+.mp-filter-card > .ant-card-body { padding: 16px; }
+.mp-results-card .ant-table-wrapper { padding: 0; }
+.mp-state { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 36px 20px; max-width: 560px; margin: 0 auto; }
+.mp-state-icon { display: inline-grid; place-items: center; width: 52px; height: 52px; border-radius: 999px; background: #eef1f6; color: var(--mp-muted); }
+.mp-state-success .mp-state-icon { background: var(--mp-success-soft); color: var(--mp-success); }
+.mp-state-danger .mp-state-icon { background: var(--mp-danger-soft); color: var(--mp-danger); }
+.mp-state-warning .mp-state-icon { background: var(--mp-warning-soft); color: var(--mp-warning); }
+.mp-state-title { font-size: 18px; font-weight: 700; }
+.mp-state-text { margin: 0; color: var(--mp-muted); font-size: 15px; line-height: 1.55; display: flex; flex-direction: column; gap: 6px; }
+.mp-state-actions { margin-top: 10px; }
+.mp-skeleton { background: var(--mp-surface); border: 1px solid var(--mp-border); border-radius: var(--mp-radius); padding: 20px; }
+
+/* ───────── Dashboard ───────── */
+.mp-todo-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; list-style: none; margin: 0; padding: 0; }
+.mp-todo { display: flex; align-items: center; gap: 14px; min-height: 84px; padding: 14px 16px; background: var(--mp-surface); border: 1px solid var(--mp-border); border-left: 4px solid var(--mp-border-strong); border-radius: var(--mp-radius); box-shadow: var(--mp-shadow); text-decoration: none; color: var(--mp-text) !important; transition: box-shadow 0.15s, transform 0.15s; }
+.mp-todo:hover { box-shadow: 0 4px 14px rgba(15, 31, 61, 0.1); transform: translateY(-1px); }
+.mp-todo-count { flex: none; min-width: 44px; font-size: 30px; line-height: 1; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--mp-muted); text-align: center; }
+.mp-todo-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mp-todo-body strong { font-size: 15px; }
+.mp-todo-body small { color: var(--mp-muted); font-size: 12.5px; line-height: 1.35; }
+.mp-todo.is-active { background: #fbfdff; }
+.mp-todo-awaitingOtp.is-active { border-left-color: #d89614; } .mp-todo-awaitingOtp.is-active .mp-todo-count { color: #a96400; }
+.mp-todo-awaitingAcceptance.is-active { border-left-color: var(--mp-primary); } .mp-todo-awaitingAcceptance.is-active .mp-todo-count { color: var(--mp-primary); }
+.mp-todo-awaitingDelivery.is-active { border-left-color: var(--mp-success); } .mp-todo-awaitingDelivery.is-active .mp-todo-count { color: var(--mp-success); }
+.mp-todo-referred.is-active { border-left-color: #7b5bd6; } .mp-todo-referred.is-active .mp-todo-count { color: #5b3fb6; }
+@media (max-width: 1100px) { .mp-todo-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .mp-todo { min-height: 72px; padding: 12px; gap: 6px; flex-direction: column; align-items: flex-start; } .mp-todo-count { font-size: 26px; min-width: 0; text-align: left; } .mp-todo-body { width: 100%; } .mp-todo-body strong, .mp-todo-body small { overflow-wrap: anywhere; } }
+
+.mp-kpi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; margin: 0; }
+@media (min-width: 900px) { .mp-kpi-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.mp-kpi { display: flex; flex-direction: column; gap: 4px; padding: 16px; background: var(--mp-surface); border: 1px solid var(--mp-border); border-radius: var(--mp-radius); box-shadow: var(--mp-shadow); }
+.mp-kpi dt, .mp-kpi dd { margin: 0; }
+.mp-kpi-label { color: var(--mp-muted); font-size: 13px; font-weight: 600; }
+.mp-kpi-value { font-size: 26px; line-height: 1.2; font-weight: 800; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mp-kpi-sub { color: var(--mp-muted); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
+.mp-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-size: 12.5px; }
+.mp-pill-ok { background: var(--mp-success-soft); color: var(--mp-success); }
+.mp-pill-warn { background: var(--mp-warning-soft); color: var(--mp-warning); }
+.mp-pill-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.mp-pill-note { font-weight: 500; color: var(--mp-muted); font-size: 12.5px; }
+@media (max-width: 480px) { .mp-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .mp-kpi { padding: 12px; } .mp-kpi-value { font-size: 20px; } }
+
+.mp-chart-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.mp-chart { margin: 0; min-width: 0; }
+.mp-chart-title { font-size: 13px; font-weight: 700; color: var(--mp-muted); margin-bottom: 6px; }
+.mp-chart-body { width: 100%; min-height: 190px; }
+.mp-chart-body svg { display: block; }
+.mp-chart-grid { stroke: #e9edf3; stroke-width: 1; }
+.mp-chart-axis { stroke: #b9c3d2; stroke-width: 1; }
+.mp-chart-tick { font-size: 11px; fill: #5b6778; font-variant-numeric: tabular-nums; }
+.mp-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; list-style: none; margin: 12px 0 0; padding: 0; font-size: 12.5px; color: var(--mp-muted); }
+.mp-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.mp-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.mp-chart-note { margin: 8px 0 0; font-size: 13px; }
+.mp-table-wrap { overflow-x: auto; }
+.mp-data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.mp-data-table caption { text-align: left; font-weight: 700; padding: 0 0 8px; }
+.mp-data-table th, .mp-data-table td { padding: 8px 10px; border-bottom: 1px solid var(--mp-border); text-align: left; font-weight: 500; }
+.mp-data-table thead th { color: var(--mp-muted); font-weight: 700; background: #f7f9fc; }
+.mp-data-table .mp-num { text-align: right; }
+@media (max-width: 1023px) { .mp-chart-grid-2 { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
+
+.mp-limit-block { margin-bottom: 14px; }
+.mp-limit-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-weight: 600; margin-bottom: 2px; }
+.mp-limit-head strong { font-size: 20px; }
+.mp-limit-text { margin: 2px 0 0; font-size: 13.5px; }
+.mp-limit-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 12px; border-top: 1px solid var(--mp-border); }
+
+/* ───────── Жагсаалт ───────── */
+.mp-filters { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
+.mp-filters-inline { margin: 4px 0 16px; }
+.mp-field { display: flex; flex-direction: column; gap: 4px; min-width: 160px; font-size: 13px; font-weight: 600; color: var(--mp-muted); }
+.mp-field > span { line-height: 1.3; }
+.mp-field .ant-select, .mp-field .ant-input, .mp-field .ant-input-affix-wrapper { width: 100%; }
+.mp-field-grow { flex: 1 1 220px; }
+.mp-clear { align-self: flex-end; }
+@media (max-width: 767px) { .mp-field, .mp-field-grow { flex: 1 1 100%; min-width: 0; } }
+.mp-lease-no { font-weight: 700; font-variant-numeric: tabular-nums; }
+.mp-cell-main { font-weight: 600; }
+.mp-cell-sub { color: var(--mp-muted); font-size: 12.5px; }
+.mp-row-click { cursor: pointer; }
+.mp-status-tag { margin-inline-end: 0; font-weight: 600; }
+.mp-pagination { display: flex; justify-content: center; padding: 12px 0; }
+.mp-lease-cards { list-style: none; margin: 0; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.mp-lease-card { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 14px; text-align: left; background: var(--mp-surface); border: 1px solid var(--mp-border); border-radius: var(--mp-radius); font: inherit; color: var(--mp-text) !important; text-decoration: none; cursor: pointer; min-height: 44px; box-shadow: var(--mp-shadow); }
+.mp-lease-card:hover { border-color: var(--mp-border-strong); }
+.mp-lease-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mp-lease-card-goods { font-weight: 600; }
+.mp-lease-card-meta { color: var(--mp-muted); font-size: 13px; }
+.mp-lease-card-amounts { display: flex; gap: 20px; flex-wrap: wrap; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mp-lease-card-amounts small { display: block; color: var(--mp-muted); font-weight: 500; font-size: 12px; }
+.mp-lease-card-amounts em { font-style: normal; font-weight: 500; color: var(--mp-muted); }
+.mp-lease-card-reason { font-size: 12.5px; color: var(--mp-warning); }
+.mp-tab-toolbar { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.mp-descriptions .ant-descriptions-item-label { width: 28%; color: var(--mp-muted); }
+
+/* ───────── Шинэ лизинг ───────── */
+.mp-new-grid { display: grid; grid-template-columns: minmax(0, 1fr) 390px; grid-template-areas: 'alert alert' 'goods quote' 'terms quote' 'buyer quote'; gap: 16px; align-items: start; }
+.mp-area-alert { grid-area: alert; outline: none; }
+.mp-area-goods { grid-area: goods; } .mp-area-terms { grid-area: terms; } .mp-area-buyer { grid-area: buyer; }
+.mp-area-quote { grid-area: quote; position: sticky; top: 76px; align-self: start; }
+.mp-panel { background: var(--mp-surface); border: 1px solid var(--mp-border); border-radius: var(--mp-radius); box-shadow: var(--mp-shadow); padding: 20px; min-width: 0; }
+.mp-panel-title { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 700; margin-bottom: 14px; }
+.mp-step-badge { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 999px; background: var(--mp-primary); color: #fff; font-size: 14px; font-weight: 700; flex: none; }
+.mp-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.mp-form-grid .ant-form-item { min-width: 0; }
+.mp-root .ant-form-item-label > label { font-weight: 600; }
+.mp-input-full { width: 100%; }
+.mp-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 18px; }
+.mp-min-down { margin: 0 4px 0 0; font-size: 13px; padding: 4px 10px; background: var(--mp-primary-soft); color: #0a4f9f; border-radius: 999px; }
+.mp-shortcuts .ant-btn { min-width: 64px; }
+.mp-term-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.mp-term-group .ant-radio-button-wrapper { border-radius: 8px !important; border-inline-start-width: 1px; min-width: 88px; text-align: center; }
+.mp-term-group .ant-radio-button-wrapper::before { display: none; }
+.mp-consent { display: flex; gap: 12px; padding: 14px 16px; margin: 4px 0 16px; background: #f1f6fd; border: 1px solid #cfe0f6; border-radius: 10px; color: #0a3f80; }
+.mp-consent svg { flex: none; margin-top: 2px; }
+.mp-consent p { margin: 2px 0 0; font-size: 13.5px; line-height: 1.5; color: #27456f; }
+.mp-form-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.mp-form-actions p { margin: 0; font-size: 13px; }
+.mp-submit { min-width: 260px; }
+@media (max-width: 1023px) {
+  .mp-new-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'alert' 'goods' 'terms' 'quote' 'buyer'; }
+  .mp-area-quote { position: static; }
+}
+@media (max-width: 767px) {
+  .mp-form-grid { grid-template-columns: minmax(0, 1fr); }
+  .mp-panel { padding: 16px; }
+  .mp-submit { width: 100%; min-width: 0; }
+  .mp-form-actions { align-items: stretch; }
+  .mp-term-group .ant-radio-button-wrapper { flex: 1 1 28%; min-height: 48px; display: inline-flex; align-items: center; justify-content: center; }
+  .mp-shortcuts .ant-btn { flex: 1 1 auto; }
+}
+
+/* ───────── Үнийн санал ───────── */
+.mp-quote-card { background: var(--mp-surface); border: 1px solid var(--mp-border); border-top: 4px solid var(--mp-primary); border-radius: var(--mp-radius); box-shadow: var(--mp-shadow); padding: 18px 20px 20px; }
+.mp-quote-title { font-size: 15px; font-weight: 700; color: var(--mp-muted); margin-bottom: 10px; }
+.mp-quote-idle { margin: 0; padding: 14px 0 6px; color: var(--mp-muted); line-height: 1.55; }
+.mp-quote-error { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--mp-danger-soft); color: #922920; font-weight: 600; line-height: 1.5; }
+.mp-quote-main { display: flex; flex-direction: column; gap: 2px; padding-bottom: 14px; border-bottom: 1px solid var(--mp-border); }
+.mp-quote-label { font-size: 13px; color: var(--mp-muted); font-weight: 600; }
+.mp-quote-amount { font-size: 38px; line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; color: var(--mp-primary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mp-quote-term { font-size: 14px; color: var(--mp-muted); }
+.mp-quote-stale { opacity: 0.55; transition: opacity 0.15s; }
+.mp-quote-updating { margin: 6px 0 0; font-size: 12.5px; color: var(--mp-muted); }
+.mp-quote-breakdown { margin-top: 10px; }
+.mp-dl { margin: 0; }
+.mp-dl-row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--mp-border); font-size: 14px; }
+.mp-dl-row:last-child { border-bottom: 0; }
+.mp-dl dt { color: var(--mp-muted); margin: 0; flex: 0 1 auto; }
+.mp-dl dd { margin: 0; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.mp-dl-note { font-weight: 500; color: var(--mp-muted); white-space: nowrap; }
+.mp-dl-merchant { margin-top: 8px; padding: 6px 12px; background: #f7f9fc; border-radius: 10px; }
+.mp-dl-strong dt, .mp-dl-strong dd { color: var(--mp-success); font-weight: 700; }
+@media (max-width: 767px) { .mp-quote-amount { font-size: 32px; } }
+
+/* ───────── Лизингийн дэлгэрэнгүй, самбар ───────── */
+.mp-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 16px; align-items: start; }
+.mp-detail-main, .mp-detail-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.mp-summary-block { margin-bottom: 8px; }
+.mp-summary-block .mp-subtitle { margin-top: 10px; }
+@media (max-width: 1023px) { .mp-detail-grid { grid-template-columns: minmax(0, 1fr); } }
+
+.mp-steps { display: flex; gap: 4px; list-style: none; margin: 0 0 20px; padding: 14px 16px; background: var(--mp-surface); border: 1px solid var(--mp-border); border-radius: var(--mp-radius); box-shadow: var(--mp-shadow); }
+.mp-step { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; text-align: center; }
+.mp-step::before { content: ''; position: absolute; top: 14px; left: -50%; width: 100%; height: 2px; background: var(--mp-border); z-index: 0; }
+.mp-step:first-child::before { display: none; }
+.mp-step.is-done::before, .mp-step.is-current::before, .mp-step.is-error::before { background: var(--mp-primary); }
+.mp-step-dot { position: relative; z-index: 1; display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: #eef1f6; color: var(--mp-muted); font-weight: 700; font-size: 13px; border: 2px solid var(--mp-surface); }
+.mp-step.is-done .mp-step-dot { background: var(--mp-primary); color: #fff; }
+.mp-step.is-current .mp-step-dot { background: #fff; color: var(--mp-primary); border-color: var(--mp-primary); box-shadow: 0 0 0 4px rgba(11, 99, 206, 0.15); }
+.mp-step.is-error .mp-step-dot { background: var(--mp-danger); color: #fff; }
+.mp-step-label { font-size: 12.5px; font-weight: 600; color: var(--mp-muted); line-height: 1.25; }
+.mp-step.is-current .mp-step-label, .mp-step.is-done .mp-step-label { color: var(--mp-text); }
+@media (max-width: 767px) { .mp-step:not(.is-current):not(.is-error) .mp-step-label { display: none; } .mp-steps { padding: 12px 10px; } .mp-step.is-current .mp-step-label, .mp-step.is-error .mp-step-label { position: absolute; top: 36px; white-space: nowrap; left: 50%; transform: translateX(-50%); } .mp-steps { margin-bottom: 38px; } }
+
+.mp-timeline { padding-top: 8px; }
+.mp-tl-item { display: flex; flex-direction: column; gap: 2px; padding-bottom: 4px; }
+.mp-tl-meta { color: var(--mp-muted); font-size: 12.5px; }
+.mp-tl-status { font-size: 13px; }
+
+.mp-action-panel { border-top: 4px solid var(--mp-primary); padding: 24px; }
+.mp-action-panel .mp-state { padding: 8px 0 4px; max-width: none; }
+.mp-deciding-body { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding: 28px 0; }
+.mp-deciding-body .mp-panel-title { margin: 6px 0 0; }
+.mp-panel-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center; }
+.mp-panel-actions-stack { flex-direction: column; align-items: stretch; margin-top: 16px; }
+.mp-panel-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--mp-border); }
+.mp-big-btn { height: 56px !important; font-size: 17px !important; }
+.mp-offer { border-top-color: var(--mp-success); }
+.mp-offer-main { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 14px 0 6px; }
+.mp-offer-amount { font-size: 44px; line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; color: var(--mp-success); font-variant-numeric: tabular-nums; text-align: center; overflow-wrap: anywhere; }
+.mp-offer-expiry { text-align: center; margin: 4px 0 0; font-size: 14px; color: var(--mp-muted); font-variant-numeric: tabular-nums; }
+.mp-offer-expiry.is-soon { color: var(--mp-warning); font-weight: 700; }
+.mp-declined { border-top-color: #d89614; }
+.mp-reason { font-size: 16px; font-weight: 600; color: var(--mp-text); }
+.mp-declined-note { font-size: 14px; }
+.mp-deliver-form { margin-top: 16px; }
+
+.mp-otp { display: flex; flex-direction: column; align-items: stretch; }
+.mp-otp .mp-panel-title { margin-bottom: 6px; }
+.mp-otp-text { margin: 0 0 6px; color: var(--mp-muted); line-height: 1.55; }
+.mp-otp-phone { margin: 0 0 16px; }
+.mp-otp-field { display: flex; justify-content: center; padding: 8px 0 4px; }
+.mp-otp-field .ant-otp { gap: 8px; flex-wrap: nowrap; }
+.mp-otp-field .ant-otp-input { width: 54px; height: 62px; padding: 0; text-align: center; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mp-otp-status { min-height: 26px; text-align: center; padding-top: 6px; }
+.mp-otp-error { color: var(--mp-danger); font-weight: 600; margin: 0; }
+.mp-otp-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 12px; margin-top: 8px; }
+.mp-otp-expiry { font-size: 13px; font-variant-numeric: tabular-nums; }
+@media (max-width: 400px) { .mp-otp-field .ant-otp { gap: 5px; } .mp-otp-field .ant-otp-input { width: 44px; height: 56px; font-size: 24px; } }
+
+/* ───────── Back-office ───────── */
+.mp-drawer-footer { display: flex; justify-content: flex-end; gap: 8px; }
+.mp-policy-collapse { margin-top: 8px; }
+.mp-admin-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.mp-admin-action { margin-bottom: 16px; border-top: 4px solid var(--mp-primary); }
+.mp-reasons { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.mp-reasons li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mp-reasons .ant-tag { margin-inline-end: 0; }
+
+/* antd: утсан дээр товч/оролтын хамгийн бага өндөр 44px (хүрэх хэмжээ) */
+@media (max-width: 767px) {
+  .mp-root .ant-btn { min-height: 44px; }
+  .mp-root .ant-input, .mp-root .ant-input-affix-wrapper, .mp-root .ant-select-selector, .mp-root .ant-input-number { min-height: 44px !important; }
+  .mp-root .ant-input-number-input { height: 42px; }
+  .mp-root .ant-drawer-body { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) { .mp-root * { transition: none !important; animation: none !important; } }
+
+/* Дэлгүүр/хөтөлбөрөөр задаргаа: утсан дээр хүснэгтийн оронд жижиг жагсаалт (320px-д хэвтээ гүйлгэлтгүй). */
+.mp-mini-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.mp-mini-list li { display: flex; flex-direction: column; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--mp-border); }
+.mp-mini-list li:last-child { border-bottom: 0; }
+.mp-mini-list strong { overflow-wrap: anywhere; }
+.mp-mini-list dl { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; font-size: 13px; color: var(--mp-muted); }
+.mp-mini-list dl div { display: flex; gap: 6px; }
+.mp-mini-list dt, .mp-mini-list dd { margin: 0; }
+.mp-mini-list dd { color: var(--mp-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Картын гарчиг утсан дээр таслагдахгүй, "extra" товчтой хамт мөрлөнө. */
+.mp-card .ant-card-head-wrapper { flex-wrap: wrap; row-gap: 4px; }
+.mp-card .ant-card-head-title { white-space: normal; overflow: visible; flex: 1 1 auto; min-width: 0; }
+.mp-card .ant-card-extra { margin-inline-start: auto; }
+
+.mp-nowrap { white-space: nowrap; }
+/* Утсан дээр урьдчилгааны товчлол: доод хувь тусдаа мөрөнд, 3 товч тэнцүү өргөнтэй. */
+@media (max-width: 767px) {
+  .mp-min-down { flex: 1 1 100%; margin: 0 0 2px; text-align: center; }
+  .mp-shortcuts .ant-btn { flex: 1 1 0; min-width: 0; }
+}
+
+/* Урт бичигтэй үйлдлийн товч (жишээ: "Урьдчилгааг 900,000₮ болгож дахин оролдох") утсан дээр мөрлөнө, хэвтээ гүйлгэлт үүсгэхгүй. */
+.mp-panel-actions .ant-btn, .mp-state-actions .ant-btn { white-space: normal; height: auto; min-height: 40px; padding-block: 8px; max-width: 100%; line-height: 1.35; }
+.mp-panel-actions .ant-btn-lg, .mp-state-actions .ant-btn-lg { min-height: 48px; }
+.mp-state-actions, .mp-panel-actions { max-width: 100%; min-width: 0; }
+@media (max-width: 767px) {
+  .mp-panel-actions .ant-btn, .mp-state-actions .ant-btn { flex: 1 1 100%; }
+}
+/* antd Tabs-ийн "бусад" товч: нэртэй, хүрэх хэмжээтэй. */
+.ant-tabs-nav-more { min-width: 40px; min-height: 40px; }
+
+/* Хүснэгтийн нүд: нэг мөрөнд багтаж, урт бол "…" (бүтэн текст нь title/tooltip). 1024–1280px-д баганууд хоорондоо дарагдахгүй (n=34). */
+.mp-ellipsis { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mp-table .mp-nowrap-cell, .ant-table-cell.mp-nowrap-cell { white-space: nowrap; }
+
+/* iOS Safari: фонт нь 16px-ээс бага талбарт focus хийхэд хуудас өөрөө томорно → утсанд бүх оролтын фонт 16px (хүрэх хэмжээ дээр өөрчлөлтгүй, дээрх 44px хэвээр). Drawer/Modal нь body-д portal тул .mp-root-оос гадна. */
+@media (max-width: 767px) {
+  :is(.mp-root, .ant-drawer, .ant-modal) :is(.ant-input, .ant-input-affix-wrapper, .ant-input-number, .ant-input-number-input, .ant-select, .ant-select-selection-search-input, .ant-pagination input, textarea.ant-input) { font-size: 16px !important; } /* !important: antd-ийн `.ant-select-single … .ant-select-selection-search-input { font-size: 14px }` илүү өндөр specificity-тэй */
+}

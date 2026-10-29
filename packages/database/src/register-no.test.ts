@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { blindIndex } from './crypto';
-import { hashRegisterNo, maskRegisterNoStrict, normalizeRegisterNo } from './register-no';
+import { normalizeRegisterNo as contractsNormalize } from '@los/contracts';
+import { foldRegisterNo, hashRegisterNo, maskRegisterNoStrict, normalizeRegisterNo, registerNoHashVariants } from './register-no';
 
 // УБ, ХА: кирилл (латин дүртэй андуурахгүйн тулд look-alike хүснэгтийг код цэгээр бичнэ).
 const UB = 'УБ';
@@ -39,14 +40,14 @@ describe('normalizeRegisterNo', () => {
     }
   });
 
-  // Старый pin 'ӨҮ12345678' хэвээр үлдэх ёстой гэж үзэж байсан нь алдаа байсан: Ү нь латин Y-тэй дүрсээр адил (Ү → У).
-  it('folds Cyrillic Ү (U+04AE) onto У so Latin Y, Cyrillic Ү and Cyrillic У agree', () => {
-    const fromY = normalizeRegisterNo('YA12345678');
-    expect(fromY).toBe('УА12345678');
-    expect(normalizeRegisterNo('\u04aeА12345678')).toBe(fromY);
-    expect(normalizeRegisterNo('\u04afа12345678')).toBe(fromY);
-    expect(normalizeRegisterNo('УА12345678')).toBe(fromY);
-    expect(normalizeRegisterNo('ӨҮ12345678')).toBe('ӨУ12345678');
+  // customer.registerNoHash = blindIndex(@los/contracts normalizeRegisterNo(r)); blacklist hash түүнтэй таарахгүй бол Модуль 1-ийн анхааруулга алдагдана.
+  it('keeps Cyrillic Ү distinct, so valid registers hash exactly like @los/contracts normalizeRegisterNo', () => {
+    for (const v of ['ҮБ12345678', 'ӨҮ12345678', 'УБ12345678', 'ЁЭ12345678', 'ЙА12345678', 'ЧА87654321', '1234567']) {
+      expect(normalizeRegisterNo(v)).toBe(contractsNormalize(v));
+      expect(hashRegisterNo(v)).toBe(blindIndex(contractsNormalize(v)));
+    }
+    expect(normalizeRegisterNo('YA12345678')).toBe('УА12345678');
+    expect(normalizeRegisterNo('\u04afа12345678')).toBe('ҮА12345678');
   });
 
   it('leaves digits and Latin letters without a Cyrillic look-alike as they are (upper-cased)', () => {
@@ -243,5 +244,32 @@ describe('hashRegisterNo', () => {
 
   it('does not contain the plain register', () => {
     expect(hashRegisterNo(`${UB}12345678`)).not.toContain('12345678');
+  });
+});
+
+describe('foldRegisterNo', () => {
+  it('makes Latin Y, Cyrillic Ү and Cyrillic У agree (comparison key only)', () => {
+    const folded = foldRegisterNo('YA12345678');
+    expect(folded).toBe('УА12345678');
+    expect(foldRegisterNo('ҮА12345678')).toBe(folded);
+    expect(foldRegisterNo('уа 12345678')).toBe(folded);
+    expect(foldRegisterNo('ӨҮ12345678')).toBe('ӨУ12345678');
+  });
+});
+
+describe('registerNoHashVariants', () => {
+  it('starts with the canonical hash and adds every У/Ү combination of the two leading letters', () => {
+    expect(registerNoHashVariants('УБ12345678')[0]).toBe(hashRegisterNo('УБ12345678'));
+    expect(new Set(registerNoHashVariants('УУ12345678'))).toEqual(new Set(['УУ', 'ҮУ', 'УҮ', 'ҮҮ'].map((l) => hashRegisterNo(`${l}12345678`))));
+    expect(new Set(registerNoHashVariants('ҮБ12345678'))).toEqual(new Set(['ҮБ', 'УБ'].map((l) => hashRegisterNo(`${l}12345678`))));
+    expect(registerNoHashVariants('YA12345678')).toContain(hashRegisterNo('ҮА12345678'));
+  });
+
+  it('adds nothing for registers without У/Ү in the leading letters, or for legal-entity numbers', () => {
+    expect(registerNoHashVariants('ЧА87654321')).toEqual([hashRegisterNo('ЧА87654321')]);
+    expect(registerNoHashVariants('1234567')).toEqual([hashRegisterNo('1234567')]);
+    expect(registerNoHashVariants('ЧУ12345678')).toHaveLength(2); // хоёр дахь үсэг У бол Ү хувилбар нэмэгдэнэ
+    expect(registerNoHashVariants('УЧ12345678')).toHaveLength(2);
+    expect(registerNoHashVariants('ЧЧ12345678')).toHaveLength(1);
   });
 });

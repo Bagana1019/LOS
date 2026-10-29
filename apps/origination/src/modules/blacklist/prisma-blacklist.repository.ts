@@ -11,7 +11,7 @@ import {
 // Бодит PrismaClient (.prisma/client-origination) үүнд бүтцээрээ таарна — blacklist.prisma.ts-д шалгагдана.
 type BlacklistRecord = Omit<BlacklistRow, 'customerType'> & { customerType: string };
 interface BlacklistDelegate {
-  findFirst(args: { where: object }): Promise<BlacklistRecord | null>;
+  findFirst(args: { where: object; orderBy?: object[] }): Promise<BlacklistRecord | null>;
   findMany(args: { where: object; orderBy: object[]; skip: number; take: number }): Promise<BlacklistRecord[]>;
   count(args: { where: object }): Promise<number>;
   create(args: { data: BlacklistRow }): Promise<unknown>;
@@ -56,7 +56,8 @@ export class PrismaBlacklistRepository implements BlacklistRepository {
   }
 
   async findByKey(orgId: string, registerNoHash: string, listType: string) {
-    const r = await this.prisma.blacklist.findFirst({ where: { orgId, registerNoHash, listType } });
+    // Идэвхтэй мөр ганц (partial unique); идэвхгүй түүхэн мөр олон байж болох тул идэвхтэйг түрүүлж, үгүй бол хамгийн сүүлд өөрчлөгдсөнийг авна.
+    const r = await this.prisma.blacklist.findFirst({ where: { orgId, registerNoHash, listType }, orderBy: [{ isActive: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }] });
     return r && toRow(r);
   }
 
