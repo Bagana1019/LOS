@@ -4,6 +4,7 @@ import { PrismaClient } from '.prisma/client-origination';
 import { SEED } from '@los/database';
 import { SETTING_REGISTRY, type SettingKey } from '@los/contracts';
 import { seedPricingTiers } from './seeds/pricing-tiers';
+import { seedDemoCollateral } from './seeds/demo-collateral';
 
 const prisma = new PrismaClient();
 const orgId = SEED.org.id;
@@ -87,5 +88,9 @@ async function main() {
   }
   const pricing = await seedPricingTiers(prisma, orgId); // FR-5.5
   console.log(`origination seed: ${Object.keys(SETTING_REGISTRY).length} settings, ${products.length} products, ${levels.length} approval levels, pricing tiers ${pricing ? 'created' : 'kept'}`);
+  if (process.env.SEED_DEMO === '1') { // Модуль 6 demo: барьцааны урсгалыг турших ноорог хүсэлт (production-д тохируулахгүй)
+    const demo = await seedDemoCollateral(prisma, orgId);
+    console.log(`origination demo seed: collateral demo application ${demo.created ? 'created' : 'kept'} (${demo.applicationId})`);
+  }
 }
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());
