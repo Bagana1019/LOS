@@ -6,3 +6,4 @@ export * from './dto';
 export * from './maker-checker';
 export * from './merchant';
 export * from './bsa';
+export * from './customer';

@@ -1,5 +1,10 @@
 # blacklist
 
-Хүсэлт, төлвийн машин, зээлдэгч, орлого, нөхцөл, ЭТХ, батлах урсгал, гэрээ, олголт, хар жагсаалт, мэдэгдэл, тайлан, админ
+Хар жагсаалт — **FR-13.1**, **BR-9** (бүх шалтгаанд зөвхөн анхааруулга; хориг байхгүй, батлагч шийднэ).
 
-Шаардлага: docs/ — холбогдох FR-ийг README-д заа. TODO: module, controller, service, dto, tests.
+Модуль 1-д орсон (хайлт/шалгалт):
+* `BlacklistLookupService` — `blacklist.register_no_hash` (blind index)-ээр идэвхтэй бичлэгийг `BlacklistWarning[]` болгоно. `CustomerModule` ашиглана.
+* `GET /api/blacklist/check?registerNo=` (`blacklist:read`) — маягтад регистр бичих үед автомат шалгалт.
+
+Модуль 13-д нэмэх: CRUD, CSV импорт (`blacklist:manage`; gateway `route-policy.ts` аль хэдийн хаасан). Бичлэг үүсгэхдээ
+`registerNoHash = blindIndex(normalizeRegisterNo(registerNo))`, `registerNoEncrypted = encryptedField(normalizeRegisterNo(registerNo))` (AAD-гүй).

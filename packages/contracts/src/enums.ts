@@ -111,3 +111,8 @@ export type AgingBucket = typeof AgingBucket[number];
 
 export const IntegrationMode = ['mock','real'] as const;
 export type IntegrationMode = typeof IntegrationMode[number];
+// ── Module 1 (FR-2.3): docs/03-д enum-ийн жагсаалт өгөөгүй баганууд — утгыг DECISIONS.md-д бүртгэсэн ──
+export const Gender = ['MALE','FEMALE'] as const;
+export type Gender = typeof Gender[number];
+export const MaritalStatus = ['SINGLE','MARRIED','DIVORCED','WIDOWED'] as const;
+export type MaritalStatus = typeof MaritalStatus[number];
