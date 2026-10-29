@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildSyntheticStatementText, SYNTHETIC_IBAN, SYNTHETIC_OWN_IBAN } from '../providers/mock.fixtures';
 import { ocrResultFromText } from '../providers/result';
+import { expectNearLinear } from '../testing/scaling';
 import { extractDocument } from './extract-document';
 
 const run = (text: string, conf: Parameters<typeof ocrResultFromText>[1] = 0.97) => extractDocument(ocrResultFromText(text, conf), 'GENERIC');
@@ -107,10 +108,13 @@ describe('GENERIC: бүтэц, хоосон оролт, хуулга', () => {
     expect(f.note).toMatch(/Итгэл бага/);
   });
 
-  it('урт адверсари оролт (200k тэмдэгт) хурдан (шугаман хугацаа) боловсруулагдана', () => {
-    const text = `${'1 '.repeat(50_000)}\n${'ЖЮ'.repeat(30_000)}\n${'MN64 '.repeat(10_000)}`;
-    const t0 = performance.now();
-    run(text);
-    expect(performance.now() - t0).toBeLessThan(5_000);
+  // Хугацааг тогтмол wall-clock хязгаараар биш (ачаалалтай CI-д дэмий унана), оролтыг 8 дахин нэмэхэд CPU хугацаа ~8 дахин өсдөг (шугаман) эсэхээр шалгана.
+  // Хамгийн том оролт = 210k тэмдэгт (k = 10_000): '1 ' x5k, 'ЖЮ' x3k, 'MN64 ' x1k. Ердийн CPU хугацаа ~0.3-1 с; maxLargeMs нь ахлах удаашралыг (шугаман ч гэсэн) барих нэн өгөөмөр таазлалт.
+  it('урт адверсари оролт (200k тэмдэгт) шугаман хугацаанд боловсруулагдана', () => {
+    const adversarial = (k: number) => `${'1 '.repeat(5 * k)}\n${'ЖЮ'.repeat(3 * k)}\n${'MN64 '.repeat(k)}`;
+    expectNearLinear((k) => {
+      const text = adversarial(k);
+      return () => void run(text);
+    }, 1_250, { maxLargeMs: 15_000 });
   });
 });
