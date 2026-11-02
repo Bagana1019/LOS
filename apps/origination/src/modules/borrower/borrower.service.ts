@@ -110,7 +110,7 @@ export class BorrowerService {
       const { app, raw } = await this.begin(tx, ctx, applicationId);
       const target = this.findTarget(raw, borrowerId);
       // (10) Барьцаа хөрөнгийн өмчлөгч барьцаалагчийг хасахгүй.
-      const ownsCollateral = target.role === 'PLEDGOR' && !!(await tx.collateral.findFirst({ where: { applicationId: app.id, ownerCustomerId: target.customerId }, select: { id: true } }));
+      const ownsCollateral = !!(await tx.collateral.findFirst({ where: { applicationId: app.id, ownerCustomerId: target.customerId }, select: { id: true } }));
       throwIf(checkRemovable(toRow(target), raw.map(toRow), ownsCollateral));
       await tx.loanApplicationBorrower.delete({ where: { id: target.id } });
       await this.afterChange(tx, ctx, app, { change: 'REMOVED', customerId: target.customerId, role: target.role as BorrowerRole }, { borrowerAdded: false, compositionChanged: target.role === 'PRIMARY' || target.role === 'CO_BORROWER' });

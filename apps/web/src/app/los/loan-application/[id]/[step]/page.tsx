@@ -1,9 +1,12 @@
 'use client';
 import { useParams } from 'next/navigation';
 import { BorrowersStep } from '../../../../../features/borrowers';
+import { CollateralStep } from '../../../../../features/collateral';
+import { DocumentsStep } from '../../../../../features/documents';
 import { ScoreStep } from '../../../../../features/score';
 
-// docs/01 §2.2: `/los/loan-application/:id/<step>`. Энд холбогдсон алхмууд: `client` (1 — Харилцагч), `score` (7 — Тооцоолол); бусад алхмыг өөр stream нэмнэ.
+// docs/01 §2.2: `/los/loan-application/:id/<step>`. Холбогдсон алхмууд: 1 `client` (Харилцагч), 5 `collateral` (Барьцаа), 7 `score` (Тооцоолол), 8 `document` (Баримт);
+// бусад алхмыг өөр stream нэмнэ.
 export default function Page() {
   const { id, step } = useParams<{ id: string; step: string }>();
   if (step === 'client') {
@@ -13,10 +16,24 @@ export default function Page() {
       </div>
     );
   }
+  if (step === 'collateral') {
+    return (
+      <div>
+        <CollateralStep applicationId={id} />
+      </div>
+    );
+  }
   if (step === 'score') {
     return (
       <div>
         <ScoreStep applicationId={id} />
+      </div>
+    );
+  }
+  if (step === 'document') {
+    return (
+      <div>
+        <DocumentsStep applicationId={id} />
       </div>
     );
   }

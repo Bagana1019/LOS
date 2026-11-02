@@ -2,7 +2,114 @@
 
 Port 4004. Барьцааны үнэлгээ: суурь үнэ, арга, haircut, гадны үнэлгээ, дахин үнэлгээ
 
-DB schema: `valuation`. Модулиуд: valuation, base-price, haircut.
+DB schema: `valuation`. Модулиуд: valuation (машины зах зээлийн жишиг), collateral-valuation, base-price, haircut.
+
+## Барьцааны үнэлгээ (Модуль 6, FR-14.1–14.6)
+
+origination-ий барьцааны карт эндээс **системийн санал**, **haircut**-ыг авч, эцсийн үнэлгээг энд **хадгална** (`collateral_valuation`) бөгөөд
+`ValuationCompleted` event нь үнэлгээтэй нэг транзакцид outbox-д бичигдэнэ (CLAUDE.md §3.2 дүрэм 4). Дуудагч нь `origination` (sync REST,
+CLAUDE.md §3.1); хүрээ, хүсэлтийн төлөв, бичих эрхийг тэнд шалгана. Gateway `/api/valuation/valuate/collateral`-ийг ажилтанд нээхгүй (зөвхөн дотоод).
+Модулиуд: `collateral-valuation`, `base-price`, `haircut` (+ дээрх `valuation` нь машины зах зээлийн жишиг). Цэвэр томьёо нь
+`@los/calc` `collateral-value.ts` (100% coverage); энд I/O, хадгалалт, шийдвэрийн дараалал л байна.
+
+### Endpoint-ууд
+
+| Endpoint | Эрх | Статус | Зориулалт |
+| --- | --- | --- | --- |
+| `POST /api/valuate/collateral/suggest` | `application:read` | 200 | Системийн санал + haircut. **Юу ч хадгалахгүй.** POST: тайлбарт улсын дугаар орно, URL/access log-д гарах ёсгүй |
+| `POST /api/valuate/collateral` | `application:read` | 201 | Дотоод үнэлгээ хадгалах (FR-14.2). Санал серверт **дахин** бодогдоно: клиентийн хуулбарт итгэхгүй |
+| `POST /api/valuate/collateral/external` | `application:read` | 201 | Гадны лицензтэй үнэлгээчний дүн (FR-14.3). Тайлангийн `reportFileId` заавал |
+| `GET /api/valuate/collateral/:collateralId/history` | `application:read` | 200 | Үнэлгээний түүх `{ items }` (FR-14.6): `valuedAt`, дараа нь `createdAt`, `id`-аар, org-оор хязгаарлагдсан. Үнэлгээгүй/үл мэдэгдэх id нь хоосон жагсаалт |
+| `GET /api/base-prices?assetType&history` | `application:read` | 200 | Суурь үнийн жагсаалт (массив): түлхүүр бүрийн **өнөөдөр** хүчинтэй сүүлийн хувилбар; `history=true` бол бүх хувилбар |
+| `POST /api/base-prices` | `settings:manage` | 201 | Нэг үнэ нэмэх. Үргэлж **шинэ хувилбар** (`version = max + 1`), өмнөхийг дарахгүй (FR-14.5) |
+| `POST /api/base-prices/import` | `settings:manage` | 201 | ≤ 5000 мөр, бүгд эсвэл юу ч биш (нэг транзакц). Хариу `{ created, byAssetType }` |
+| `GET /api/haircuts?productId&assetType&includeInactive` | `application:read` | 200 | Haircut дүрмийн жагсаалт (массив). `productId=null` гэвэл зөвхөн бүх бүтээгдэхүүний (org-wide) дүрэм |
+| `PUT /api/haircuts` | `settings:manage` | 200 | `(productId \| org-wide, assetType)`-аар upsert, `haircutRate` 0…1, **4 орноос ихгүй** аравтын (бөөрөнхийлөхгүй, 400) |
+| `DELETE /api/haircuts/:id` | `settings:manage` | 200 | Идэвхгүй болгоно (soft delete, давтахад зөвшөөрнө), хариу нь дүрмийн view. Үл мэдэгдэх id 404 `HAIRCUT_NOT_FOUND` |
+
+Хүсэлтийн хэлбэр нь `@los/contracts` `dto/collateral-valuation.ts` (`SuggestValuationRequest`, `SaveCollateralValuationRequest`,
+`RecordExternalValuationRequest`, `BasePriceInput`, `HaircutRuleInput`). `description` нь `COLLATERAL_DESCRIPTION_SCHEMAS[assetType]`-аар энд
+**дахин** шалгагдана (400 `VALIDATION_FAILED`, `details[].path = description.*`). Огноо (`valuedAt`, `validUntil`, `validFrom`) нь
+Улаанбаатарын (UTC+8, тогтмол) хуанлийн өдөр: зөвхөн огноотой утга тухайн өдрийн 00:00 UB-д буудаг.
+
+### Санал (suggest) хөрөнгийн төрлөөр
+
+| `assetType` | `method` | Арга |
+| --- | --- | --- |
+| `VEHICLE` | `VEHICLE_MARKET_COMPARABLES` → `VEHICLE_BASE_PRICE` | 1) АТҮТ + зарын жишиг (`/valuate/auto` логик). 2) Боломжгүй бол суурь үнэ(make, model, он) × элэгдэл × гүйлтийн хасалт. 3) Суурь үнэгүй бол санал **байхгүй** |
+| `APARTMENT`, `HOUSE` | `REALTY_BASE_PRICE` | дүүрэг/хорооны ₮/м² × талбай × давхар (зөвхөн орон сууц) × зориулалт × барилгын насны коэффициент. Хорооны үнэ байвал түүнийг, үгүй бол дүүргийнхийг |
+| `LAND` | `LAND_BASE_PRICE` | дүүрэг/хорооны ₮/м² × талбай × газар ашиглалтын коэффициент |
+| `LIVESTOCK` | `LIVESTOCK_UNIT_PRICE` | (төрөл, нас) нэгж үнэ × толгой |
+| `INVENTORY`, `EQUIPMENT`, `OTHER` | байхгүй (`MANUAL_VALUE_ASSET`) | ЗЭЗ дүнг гараар оруулна (`manualValueRequired = true`). Бараанд тооллогын дүн/огноо `basis`-д давтагдана |
+
+Машины санал байхгүй байх шалтгаан: `VEHICLE_NOT_FOUND` (АТҮТ-д дугаар алга, 404 **биш** 200-д `available=false`), `INSUFFICIENT_DATA` (жишиг зар
+цөөн, суурь үнэгүй), `SOURCE_UNAVAILABLE` (АТҮТ/зарын сайт унасан, суурь үнэгүй). АТҮТ унасан үед суурь үнийг гараар бичсэн тайлбараас
+(`make`, `model`, `manufactureYear`) авч, `basis.vehicleSource = DESCRIPTION`; ингэж fallback хийсэн шалтгаан `basis.fallbackReason`-д.
+Хөрөнгө/суурь үнийн түлхүүр олдохгүй бол `NO_BASE_PRICE`. Бодогдсон дүн `(0, 1e12]`-оос гадуур бол санал болгохгүй (`INSUFFICIENT_DATA`).
+`warnings`: `MILEAGE_NOT_PROVIDED`, `LOW_CONFIDENCE`, `BASE_PRICE_STALE` (суурь үнэ `basePriceStaleDays`-аас хуучин), `DEMO_PARAMETERS` (доорх DEMO
+коэффициент хэрэглэгдсэн). `basis` нь тооцооны орц бүрийг (үнэ, `version`, `validFrom`, коэффициент) агуулна: **улсын дугаар, өмчлөгч, гудамжны хаяг орохгүй**.
+
+`HOUSE`-ийн суурь үнэ барилгын үнэ: тайлбар дахь `landAreaM2` дүнд **нэмэгдэхгүй** (`basis.landValued = false`); газрыг тусад нь `LAND`
+барьцаа болгох эсвэл `marketValue`-г шалтгаантайгаар засна.
+
+### Haircut ба шийдвэрийн дүрэм
+
+- **Haircut-ын дараалал** (`HaircutSource`): `PRODUCT_RULE` (бүтээгдэхүүн + төрөл, `haircut_rule`) > `PRODUCT_JSON` (хүсэлтийн `productHaircutRate`, `product.haircut_json`) >
+  `ORG_RULE` (бүх бүтээгдэхүүн + төрөл) > `DEMO_DEFAULT` (доорх хүснэгт). `collateralValue = marketValue × haircut` (30 000 000 × 0.7 = 21 000 000, docs/04 M6 AC).
+- **Шалтгаан** (`OVERRIDE_REASON_REQUIRED`, 422): гараар оруулдаг төрөл (бараа, тоног төхөөрөмж, бусад) биш ба (санал байхгүй **эсвэл** эцсийн дүн саналаас
+  2 орон хүртэл бөөрөнхийлөхөд ялгаатай) үед заавал. Саналтай ижил дүнтэй хамт ирсэн илүү шалтгааныг хадгалахгүй. Санал байхгүй, `marketValue` өгөөгүй бол 422 `MARKET_VALUE_REQUIRED`.
+- **Арга**: дүн саналтай ижил бол саналын `method`, өөрөөр `MANUAL` (бараа бол `INVENTORY_STOCKTAKE`); гадны бол `EXTERNAL_APPRAISAL`.
+- **Гадны үнэлгээ заавал** (`externalRequired`): `externalValuationThreshold != null && marketValue >= threshold`. Босгыг бүтээгдэхүүнээс origination дамжуулна.
+- **Хүчинтэй хугацаа**: дотоод = `now + validityDays`; гадны = `valuedAt + validityDays`, эсвэл тодорхой `validUntil` (тэр өдрийн төгсгөл, UB). Алдаа: `VALUED_AT_IN_FUTURE`,
+  `VALID_UNTIL_INVALID` (`validUntil <= valuedAt`) 422; бодит бус хуанлийн өдөр 400.
+- **Хадгалалт**: нэг транзакцид (барьцаа бүрт advisory lock-той) projection `collateral` (тайлбараас `address.detail`, `location` хасагдсан) + `collateral_valuation`
+  (`method_json = { suggestion, haircut, note? }`: дахин гаргах орц) + outbox `ValuationCompleted`. Аль нэг нь унавал бүгд буцна.
+  Улсын дугаар/өмчлөгчийн мэдээлэл аудит, лог-д орохгүй.
+
+### Суурь үнэ (`base_price`)
+
+- Түлхүүр (`key_json`): машин `{ make, model, year }`, үл хөдлөх `{ district, khoroo? }`, мал `{ livestockType, ageGroup }`. Түлхүүрийг хэвийн болгоно: хоосон зайг цэгцлэх,
+  дүүргийн төгсгөлийн "дүүрэг" нэмэлтийг хасах, **том/жижиг үсгийг ялгана** (`Toyota` ≠ `toyota`; нормчлол нь adapter/админы үүрэг). Мужийг (аймаг) түлхүүрт агуулаагүй тул
+  УБ-аас гадуурх ижил нэртэй дүүрэг давхцана (нээлттэй асуулт).
+- Хувилбар: `(org, assetType, key)` бүрт `version` өснө; `validFrom` нь тухайн огнооноос хүчинтэй. `validFrom`-д нь (УБ-ын өнөөдөр) хүрсэн хувилбаруудаас **хамгийн их `version`**
+  хэрэглэгдэнэ; ирээдүйн `validFrom`-тэй хувилбар тэр өдөр хүртэл хэрэглэгдэхгүй. Өмнөх хувилбар түүхэнд үлдэнэ (`history=true`).
+- Импорт: бүгдийг эхлээд шалгаж 422 `BASE_PRICE_IMPORT_INVALID` (`details`: мөрийн индекс + `BASE_PRICE_KEY_MISMATCH` / `BASE_PRICE_DATE_INVALID` / `BASE_PRICE_DUPLICATE`),
+  дараа нь нэг транзакцид 1000-аар `createMany`. (org, төрөл) бүрт нэг зэрэг нэг л бичигч ажиллана (advisory lock), тиймээс `version` давхцахгүй.
+- Body хязгаар `JSON_BODY_LIMIT = 2mb` (`src/configure-app.ts`; 5000 мөр Express-ийн анхдагч 100 kB-аас их). **Gateway-ийн хязгаарыг тусад нь шалгана.**
+
+### DEMO параметрүүд ба тэдгээрийг солих
+
+Бизнес баталгаажуулаагүй бүх тоо `// DEMO:` тэмдэглээтэй, нэг газраас солигдоно. Ашиглагдаж буй үед санал `DEMO_PARAMETERS` анхааруулгатай гарна (production-д энэ анхааруулга алга болтол DEMO-г солих ёстой).
+
+| Юу | Одоогийн DEMO утга | Хаана | Хэрхэн солих |
+| --- | --- | --- | --- |
+| Машин: суурь үнийн элэгдэл | жилд 3%, дээд 50% | `modules/collateral-valuation/demo-collateral-pricing.ts` `vehicle` | `COLLATERAL_PRICING_SETTINGS`-д `origination.settings` projection (`CollateralPricingSettings`) холбох. Суурь үнийн жагсаалт одоо **шинэ машины** лавлах үнэ гэж үзнэ; жагсаалт нь хуучирсан (зах зээлийн) үнэ бол элэгдлийг 0 болгоно |
+| Машин: гүйлтийн хасалт | жилд 15 000 км үнэгүй, давсан 10 000 км тутамд 1%, дээд 20% | мөн `vehicle` | мөн дээрхтэй адил |
+| Давхрын коэффициент (орон сууц) | подвал 0.85, 1-р давхар 0.95, дунд 1, дээд 0.97 | `realty.floor` | мөн |
+| Зориулалтын коэффициент | RESIDENTIAL 1, COMMERCIAL 1.15 | `realty.purpose` | мөн |
+| Барилгын насны коэффициент | ≤5 жил 1.05, ≤15 1.0, ≤30 0.9, илүү 0.8, үл мэдэгдэх 0.95 | `realty.buildingAge` | мөн |
+| Газар ашиглалтын коэффициент | RESIDENTIAL 1, COMMERCIAL 1.2, AGRICULTURAL 0.3, INDUSTRIAL 0.9, OTHER 0.8 | `land.landUse` | мөн |
+| Суурь үнэ "хуучирсан" босго | 365 хоног | `basePriceStaleDays` | мөн |
+| Haircut-ын сүүлийн fallback | VEHICLE .7, APARTMENT .8, HOUSE .75, LAND .6, LIVESTOCK .5, INVENTORY .5, EQUIPMENT .6, OTHER .4 | `defaultHaircuts` | Бодит утга `PUT /api/haircuts` (`ORG_RULE` / `PRODUCT_RULE`) эсвэл `product.haircut_json`. DEMO_DEFAULT-д хүрэхгүй болтол дүрмийг оруулна |
+| Машины зах зээлийн жишгийн параметр | дээрх "Тооцооллын арга" хэсэг | `modules/valuation/demo-valuation-settings.ts` (`demo = true`) | `VALUATION_SETTINGS` token |
+| Суурь үнэ (65 мөр), haircut дүрэм (seed) | `validFrom 2026-01-01`; УБ-ын 9 дүүрэг (орон сууц/байшин/газар), 3 хорооны орон сууц, мал 10, mock машин 5 × 5 он | `prisma/seed-data.ts` (`seedValuation`) | Seed нь **create-only** (давтахад давхардуулахгүй, админы оруулсан үнийг дарахгүй). Бодит үнийг `POST /api/base-prices/import`-оор оруулна; DEMO мөрүүд түүхэнд үлдэх тул шинэ `validFrom` өгнө |
+
+Бүх DEMO үнэ **бодит зах зээлийн өгөгдөл биш**: бизнес баталгаажуулах хүртэл `docs/DECISIONS.md` M6-д бичигдсэн таамаглал.
+
+### Алдааны код (энэ модулийн)
+
+| HTTP | `code` | Тохиолдол |
+| --- | --- | --- |
+| 400 | `VALIDATION_FAILED` | буруу body/`description`/огноо/`haircutRate` (4 оронгоос олон) |
+| 404 | `HAIRCUT_NOT_FOUND` | идэвхгүй болгох дүрэм олдсонгүй |
+| 422 | `MARKET_VALUE_REQUIRED`, `OVERRIDE_REASON_REQUIRED`, `VALUED_AT_IN_FUTURE`, `VALID_UNTIL_INVALID`, `BASE_PRICE_IMPORT_INVALID` | дээр тайлбарласан |
+| 401/403 | `UNAUTHENTICATED`, `FORBIDDEN` | `/auto`-той адил |
+
+### Дуудагчид (origination)
+
+- Машины `suggest`/хадгалах нь АТҮТ + зарын сайтыг дууддаг тул нийт хугацаа 15с хүртэл. origination энэ дуудлагад дотоод sync-ийн 3с timeout-ыг **хэрэглэж болохгүй**: ≥ 20с.
+- `ValuationCompleted`-ийг origination сонсоно (барьцааны LTV, ачаалал); at-least-once тул `eventId`-аар давхардлыг хаана. Outbox relay нь тестэд унтраастай (`OUTBOX_RELAY=off`).
+- `reportFileId` нь `dms` дахь файл гэдгийг энд **шалгахгүй** (valuation нь dms-г sync дууддаггүй, CLAUDE.md §3.2 дүрэм 2): шалгах нь origination-ий үүрэг.
 
 ## Автомашины зах зээлийн үнийн автомат санал (FR-14.1, FR-14.2)
 
@@ -165,11 +272,10 @@ Adapter-ийн хариуг (АТҮТ-ийн бичлэг: `@los/contracts` `Veh
 
 ### Хамрах хүрээнээс гадуур
 
-- Haircut ба барьцааны үнэлгээ (зах зээлийн үнэ × haircut), `collateral_valuation` хадгалалт, `override_reason` (docs/04 Модуль 6).
-- `ValuationCompleted` event (outbox/event bus нь `TODO(M00)`).
-- Автомашинаас бусад хөрөнгийн төрөл (`assetType` одоогоор зөвхөн `VEHICLE`), суурь үнийн сан (FR-14.1 суурь үнэ × элэгдэл, FR-14.5).
-- Өмчлөлийн KYC (FR-6.5): өмчлөгчийн мэдээллийг зөвхөн лавлах оролт болгон буцаана, `kyc`/`origination` шийднэ.
-- Нэвтрэлт, дүр/салбарын хүрээ: gateway шийднэ; энд зөвхөн дээрх `@Permissions` шалгана. Өгөгдлийн хүрээ (`scopeWhere`) шаардахгүй, юу ч хадгалдаггүй.
+- Барьцааны карт, хүсэлттэй холбох, ачаалал, өмчлөлийн KYC (FR-6.5) нь `origination`/`kyc`; энэ сервис зөвхөн үнэлгээг хариуцна. Haircut, `collateral_valuation` хадгалалт, `override_reason`, `ValuationCompleted` нь дээрх "Барьцааны үнэлгээ" хэсэгт.
+- Автомашин бус хөрөнгийн зах зээлийн жишиг (unegui-ийн үл хөдлөх, мал): суурь үнийн сангаар төлөөлнө.
+- Нэвтрэлт, дүр/салбарын хүрээ: gateway шийднэ; энд зөвхөн `@Permissions` шалгана. `/valuate/auto` юу ч хадгалахгүй (stateless).
+- Бодит АТҮТ ба зарын сайтын adapter: stub (`NOT_IMPLEMENTED`), дээрх тайлбар.
 
 ### Ажиллуулах, шалгах
 
@@ -180,4 +286,9 @@ curl -s -X POST localhost:4104/api/valuate/auto -H 'content-type: application/js
   -H 'x-user-id: dev-officer' -H 'x-roles: OFFICER' -H 'x-org-id: dev-org' \
   -d '{"assetType":"VEHICLE","plateNo":"УЕН5246","mileageKm":90000}'
 cd apps/valuation && npx vitest run      # unit + e2e (supertest); `TEST_DATABASE_URL` (нэр нь `test`-ээр төгссөн DB) тохируулбал AppModule-ийн тест ч ажиллана
+cd packages/calc && pnpm exec vitest run src/collateral-value.test.ts --coverage   # цэвэр томьёо, 100% coverage
 ```
+
+DB-тэй тест: `TEST_DATABASE_URL=postgresql://<user>@127.0.0.1:5432/<db>test REDIS_URL=redis://127.0.0.1:6379/<n> npx vitest run`. Глобал setup нь
+`valuation` schema-г **устгаж** дахин migrate + seed хийнэ: зөвхөн тест DB-д. Root `.env` үүсгэж болохгүй (`INTERNAL_AUTH_SECRET` тохирч, тест унана). Тестийн цаг
+`FixedClock` (2026-10-29); `test/app.ts` нь `createApp()`, `as(user, orgId)` helper өгнө. Тест нь `tsc`-ээр шалгагддаггүй (`@types/supertest` байхгүй), `nest build` нь `src/**/testing/**`-ийг хасдаг.

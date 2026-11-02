@@ -53,6 +53,11 @@ export const SETTING_REGISTRY = {
   'notification.max_attempts': def(z.number().int().positive(), 5, 'Мэдэгдэл илгээх дээд оролдлого'),
   'notification.channels_customer': def(z.array(z.enum(['SMS', 'EMAIL', 'PUSH'])), ['SMS', 'EMAIL', 'PUSH'], 'Зээлдэгчид мэдэгдэх идэвхтэй сувгууд'),
   'report.max_export_rows': def(z.number().int().positive(), 50_000, 'Excel экспортын дээд мөрийн тоо'),
+  // ── Барьцаа, үнэлгээ (docs/05-collateral-documents.md; DEMO таамаг — docs/DECISIONS.md) ──
+  'valuation.internal_validity_days': def(z.number().int().positive(), 90, 'FR-14.3 · дотоод үнэлгээ хүчинтэй байх хоног'),
+  'valuation.external_validity_days': def(z.number().int().positive(), 365, 'FR-14.3 · гадны (лицензтэй) үнэлгээ хүчинтэй байх хоног'),
+  'collateral.revaluation_interval_days': def(z.number().int().positive(), 365, 'FR-6.9 · барьцааг дахин үнэлэх давтамж (хоног)'),
+  'collateral.insurance_reminder_days': def(z.number().int().min(0), 30, 'FR-6.9 · даатгал дуусахаас өмнө сануулах хоног'),
 } as const;
 
 export type SettingKey = keyof typeof SETTING_REGISTRY;
