@@ -2,8 +2,9 @@
 // BSA ангилал + дүрмийн анхдагч сан (docs/02 §4, NFR-6, BSA-FR-3.5): src/modules/bsa/classify/default-catalog.ts-ээс, байгууллага (SEED_ORG_ID) тутамд.
 //  - Анхдагч: ДУТУУГ нэмнэ, байгааг ӨӨРЧИЛӨХГҮЙ — admin засварласан дайчлах хувь/босгыг дахин seed дарахгүй.
 //  - SEED_BSA_REFRESH=1: ангилал/дүрмийг анхдагч утга руу буцаана (зөвхөн ялгаатай мөрийг шинэчилнэ).
-//  - Sosco Score загвар v1 (Модуль 0): жин/босго DEMO таамаг — docs/DECISIONS.md. Admin (M13) UI-аас засна.
+//  - Sosco Score загвар v1 (Модуль 0, 8): жин/босго/муруй DEMO таамаг (`@los/calc` DEFAULT_SOSCO_*) — docs/DECISIONS.md. Admin `PUT /api/sosco/models`-оор засна.
 import { Prisma, PrismaClient } from '../node_modules/.prisma/client-scoring';
+import { DEFAULT_SOSCO_CURVES, DEFAULT_SOSCO_GRADE_THRESHOLDS, DEFAULT_SOSCO_WEIGHTS } from '@los/calc';
 import { SEED } from '@los/database';
 import { DEFAULT_BSA_CATEGORIES, DEFAULT_BSA_RULES } from '../src/modules/bsa/classify/default-catalog';
 
@@ -75,15 +76,15 @@ export async function seedBsaCatalog(db: PrismaClient, orgId: string, refresh = 
   });
 }
 
-// SoscoWeights (@los/calc): нийлбэр 1.0. Босго — оноо 0–1000 → A–E.
-const SOSCO_WEIGHTS = { fico: 0.3, dti: 0.25, reliability: 0.15, suspicious: 0.1, history: 0.15, ltv: 0.05 };
-const SOSCO_GRADE_THRESHOLDS = { A: 800, B: 700, C: 600, D: 500, E: 0 };
-
-/** Sosco Score загвар v1 — байвал өөрчлөхгүй */
+/** Sosco Score загвар v1 (жин, босго, муруй нь `@los/calc`-ийн DEMO анхдагч) — байвал өөрчлөхгүй (create-only, FR-8 Модуль 8) */
 export async function seedSoscoModel(db: PrismaClient, orgId: string): Promise<void> {
   await db.soscoModel.upsert({
     where: { orgId_version: { orgId, version: 1 } },
-    create: { orgId, version: 1, weightsJson: SOSCO_WEIGHTS, gradeThresholdsJson: SOSCO_GRADE_THRESHOLDS, isActive: true },
+    create: {
+      orgId, version: 1, isActive: true,
+      weightsJson: { ...DEFAULT_SOSCO_WEIGHTS }, gradeThresholdsJson: { ...DEFAULT_SOSCO_GRADE_THRESHOLDS }, paramsJson: structuredClone(DEFAULT_SOSCO_CURVES),
+      createdBy: SEEDED_BY, updatedBy: SEEDED_BY,
+    },
     update: {},
   });
 }

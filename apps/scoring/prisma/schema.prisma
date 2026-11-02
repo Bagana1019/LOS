@@ -37,27 +37,41 @@ model ProcessedEvent {
 
 // ═══ Тооцоолол (FR-8) ═══
 
+/// Тооцоолол (FR-8). Хүсэлт бүрт олон мөр (түүх); сүүлийнх = computed_at хамгийн шинэ (ижил бол id). Модуль 8: `underwriting` module хариуцна.
 model Calculation {
-  id                 String   @id @default(uuid())
-  orgId              String   @map("org_id")
-  applicationId      String   @map("application_id")
-  computedAt         DateTime @default(now()) @map("computed_at")
-  inputsJson         Json     @map("inputs_json")
-  methodAJson        Json?    @map("method_a_json")
-  methodBJson        Json?    @map("method_b_json")
-  methodCJson        Json?    @map("method_c_json")
-  autoSelectedMethod String?  @map("auto_selected_method") // CalcMethod
-  selectedMethod     String?  @map("selected_method")
-  selectedBy         String?  @map("selected_by")
-  policyCheckJson    Json?    @map("policy_check_json") // dti, dscr, ltv: value, limit, pass
-  stressJson         Json?    @map("stress_json")
-  isStale            Boolean  @default(false) @map("is_stale")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-  createdBy          String?  @map("created_by")
-  updatedBy          String?  @map("updated_by")
+  id                 String    @id @default(uuid())
+  orgId              String    @map("org_id")
+  applicationId      String    @map("application_id")
+  /// Модуль 8: үндсэн зээлдэгч (Sosco Score-ийн субьект). origination-ийн ID — FK биш
+  customerId         String?   @map("customer_id")
+  computedAt         DateTime  @default(now()) @map("computed_at")
+  /// ScoreRequest бүтнээрээ (policy, stress-тэй)
+  inputsJson         Json      @map("inputs_json")
+  /// Модуль 8: UnderwriteResult бүтнээрээ (CalculationRecord.result)
+  resultJson         Json?     @map("result_json")
+  /// A/B/C-ийн MethodVerdict
+  methodAJson        Json?     @map("method_a_json")
+  methodBJson        Json?     @map("method_b_json")
+  methodCJson        Json?     @map("method_c_json")
+  autoSelectedMethod String?   @map("auto_selected_method") // CalcMethod
+  selectedMethod     String?   @map("selected_method")
+  /// null + selectedMethod != null => AUTO; хэрэглэгчийн id => MANUAL
+  selectedBy         String?   @map("selected_by")
+  /// Модуль 8: гараар сонгосны тайлбар (заавал биш, Q-M8-8)
+  selectedReason     String?   @map("selected_reason")
+  selectedAt         DateTime? @map("selected_at")
+  policyCheckJson    Json?     @map("policy_check_json") // dti, dscr, dscrCombined, ltv: value, limit, pass
+  stressJson         Json?     @map("stress_json")
+  isStale            Boolean   @default(false) @map("is_stale")
+  /// Модуль 8: хуучирсан шалтгаан (FR-7.3)
+  staleReason        String?   @map("stale_reason")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  createdBy          String?   @map("created_by")
+  updatedBy          String?   @map("updated_by")
 
   @@index([applicationId, computedAt])
+  @@index([orgId, applicationId, computedAt])
   @@map("calculation")
   @@schema("scoring")
 }
@@ -69,6 +83,8 @@ model SoscoModel {
   version             Int
   weightsJson         Json     @map("weights_json")
   gradeThresholdsJson Json     @map("grade_thresholds_json") // A–E
+  /// Модуль 8: SoscoCurves (муруй, minCoverage). null (Модуль 0-ийн хуучин мөр) => DEFAULT_SOSCO_CURVES (@los/calc)
+  paramsJson          Json?    @map("params_json")
   isActive            Boolean  @default(false) @map("is_active")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")

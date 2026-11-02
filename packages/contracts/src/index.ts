@@ -7,6 +7,7 @@ export * from './compliance';
 export * from './maker-checker';
 export * from './merchant';
 export * from './bsa';
+export * from './scoring';
 export * from './customer';
 export * from './erp-sync';
 export * from './portal';
