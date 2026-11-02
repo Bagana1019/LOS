@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { MerchantErrorBody, type MerchantErrorCode, type UserRole } from '@los/contracts';
+import { defaultApplicationDetail } from './application-shell';
 import { mockGateway } from './mock-gateway';
 
 // e2e: gateway-ийн БҮХ дуудлагыг `page.route`-аар тосож fixture буцаана (backend шаардлагагүй).
@@ -42,7 +43,10 @@ export class MockApi {
   private readonly routes: RouteEntry[] = [];
 
   /** `role`: `/auth/me`-ийн дүр. Анхдагч ADMIN — `/settings/*` (settings:manage) хуудсууд хаагдахгүй. */
-  constructor(private readonly role: UserRole = 'ADMIN') {}
+  constructor(private readonly role: UserRole = 'ADMIN') {
+    // Wizard layout-ийн зүүн самбар: spec дарж болох анхдагч (бүрэн хоосон хүсэлт).
+    this.get('/applications/:id', ({ params }) => ({ json: defaultApplicationDetail(params.id) }));
+  }
 
   /** `path` нь `/api`-аас хойших, жишээ `/merchant-portal/leases/:id`. Сүүлд бүртгэсэн нь түрүүлж таарна. */
   on(method: string, path: string, handler: MockHandler | MockReply): this {

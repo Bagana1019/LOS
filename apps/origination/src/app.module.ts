@@ -4,7 +4,7 @@ import { CommonModule, EventsModule, HealthModule, envFilePaths } from '@los/nes
 import { PrismaModule, PrismaService } from './prisma.service';
 import { SharedModule } from './shared/shared.module';
 // Feature модуль бүр: өөрийн мөрийг `import` + `imports` хоёрт задлана (мөр тус бүр тусдаа тул зэрэгцээ салбар мерж хийхэд зөрчилгүй).
-// import { ApplicationModule } from './modules/application/application.module';
+import { ApplicationModule } from './modules/application/application.module';
 import { BorrowerModule } from './modules/borrower/borrower.module';
 // import { IncomeModule } from './modules/income/income.module';
 import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
@@ -33,7 +33,7 @@ import { DocumentModule } from './modules/document/document.module';
     EventsModule.forRoot({ schema: 'origination', db: PrismaService }),
     HealthModule.forServiceAsync({ service: 'origination', inject: [PrismaService], useFactory: (db: PrismaService) => ({ db: () => db.$queryRaw`SELECT 1` }) }),
     SharedModule,
-    // ApplicationModule,
+    ApplicationModule,
     BorrowerModule,
     // IncomeModule,
     LoanTermsModule,

@@ -23,3 +23,4 @@ export * from './collateral';
 export * from './collateral-valuation';
 export * from './collateral-registry';
 export * from './document';
+export * from './application';
