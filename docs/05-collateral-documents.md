@@ -152,9 +152,9 @@ Mock DEMO fixture: §9.
 
 ## 7. Өгөгдөл (incremental migration; baseline-д хүрээгүй)
 
-* origination `20261029070000_collateral_documents`: `collateral` + `asset_key`, `xyp_ref`, `note`, `valuation_id`, `valuation_source`, `valued_at`, `valuation_valid_until`, `valuation_override_reason`,
+* origination `20261029080000_collateral_documents`: `collateral` + `asset_key`, `xyp_ref`, `note`, `valuation_id`, `valuation_source`, `valued_at`, `valuation_valid_until`, `valuation_override_reason`,
   `external_valuation_required`; unique `(application_id, asset_key)`, index `(org_id, asset_key)`; `collateral_document` + `file_name`, `mime`, `size`, `note`.
-* valuation `20261029070000_collateral_valuation_detail`: `collateral_valuation` + `method`, `suggested_value`, `haircut_source`, `external_required`, `license_no`.
+* valuation `20261029080000_collateral_valuation_detail`: `collateral_valuation` + `method`, `suggested_value`, `haircut_source`, `external_required`, `license_no`.
 * dms: хүснэгтийн өөрчлөлтгүй (`document` baseline-д бий).
 * Регистр, нэр зэрэг хувийн мэдээлэл: `ownership_check_json`-д зөвхөн далдлагдсан регистр (`УБ****5678`), `matchedCustomerId`; лог/аудитад бичихгүй.
 
