@@ -1,0 +1,220 @@
+# LOS Radix — локал суулгалт ба туршилтын гарын авлага
+
+Өөрийн компьютер дээр LOS Radix-г суулгаж, ажиллуулж, шалгах алхам алхмаар заавар. Бүх утга **DEMO** (docs/DECISIONS.md Q-101); ХУР, ЗМС, банк, QPay, ERP, SMS зэрэг гадаад систем бүгд **mock** — жинхэнэ систем рүү юу ч явахгүй.
+
+> **Шалгасан орчин:** Linux (Ubuntu 24.04), Node 22.23, pnpm 9.12, Docker 29 / Compose v5, `main` = `47dc78f` (PR #15, #16 нийлсэн). Цэвэр clone + хоосон Docker volume дээр доорх `node scripts/local-setup.mjs` → `start` → `check` бүтэн гүйлт, `demo` горим, `stop`/`reset` бүгд ажилласан. **Windows / macOS дээр энд шалгаагүй** — тэнд Docker Desktop + (Windows бол) WSL2 терминал ашиглахыг зөвлөнө (§1).
+
+## 0. Хоёр арга — аль нь вэ?
+
+| | **А. Мерчант POS демо** | **Б. Бүтэн stack** |
+| --- | --- | --- |
+| Docker хэрэгтэй юу | **Үгүй** | Тийм (Postgres, Redis) |
+| Нэг командаар | `node scripts/local-setup.mjs demo` | `node scripts/local-setup.mjs` (нэг удаа), дараа нь `… start` |
+| Юу харагдах | Мерчант POS лизингийн портал, 25 жишээ лизинг, 5 дүр (кассир, мерчантын админ, шинжээч, админ) | Нэвтрэлт, эрхийн цэс, удирдлагын самбар, тайлан, баталгаажуулалт (maker-checker), мерчантын/мэдэгдлийн тохиргоо, POS лизингийн хяналт, 8 сервис + вэб |
+| Өгөгдөл | Санах ойд (дахин асаахад шинэчлэгдэнэ) | PostgreSQL-д (seed: 5 хэрэглэгч, тохиргоо, 3 бүтээгдэхүүн, үнийн суурь, 1 туршилтын хүсэлт) |
+| Хугацаа | Анхны суулгалт хэдэн минут | Анхны суулгалт хэдэн минут (миний шалгалтад кэштэй орчинд ~30 сек), дараа нь асаахад ~1 минут |
+
+**Зөвлөмж:** эхлээд **А**-г (5 минут, Docker-гүй) үзээд, дараа нь **Б**-г суулга.
+
+## 1. Урьдчилан суулгах зүйлс
+
+| Юу | Шалгах | Хаанаас |
+| --- | --- | --- |
+| Git | `git --version` | https://git-scm.com |
+| Node.js **22** (LTS) | `node -v` → `v22.x` | https://nodejs.org |
+| pnpm **9** | `pnpm -v` → `9.x` | `corepack enable` дараа нь `corepack prepare pnpm@9.12.0 --activate` (эсвэл `npm i -g pnpm@9`) |
+| Docker Desktop (зөвхөн **Б**) | `docker info` алдаагүй | https://www.docker.com/products/docker-desktop — суулгаад нээж, "Engine running" болтол хүлээнэ |
+
+* **Windows:** WSL2 (Ubuntu) нээгээд тэр доторх терминалд Node, pnpm, git-ээ суулгаж, бүх командыг тэндээс ажиллуулахыг зөвлөнө (Docker Desktop-д "Use the WSL 2 based engine" асаалттай). `corepack enable` нь Windows дээр админ эрх шаардаж болно.
+* **Нөөц:** нэгэн зэрэг 9 Node процесс (8 сервис + Next.js) ажиллана. Хамгийн багадаа 8 GB RAM, ~3 GB диск зөвлөнө (тооцоолол; нарийн хэмжээгүй).
+* Репо хувийн (private) бол `git clone` хийхдээ GitHub-д нэвтэрсэн байх ёстой (GitHub Desktop эсвэл `gh auth login`).
+
+## 2. Код татах
+
+```bash
+git clone https://github.com/Bagana1019/LOS.git
+cd LOS
+```
+
+Бүх командыг репогийн **root** хавтаснаас ажиллуулна.
+
+## 3. Арга А — Мерчант POS демо (Docker, өгөгдлийн сан хэрэггүй)
+
+```bash
+node scripts/local-setup.mjs demo
+```
+
+Анхны удаа хамаарлыг суулгаж, сангуудыг бэлдэнэ. Дэлгэцэнд `DEMO ONLY — Merchant POS` хайрцаг, `✓ Ready` гарсан хойно браузераар **http://localhost:4000/demo** нээнэ (анхны хуудас compile хийхэд ~20 сек). Нууц үг шаардахгүй — дүр сонгоно:
+
+| Дүр | Хаана буух | Юуг үзэх |
+| --- | --- | --- |
+| Кассир — Төв дэлгүүр / Салбар дэлгүүр | `/merchant` | Хийх ажил (код хүлээж буй, хүлээлгэн өгөх…), үзүүлэлт, Шинэ лизинг, Лизингүүд |
+| Мерчантын админ | `/merchant` | Бүх дэлгүүрийн нэгтгэл |
+| Лизингийн байгууллага — шинжээч | `/los/pos-leases` | REFER хүсэлт хянах, төлбөр шилжүүлэх |
+| Лизингийн байгууллага — админ | `/settings/merchants` | Мерчант, дэлгүүр, лизингийн хөтөлбөр |
+
+OTP (худалдан авагчийн баталгаажуулах) код **тогтмол `123456`**. Зогсоох: терминалд **Ctrl+C**. (Энэ горим gateway-ийн оронд demo сервер ашигладаг тул `:4000` порт эзлэгддэг — **Б** аргатай зэрэг ажиллуулж болохгүй.)
+
+## 4. Арга Б — бүтэн stack
+
+### 4.1 Нэг командаар
+
+```bash
+node scripts/local-setup.mjs          # суулгалт — нэг удаа (давтаж ажиллуулахад аюулгүй)
+node scripts/local-setup.mjs start    # асаах — бүх удаа
+node scripts/local-setup.mjs check    # өөр терминалд: бүх сервисийн health + нэвтрэлтийн шалгалт
+```
+
+`setup` нь дараахыг дарааллаар хийнэ:
+
+| # | Алхам | Яг юу |
+| --- | --- | --- |
+| 1 | Шалгалт | Node ≥ 22, pnpm ≥ 9, Docker ажиллаж байгаа эсэх |
+| 2 | `.env` | `.env.example`-ээс `.env` үүсгэнэ (байвал **дарахгүй**). Хоёр засвартай — §4.3 |
+| 3 | Дэд бүтэц | `docker compose up -d postgres dwh redis`, бэлэн болтол хүлээнэ |
+| 4 | Суулгалт | `pnpm install --frozen-lockfile` |
+| 5 | Бэлтгэл | `pnpm db:generate` + нийтлэг сангуудыг build (`@los/database` гэх мэт — seed-д хэрэгтэй) |
+| 6 | Өгөгдлийн сан | `pnpm db:migrate` (6 сервис, schema тус бүр), `pnpm db:seed`, дараа нь `SEED_DEMO=1`-ээр **туршилтын нэг хүсэлт** `DEMO-COL-0001` (`--no-demo-data` өгвөл алгасна) |
+
+`start` нь Docker-ийн дэд бүтцийг шаардлагатай бол асааж, `pnpm dev`-ээр 8 сервис + вэбийг нэг дор асаана. Анхны ачаалал ~1 минут; вэбийн хуудас бүр анхны удаа compile хийхдээ 2–20 сек удна. **Зогсоох: Ctrl+C** (бүх процесс цэвэр зогсоно).
+
+Тугнууд: `--skip-infra` — Docker ашиглахгүй, өөрийн Postgres/Redis-ээ (`.env` дахь `DATABASE_URL`, `REDIS_URL`) ашиглана; `--no-demo-data` — туршилтын хүсэлт нэмэхгүй. Бусад командууд: `test` (§7), `stop` (Docker зогсооно, өгөгдөл хэвээр), `reset` (Docker-ийн **бүх локал өгөгдлийг устгана**, `yes` гэж баталгаажуулна).
+
+### 4.2 Гараар (скриптгүйгээр)
+
+```bash
+cp .env.example .env            # дараа нь §4.3-ын засваруудыг .env-д хий
+docker compose up -d postgres dwh redis
+pnpm install --frozen-lockfile
+pnpm db:generate
+pnpm turbo run build --filter='./packages/*'   # ← README-д байхгүй, гэвч seed үүнгүйгээр унана (§8)
+pnpm db:migrate && pnpm db:seed
+SEED_DEMO=1 pnpm --filter @los/origination db:seed   # заавал биш: туршилтын 1 хүсэлт
+pnpm dev
+```
+
+### 4.3 `.env` — DEMO утгууд ба хоёр засвар
+
+`.env.example` дахь утгууд (JWT_SECRET, DATA_ENCRYPTION_KEY, SEED_PASSWORD…) бүгд хөгжүүлэлтийн DEMO утга — **production-д бүгдийг солино**. Скрипт хоёр зүйлийг автоматаар засна (гараар хийвэл ижил):
+
+1. `ERP_API_URL=`, `ERP_WEBHOOK_SECRET=`, `ERP_API_TOKEN=` гурвыг **`# `-ээр тайлбар болгох**. Хоосон мөр үлдвэл origination `invalid ERP integration config: ERP_API_URL, ERP_API_TOKEN, ERP_WEBHOOK_SECRET` алдаагаар эхлэхгүй.
+2. `STORAGE_DRIVER=minio` → **`memory`**. Docker Hub дээрх `minio/minio`, `minio/mc` image **устсан** тул `docker-compose.yml`-ийн minio ажиллахгүй (§9). `memory` үед dms-ийн файл санах ойд хадгалагдаж, dms дахин асахад арилна.
+
+### 4.4 Портууд
+
+| Үйлчилгээ | Порт | Шалгах |
+| --- | --- | --- |
+| web (Next.js) | 3000 | http://localhost:3000/login |
+| gateway | 4000 | `GET /api/health` |
+| origination / kyc / scoring / valuation / dms | 4001–4005 | `GET /api/health` (мөн `/api/health/ready`) |
+| dwh-sync | 4006 | `GET /api/health` (одоогоор зөвхөн health) |
+| portal-bff | 4007 | `GET /api/health` |
+| Postgres (LOS) / Postgres (DWH) / Redis | 5432 / 5433 / 6379 | `docker compose ps` |
+
+### 4.5 Нэвтрэх хэрэглэгчид (seed)
+
+Нууц үг бүгдэд `.env` дахь `SEED_PASSWORD` — анхдагч **`Los@2026!dev`**.
+
+| Нэвтрэх нэр | Дүр | Харах хүрээ | Цэс |
+| --- | --- | --- | --- |
+| `admin` | ADMIN | бүх хүсэлт | Харилцагч, Хүсэлт (Хар жагсаалт), Зээл, Баталгаажуулалт, Тайлан, **Тохиргоо** |
+| `approver` | APPROVER | бүгд | Тохиргооноос бусад |
+| `manager` | BRANCH_MANAGER | Төв салбар (100) | Тохиргооноос бусад |
+| `officer.a` | OFFICER | зөвхөн өөрийн (Төв, 100) | Тохиргооноос бусад |
+| `officer.b` | OFFICER | зөвхөн өөрийн (Баянзүрх, 200) | Тохиргооноос бусад |
+
+Нэвтрэх endpoint IP тутамд **минутад 10** удаагаар хязгаарлагдсан — буруу нууц үгээр олон удаа оролдвол түр хаагдана; 5 удаа алдвал акаунт 15 минут түгжигдэнэ.
+
+## 5. Smoke checklist — Б арга (вэбээр)
+
+`start` ажиллаж байхад http://localhost:3000 нээж дараахыг дарааллаар шалга. (✔ = миний шалгалтад яг ингэж харагдсан. Хүсэлт, барьцаа, тооцоолол, баримтын алхмууд нь `node scripts/local-setup.mjs`-ийн нэмсэн **туршилтын нэг хүсэлт**-тэй л ажиллана — тэр хүсэлтийг үүсгэх дэлгэц хараахан байхгүй, §9.)
+
+| # | Хийх | Хүлээх үр дүн |
+| --- | --- | --- |
+| 1 | `/` нээх | `/login` руу шилжинэ ✔ |
+| 2 | `admin` / `Los@2026!dev`-ээр нэвтрэх | «Сайн байна уу, Админ», дүр = Админ, харах хүрээ = Бүх хүсэлт, зүүн цэсэнд Харилцагч · Хүсэлт › Хар жагсаалт · Зээл · Баталгаажуулалт · Тайлан · Тохиргоо ✔ |
+| 3 | Тайлан → **Удирдлагын самбар** | Шүүлтүүр (огноо, валют, салбар), «Зээлийн багц» картууд — **бүгд 0 / «Мэдээлэл алга»** (зээл бүртгэгдээгүй тул хэвийн) ✔ |
+| 4 | Тайлан (жагсаалт) | Тайлангийн төрлүүдийн жагсаалт нээгдэнэ ✔ |
+| 5 | **Баталгаажуулалт** (maker-checker) | «Баталгаажуулах хүсэлтүүд» хуудас, хоосон жагсаалт ✔ |
+| 6 | Дээд баруун буланд хонх → Мэдэгдэл | «Мэдэгдэл алга байна» ✔ |
+| 7 | Хаягийн мөрөнд `/settings/merchants` | «Мерчант» хуудас, «Мерчант бүртгэх» товч, «Мерчант бүртгэгдээгүй» ✔ |
+| 8 | `/settings/notifications` | Табууд: Загвар · Хүргэлтийн бүртгэл · Туршилт ба сануулга · Зээлдэгчийн сувгийн тохиргоо ✔ |
+| 9 | `/los/pos-leases` | «POS лизинг», «Хянах хүсэлт алга» ✔ |
+| 10 | `/merchant` (admin-аар) | «Хандах эрхгүй» — мерчантын эрхгүй тул зөв ✔ |
+| 11 | Хэрэглэгчийн цэс → Гарах → `officer.a`-аар нэвтрэх | Цэсэнд **Тохиргоо алга**; хуудас сэргээхэд (F5) нэвтэрсэн хэвээр, гарсны дараа F5 хийвэл `/login` ✔ |
+| 12 | `officer.a`-аар нэвтэрсэн хэвээр, `/los/loan-application/00000000-0000-4000-8000-000000000402/client` (setup-ийн нэмсэн туршилтын хүсэлт `DEMO-COL-0001`, 20 сая ₮ / 36 сар) | «Харилцагч ба оролцогчид» — Үндсэн зээлдэгч 1 (Жишээ Бат-Эрдэнэ, УЕ****0001) ✔ |
+| 13 | Ижил хүсэлтийн `/collateral` | «Барьцаа» — LTV/G0 карт, «G0 хаалтыг хангаагүй шалтгаан: 1 — Барьцаа бүртгээгүй байна», «Барьцаа нэмэх» товч. Товчийг дарвал «Хөрөнгийн төрөл», «Өмчлөгч (барьцаалагч): Жишээ Бат-Эрдэнэ · УЕ****0001», «ХУР-аас сонгох» бүхий цонх нээгдэнэ ✔. (Цааш: ХУР-аас автомашин `УЕН5246` → нэмэх → өмчлөл → ачаалал → үнэлгээ → баримт — `apps/origination/src/modules/collateral/README.md`-д бичсэн, UI-аар бүтнээр нь энд давж шалгаагүй) |
+| 14 | `/score`, `/document` (ижил хүсэлт) | «Тооцоолол» (A/B/C арга, «Тооцоолол хараахан хадгалагдаагүй») ✔; «Баримт бичиг» (0 / 3 заавал баримт: иргэний үнэмлэх, цалингийн тодорхойлолт, зээлийн хүсэлтийн маягт) ✔. Алхмын нэрс: `client`, `collateral`, `score`, `document` — бусад нь хараахан хоосон |
+| 15 | Терминалд `node scripts/local-setup.mjs check` | Бүх сервис ✓, «admin нэвтэрлээ» ✔ |
+
+Хүссэн бол автомат хувилбар: `E2E_LIVE=1 pnpm --filter @los/web test:e2e` (нэвтрэлт, цэс, refresh cookie, гарах — 2 тест; ажиллаж буй stack дээр. Playwright-ийн хөтөч суугаагүй бол `pnpm --filter @los/web exec playwright install chromium` — энэ командыг энд ажиллуулаагүй, би урьдчилан суусан хромийг `PW_CHROMIUM_PATH`-аар зааж ашигласан).
+
+## 6. Backend-ийг curl-ээр шалгах (UI-д хараахан гараагүй хэсэг)
+
+Дараах нь gateway-ээр дамжиж, жинхэнэ эрх/аудит/DB-тэй ажиллана. (Windows PowerShell-д `curl.exe` гэж бич, эсвэл WSL/Git Bash ашигла.)
+
+```bash
+# 1) Нэвтэрч token авах
+TOKEN=$(curl -s localhost:4000/api/auth/login -H 'content-type: application/json' \
+  -d '{"username":"officer.a","password":"Los@2026!dev"}' | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).accessToken")
+
+# 2) Тохиргооны жагсаалт (seed: 45 түлхүүр)
+curl -s localhost:4000/api/origination/settings -H "authorization: Bearer $TOKEN"
+
+# 3) ХУР (mock)-оос иргэний мэдээлэл — хадгалахгүй, зөвхөн маягт бөглөх өгөгдөл
+curl -s localhost:4000/api/origination/customers/xyp-fetch -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d '{"registerNo":"УБ90010112"}'
+```
+
+Хүлээгдэх хариу (✔ шалгасан): (2) нь `br1.dti_max` (0.55), `br2.dscr_min` (1.25), `br3.ltv_max` (0.7) … түлхүүртэй JSON массив; (3) нь `Мөнхзул Батсайхан`, `prefilledFields`, `missing` талбартай JSON (mock fixture — регистрээс тогтвортой хариу; `…00000000` → олдохгүй, `…99999999` → ХУР унасан). Админаар `GET /api/origination/reports/dashboard/summary` → 200.
+
+## 7. Автомат тест ажиллуулах (заавал биш)
+
+Тестүүд бодит Postgres + Redis ашиглана. Нэр нь `test`-ээр төгссөн DB л цэвэрлэгддэг (тест schema-г устгаад шинээр үүсгэнэ) тул **`los` DB-д хөндөхгүй**.
+
+```bash
+docker compose exec -T postgres psql -U los -d postgres -c "create database los_test"   # нэг удаа
+# macOS / Linux / WSL:
+TEST_DATABASE_URL=postgresql://los:los@localhost:5432/los_test REDIS_URL=redis://localhost:6379/2 pnpm test
+# Windows PowerShell:
+$env:TEST_DATABASE_URL="postgresql://los:los@localhost:5432/los_test"; $env:REDIS_URL="redis://localhost:6379/2"; pnpm test
+```
+
+Хамгийн хялбар нь скриптээр — `los_test` DB-г өөрөө үүсгэж, шаардлагатай env-г тавина:
+
+```bash
+node scripts/local-setup.mjs test
+```
+
+**Яагаад скрипт зөвлөдөг вэ:** root `.env`-ийн `INTERNAL_AUTH_SECRET` нь сервисүүдийн тестэд `401 INVALID_INTERNAL_TOKEN` үүсгэж, жишээ нь `valuation` 150 тест унадаг (шалгасан). CI-д `.env` байдаггүй. Скрипт тест дууртал `.env`-г түр `node_modules/.env.stashed-for-tests` болгож хажуулаад дараа нь буцаадаг (хүчээр таславал дараагийн `node scripts/local-setup.mjs …` ажиллуулалт буцаана). Гараар хийвэл `.env`-г нэрийг нь түр өөрчилж, тест дараа буцаа.
+
+**Шалгасан үр дүн** (2026-11-02, `main` = `47dc78f`, 4 vCPU / 16 GB Linux, Docker Postgres 16 + Redis 7): `pnpm test` → **26/26 task ногоон, 0 унасан, ~12 500 тест давсан (37 алгассан), 7 мин 30 сек**. Багц тус бүр: origination 3895 · scoring 2286 (+20 алгассан) · web 1306 · dms 1060 · kyc 1048 · ocr 858 (+9) · calc 687 · contracts 452 · valuation 401 · gateway 226 · portal-bff 183 (+8) · database 101 · nest-common 34. Бүх тест mock + хоосон DB дээр ажиллана — жинхэнэ гадаад систем хэрэггүй.
+
+## 8. Асуудал гарвал
+
+| Шинж тэмдэг | Шалтгаан / шийдэл |
+| --- | --- |
+| `origination`: `invalid ERP integration config: ERP_API_URL, ERP_API_TOKEN, ERP_WEBHOOK_SECRET` | `.env`-д ERP_* гурав хоосон (`ERP_API_URL=`). Мөр бүрийн өмнө `# ` тавь (§4.3). `node scripts/local-setup.mjs` үүнийг өөрөө засдаг |
+| `pnpm db:seed`: `Cannot find module '…/@los/database/dist/index.js'` | Нийтлэг сангууд build хийгдээгүй. `pnpm turbo run build --filter='./packages/*'` хийж дахин seed (скрипт үүнийг хийдэг) |
+| `docker compose up -d`: `pull access denied for minio/mc` (эсвэл `minio/minio`) | Image Docker Hub-аас устсан (§9). `docker compose up -d postgres dwh redis` (minio-гүй) гэж ажиллуул |
+| `dms`: `connect ECONNREFUSED 127.0.0.1:9000` | `.env`-д `STORAGE_DRIVER=minio` боловч MinIO алга. `STORAGE_DRIVER=memory` болго, dms-ийг дахин асаа |
+| `port is already allocated` / `EADDRINUSE` | Порт өөр програмд эзлэгдсэн (өөрийн PostgreSQL/Redis, өмнөх `pnpm dev`). Түүнийг зогсоо; скрипт эзлэгдсэн портыг нэрлэж зогсдог |
+| `pnpm: command not found` / pnpm хувилбар буруу | `corepack enable && corepack prepare pnpm@9.12.0 --activate` |
+| Docker «not running» | Docker Desktop-ийг нээж «Engine running» болтол хүлээ; эсвэл Docker-гүй **А** арга / `--skip-infra` |
+| Нэвтрэхэд `429` / «хэт олон оролдлого» | Нэвтрэлт IP тутамд минутад 10 — 1 минут хүлээ |
+| Вэбийн хуудас анх нээхэд 10–20 сек хоосон/удаан | `next dev` хуудас бүрийг анхны хандалтад compile хийдэг — хэвийн |
+| `/customer`, `/los/loan-application`, `/los/loan/list`, `/settings` хоосон эсвэл 404 | Эдгээр дэлгэц хараахан хийгдээгүй (§9) — алдаа биш |
+| Дахин эхнээс нь эхлэх | `node scripts/local-setup.mjs reset` (өгөгдөл устна) → `node scripts/local-setup.mjs` |
+
+Лог: `pnpm dev` ажиллаж буй терминалд бүх сервисийн JSON лог (`@los/origination:dev: …`) гарна. Docker: `docker compose logs postgres`.
+
+## 9. Мэдэгдэж буй хязгаарлалт (үнэнээр нь)
+
+* **Дэлгэц бүрэн биш.** Цэсэнд байгаа **Харилцагч** (`/customer` — 404; зөвхөн `/customer/<id>` маршрут байгаа ч хуудас нь хоосон), **Хүсэлт**, **Хар жагсаалт**, **Зээл**, **Тохиргоо** (`/settings` — хоосон; дэд хуудсууд `/settings/merchants`, `/settings/notifications` нь URL-аар ажиллана) нь одоогоор **хоосон placeholder** (`return null`). Тиймээс вэбээс зээлийн хүсэлт **үүсгэх боломжгүй**. Хүсэлтийн алхмууд `/los/loan-application/<id>/<алхам>` (`client`, `collateral`, `score`, `document`) зөвхөн нэгэнт байгаа хүсэлтийн id-тай нээгдэнэ — тиймээс setup туршилтын нэг хүсэлт (`DEMO-COL-0001`, id `00000000-0000-4000-8000-000000000402`) нэмдэг. `GET /api/origination/applications/<id>` ч хараахан байхгүй (404).
+* **Backend нь UI-аас түрүүлсэн.** Харилцагч + ХУР/KYC, барьцаа/үнэлгээ, баримт, Sosco/тооцоолол, e-sign, maker-checker, мерчант POS, ERP синк зэрэг нь API болон тестээр бэлэн (§6, §7), харин үүнийг холбосон дэлгэц болон `loan_application` үүсгэдэг урсгал дутуу. Тайлан/самбар хоосон байх нь үүнтэй холбоотой.
+* **`minio/minio` image Docker Hub-аас устсан** (`hub.docker.com/v2/repositories/minio/` жагсаалтад `minio`, `mc` байхгүй; `docker pull` → `repository does not exist`, 2026-11-02). Иймээс `docker-compose.yml`-ийн `minio`, `minio-init` үйлчилгээ одоо ажиллахгүй; локал горимд `STORAGE_DRIVER=memory`. Байнгын файл хадгалалт хэрэгтэй бол өөр S3-тохирох image (жишээ нь `quay.io/minio/minio` — энд татаж шалгаагүй) сонгож compose-ийг засах ёстой — энэ нь тусдаа шийдвэр.
+* **`.env.example`-ийн ERP_* хоосон мөр** origination-ийг эхлүүлэхгүй (§4.3). Скрипт тойрдог; үндсэн засвар = тэр гурван мөрийг `.env.example`-д тайлбар болгох.
+* **README-ийн нэг мөрт заавар** (`pnpm db:generate && db:migrate && db:seed`) нийтлэг сангуудыг build хийхгүй тул цэвэр clone дээр seed унана — `node scripts/local-setup.mjs` үүнийг зөв дарааллаар хийдэг.
+* **Mock-ууд:** ХУР, ЗМС, FICO, НДШ, банк, QPay, SMS, e-sign (Tridum/Monpass), Core, ERP — бүгд deterministic mock; `INTEGRATION_MODE=mock`. OCR (`dms` `/api/ocr`) нь `tesseract`, `pdftoppm`-ийг PATH-д шаардана (суулгаагүй бол зөвхөн OCR ажиллахгүй).
+* `dwh-sync` одоогоор зөвхөн health өгдөг (event → DWH хэрэгжээгүй). DWH Postgres (5433) асаж, схем нь үүснэ.
+* **Windows native (PowerShell, WSL-гүй)** болон **macOS** дээр скриптийг шалгаагүй; Node-ын суурь сангаар бичсэн тул ажиллах ёстой боловч баталгаагүй.
