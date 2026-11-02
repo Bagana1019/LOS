@@ -343,6 +343,17 @@ model LoanApplication {
   @@schema("origination")
 }
 
+/// Хүсэлтийн дугаарын тоолуур (org × он). `INSERT … ON CONFLICT DO UPDATE` — атомик, давхардахгүй (Модуль 2).
+model ApplicationSequence {
+  orgId   String @map("org_id")
+  year    Int
+  nextSeq Int    @default(1) @map("next_seq")
+
+  @@id([orgId, year])
+  @@map("application_sequence")
+  @@schema("origination")
+}
+
 model LoanApplicationBorrower {
   id            String   @id @default(uuid())
   orgId         String   @map("org_id")

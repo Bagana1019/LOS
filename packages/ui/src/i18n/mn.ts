@@ -11,6 +11,7 @@ import notification from './mn.notification.json';
 import report from './mn.report.json';
 import customer from './mn.customer.json';
 import esign from './esign.mn.json'; // FR-11.4 цахим гарын үсэг: esign.*, verify.*, contractSigning.*
+import application from './mn.application.json'; // Модуль 2 — Хүсэлт, wizard: application.*
 import score from './mn.score.json'; // Модуль 8 — Тооцоолол (FR-8): score.*
 
 // Модуль бүр `mn.<module>.json` үүсгээд доор НЭГ import + `mnSources`-д НЭГ мөр нэмнэ (зэрэгцээ салбар зөрчилгүй мерж хийгдэнэ).
@@ -30,6 +31,7 @@ export const mnSources = {
   customer,
   esign,
   score,
+  application,
 } as const;
 
 type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
