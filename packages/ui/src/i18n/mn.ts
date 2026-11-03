@@ -17,6 +17,7 @@ import inquiry from './mn.inquiry.json'; // Модуль 3 — Лавлагаа 
 import income from './mn.income.json'; // Модуль 4 — Орлого (FR-4): income.*
 import admin from './mn.admin.json'; // Модуль 13 — Админ (FR-13): admin.*
 import bsa from './mn.bsa.json'; // Модуль 12 — BSA: bsa.*
+import lifecycle from './mn.lifecycle.json'; // Wizard-ийн 4,6,9–12-р алхам: terms.*, sched.*, decide.*, cstep.*, letters.*, disb.*
 
 // Модуль бүр `mn.<module>.json` үүсгээд доор НЭГ import + `mnSources`-д НЭГ мөр нэмнэ (зэрэгцээ салбар зөрчилгүй мерж хийгдэнэ).
 // Түлхүүр модулиар угтвартай (`auth.*`, `shell.*`, `customer.*`); давхардлыг web-ийн i18n тест барина.
@@ -40,6 +41,7 @@ export const mnSources = {
   income,
   admin,
   bsa,
+  lifecycle,
 } as const;
 
 type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
