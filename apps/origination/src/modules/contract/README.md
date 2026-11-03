@@ -54,3 +54,15 @@ dms ── ContractSigned / ContractSigningFailed ──► Redis stream ──�
 ## Тест
 `pnpm --filter @los/origination test` — нэгж (service, handler, subscriber, gateway клиент, controller). DB-тэй (`prisma-contract.repository`, `prisma-application-signing-lookup`, `test/contract-esign.e2e.test.ts`)
 нь `TEST_DATABASE_URL` (нэр нь `test`-ээр төгссөн) байхгүй бол алгасагдана.
+
+## Модуль 11 · FR-11.1 / FR-11.3 — гэрээ, ЭТХ, албан бичиг үүсгэх
+`contract-documents.*`: `application:write` (ЗЭЗ) эрхээр, хүсэлт `APPROVED | DISBURSING` + `contract_no` байх үед.
+| Route (`/api/applications/:id/contract…`) | Үүрэг |
+| --- | --- |
+| `GET` | `contract` мета + албан бичгүүд |
+| `POST generate` | ЭТХ + барьцаа + шийдвэрийн талбарыг цуглуулж dms-ийн `POST /api/templates/render` (`LOAN_CONTRACT`)-оор DOCX+PDF үүсгэж `contract.generated_file_id`, `template_version` хадгална. Гарын үсэг зурагдсан бол 409; e-sign идэвхтэй бол 409. ЭТХ (хүчинтэй, `is_stale=false`) байхгүй бол 422 |
+| `POST signed {fileId}` | Цаасан гарын үсэгтэй сканыг (dms файл) хавсаргаж `signed_file_id`, `signed_at`, `sign_channel=PAPER` (**G4**). Файлыг dms-д байгаа эсэхийг шалгана |
+| `POST official-letters {templateId?, extra}` | `OFFICIAL_LETTER` загвараас PDF → `official_letter` (FR-11.3) |
+| `POST official-letters/:id/print` | `printed_at` тэмдэглэнэ |
+Файлыг dms-ийн `/api/files/:id/content`-оор татна. `DMS_DOCGEN` порт: `HttpDmsDocgen` (render timeout 15с), тестэд `testing/fake-dms-docgen.ts`.
+**DEMO:** ББСБ-ын нэр/төлөөлөгч `ORG_LEGAL_NAME`, `ORG_REPRESENTATIVE_NAME`, `ORG_REPRESENTATIVE_TITLE` env-ээс; салбарын нэр оронд нь `branch_id` (нэр iam/gateway-д).

@@ -59,12 +59,18 @@ importers:
       dejavu-fonts-ttf:
         specifier: ^2.37.3
         version: 2.37.3
+      docxtemplater:
+        specifier: 3.50.0
+        version: 3.50.0
       minio:
         specifier: ^8.0.2
         version: 8.0.7
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
+      pizzip:
+        specifier: 3.1.7
+        version: 3.1.7
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -2398,6 +2404,10 @@ packages:
   '@webassemblyjs/wast-printer@1.14.1':
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
 
+  '@xmldom/xmldom@0.8.15':
+    resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
+    engines: {node: '>=10.0.0'}
+
   '@xtuc/ieee754@1.2.0':
     resolution: {integrity: sha512-DX8nKgqcGwsc0eJSqYt5lwP4DH5FlHnmuWWBRy7X0NcaGR0ZtuyeESgMwTYVEtxmsNGY+qit4QYT/MIYTOTPeA==}
 
@@ -2943,6 +2953,10 @@ packages:
 
   dijkstrajs@1.0.3:
     resolution: {integrity: sha512-qiSlmBq9+BCdCA/L46dw8Uy93mloxsPSbwnm5yrKn2vMPiy8KyAskTF6zuV/j5BMsmOGZDPs7KjU+mjb670kfA==}
+
+  docxtemplater@3.50.0:
+    resolution: {integrity: sha512-6EqYbBFUcdNKVwS6G8vQ+pFOURJ7zoSvUNASIi4MPnCpkRdYDvmaOV2e1XcScMrEQV5pFZUAAbKi30Z+JTbLFA==}
+    engines: {node: '>=0.10'}
 
   dotenv-expand@10.0.0:
     resolution: {integrity: sha512-GopVGCpVS1UKH75VKHGuQFqS1Gusej0z4FyQkPdwjil2gNIv+LNsqBlboOzpJFZKVT95GkCyWJbBSdFEFUWI2A==}
@@ -4040,6 +4054,9 @@ packages:
   pako@1.0.11:
     resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
 
+  pako@2.2.0:
+    resolution: {integrity: sha512-zJq6RP/5q+TO2OpFV3FHzlPnFjmkb7Nc99a5SNjJE+uu/PkpChs+NIZSSzbBoD+6kjiISXjfYdwj1ZRQ81dz/w==}
+
   parent-module@1.0.1:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
     engines: {node: '>=6'}
@@ -4144,6 +4161,9 @@ packages:
   picomatch@4.0.7:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
+
+  pizzip@3.1.7:
+    resolution: {integrity: sha512-VemVeAQtdIA74AN1Fsd5OmbMbEeS4YOwwlcudgzvmUrOIOPrk1idYC5Tw5FUFq/I0c26ziNOw9z//iPmGfp1jA==}
 
   playwright-core@1.64.1:
     resolution: {integrity: sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ==}
@@ -6778,6 +6798,8 @@ snapshots:
       '@webassemblyjs/ast': 1.14.1
       '@xtuc/long': 4.2.2
 
+  '@xmldom/xmldom@0.8.15': {}
+
   '@xtuc/ieee754@1.2.0': {}
 
   '@xtuc/long@4.2.2': {}
@@ -7363,6 +7385,10 @@ snapshots:
       wrappy: 1.0.2
 
   dijkstrajs@1.0.3: {}
+
+  docxtemplater@3.50.0:
+    dependencies:
+      '@xmldom/xmldom': 0.8.15
 
   dotenv-expand@10.0.0: {}
 
@@ -8682,6 +8708,8 @@ snapshots:
 
   pako@1.0.11: {}
 
+  pako@2.2.0: {}
+
   parent-module@1.0.1:
     dependencies:
       callsites: 3.1.0
@@ -8771,6 +8799,10 @@ snapshots:
   picomatch@4.0.1: {}
 
   picomatch@4.0.7: {}
+
+  pizzip@3.1.7:
+    dependencies:
+      pako: 2.2.0
 
   playwright-core@1.64.1: {}
 
