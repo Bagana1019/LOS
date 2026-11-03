@@ -1,5 +1,6 @@
 // DTI тестийн fixture. БҮХ ӨГӨГДӨЛ СИНТЕТИК; босго/жин нь зөвхөн тестийнх (бизнесийн анхдагч биш — admin тохиргоо).
 import type { BsaSettings } from '../../common/infra.ports';
+import { DEFAULT_BSA_SETTINGS } from '../../common/settings';
 
 export const TEST_SETTINGS: BsaSettings = {
   costOfGoodsRate: 0.1, maxDti: 0.55, dtiLevelThresholds: { lowMax: 0.35, mediumMax: 0.55 }, otherShareThreshold: 0.3,
@@ -7,4 +8,5 @@ export const TEST_SETTINGS: BsaSettings = {
   businessIncomeCodes: ['BUSINESS_INCOME'], irregularIncomeCodes: ['IRREGULAR_INCOME', 'ABNORMAL_INCOME', 'SUSPICIOUS_INCOME'],
   reliabilityWeights: { frequency: 0.4, consistency: 0.4, cleanliness: 0.2 }, balanceTolerance: 0.01,
   pushPolicyWhenPendingSuspicious: 'WARN', maxUploadBytes: 10_000_000, maxFilesPerUpload: 5,
+  suspicion: DEFAULT_BSA_SETTINGS.suspicion,
 };

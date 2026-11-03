@@ -1,5 +1,5 @@
 // BSA-ийн дэд бүтцийн port-ууд (orchestrator-ын өгсөн spine). Хэрэгжүүлэлт нь `common/` доторх adapter-ууд.
-import type { DomainEvent, UserRole } from '@los/contracts';
+import type { BsaSuspicionThresholds, DomainEvent, UserRole } from '@los/contracts';
 
 /** NFR-3: хувийн мэдээлэл (дансны дугаар, гүйлгээний утга, нэр) шифрлэгдэж хадгалагдана. */
 export interface PiiCipher {
@@ -73,6 +73,8 @@ export interface BsaSettings {
   pushPolicyWhenPendingSuspicious: 'WARN' | 'BLOCK';
   maxUploadBytes: number;
   maxFilesPerUpload: number;
+  /** BSA-FR-5.4: 8 дохионы босго (admin) */
+  suspicion: BsaSuspicionThresholds;
 }
 
 export interface BsaSettingsProvider {

@@ -1,6 +1,7 @@
 // BSA-ийн тохиргоо (NFR-6). Анхдагч утга ЗӨВХӨН энд (DEFAULT_BSA_SETTINGS); env-ээр дарна (EnvBsaSettingsProvider); 60с cache
 // (CachedBsaSettingsProvider, CLAUDE.md §3.2(8)). Эзэмшигч нь origination.settings — түүний projection/GET client бэлэн болтол env/анхдагч.
 import { z } from 'zod';
+import { BsaSuspicionThresholds } from '@los/contracts';
 import { EnvConfigError, envInteger, envString, parseInteger, parseNumber, splitList, type EnvLike } from './env';
 import type { BsaSettings, BsaSettingsProvider } from './infra.ports';
 
@@ -36,6 +37,30 @@ export const DEFAULT_BSA_SETTINGS: Readonly<BsaSettings> = deepFreeze<BsaSetting
   /** 20 MiB (= 20 × 1024 × 1024 байт) — [ТААМАГ] */
   maxUploadBytes: 20 * 1024 * 1024,
   maxFilesPerUpload: 10,
+  /**
+   * BSA-FR-5.4 · docs/02 §5: дохионы босго — docs-д тоон утга өгөөгүй тул БҮГД [ТААМАГ/DEMO] (docs/DECISIONS.md). Бизнесээр батлуулж admin (M13) засна.
+   * structuringThreshold 20 сая ₮ = бэлэн мөнгөний гүйлгээний тайлагналын босгын таамаг.
+   */
+  suspicion: {
+    circularAmountTolerance: 0.02,
+    circularWindowHours: 72,
+    interAccountMinPairs: 3,
+    quickCashWindowHours: 24,
+    quickCashMinIncome: 1_000_000,
+    quickCashMinShare: 0.8,
+    splitWindowHours: 24,
+    splitMinCount: 3,
+    splitMinTotal: 1_000_000,
+    collusionWindowDays: 7,
+    collusionMinAccounts: 5,
+    collusionAmountTolerance: 0.1,
+    collusionMinTotal: 5_000_000,
+    structuringThreshold: 20_000_000,
+    structuringBandRatio: 0.9,
+    structuringMinCount: 3,
+    structuringWindowDays: 30,
+    gamblingKeywords: ['бооцоо', 'казино', 'casino', 'мөрийтэй', 'тохирол', 'betting', 'bet', 'lotto', 'лото', 'онлайн тоглоом', 'gambling'],
+  },
 });
 
 /** Тохиргооны хүчин төгөлдөр утгын санитар хязгаар (бизнесийн дүрэм биш — алдаатай оролтоос хамгаална) */
@@ -69,6 +94,7 @@ const settingsObject = z
     pushPolicyWhenPendingSuspicious: z.enum(['WARN', 'BLOCK']),
     maxUploadBytes: z.number().int().min(1).max(SETTINGS_LIMITS.maxUploadBytes),
     maxFilesPerUpload: z.number().int().min(1).max(SETTINGS_LIMITS.maxFilesPerUpload),
+    suspicion: BsaSuspicionThresholds,
   })
   .strict();
 
@@ -123,6 +149,7 @@ export function mergeSettings(base: BsaSettings, overrides: BsaSettingsOverrides
     ...overrides,
     dtiLevelThresholds: { ...base.dtiLevelThresholds, ...overrides.dtiLevelThresholds },
     reliabilityWeights: { ...base.reliabilityWeights, ...overrides.reliabilityWeights },
+    suspicion: { ...base.suspicion, ...overrides.suspicion },
   };
 }
 

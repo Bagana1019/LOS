@@ -15,6 +15,7 @@ import application from './mn.application.json'; // Модуль 2 — Хүсэ�
 import score from './mn.score.json'; // Модуль 8 — Тооцоолол (FR-8): score.*
 import inquiry from './mn.inquiry.json'; // Модуль 3 — Лавлагаа (FR-3): inquiry.*
 import income from './mn.income.json'; // Модуль 4 — Орлого (FR-4): income.*
+import bsa from './mn.bsa.json'; // Модуль 12 — BSA: bsa.*
 
 // Модуль бүр `mn.<module>.json` үүсгээд доор НЭГ import + `mnSources`-д НЭГ мөр нэмнэ (зэрэгцээ салбар зөрчилгүй мерж хийгдэнэ).
 // Түлхүүр модулиар угтвартай (`auth.*`, `shell.*`, `customer.*`); давхардлыг web-ийн i18n тест барина.
@@ -36,6 +37,7 @@ export const mnSources = {
   application,
   inquiry,
   income,
+  bsa,
 } as const;
 
 type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void ? I : never;

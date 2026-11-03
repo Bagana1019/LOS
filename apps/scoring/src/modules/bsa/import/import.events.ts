@@ -10,5 +10,6 @@ export const BSA_EVENT = {
   RECLASSIFIED: 'RECLASSIFIED',
   RULE_CREATED: 'RULE_CREATED',
   FINALIZED: 'FINALIZED',
+  SUSPICIONS_RESOLVED: 'SUSPICIONS_RESOLVED',
 } as const;
 export type BsaEventAction = (typeof BSA_EVENT)[keyof typeof BSA_EVENT];

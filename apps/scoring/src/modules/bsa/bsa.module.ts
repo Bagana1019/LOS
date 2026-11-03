@@ -22,7 +22,12 @@ import { ImportProcessor } from './import/import.processor';
 import { RecalculationService } from './import/recalculation.service';
 import { ReclassifyService } from './import/reclassify.service';
 import { RetentionService } from './import/retention.service';
-import { NullSuspicionCounter, SUSPICION_COUNTER, type SuspicionCounter } from './import/suspicion.counter';
+import { SUSPICION_COUNTER, type SuspicionCounter } from './import/suspicion.counter';
+import { CombinedService } from './combined/combined.service';
+import { ReportService } from './report/report.service';
+import { BsaSuspicionController } from './suspicion/suspicion.controller';
+import { SuspicionDetectorService } from './suspicion/suspicion-detector.service';
+import { SuspicionReviewService } from './suspicion/suspicion-review.service';
 import { UploadService } from './import/upload.service';
 
 const SERVICES = [
@@ -34,12 +39,15 @@ const SERVICES = [
   ReclassifyService,
   FinalizeService,
   RetentionService,
+  SuspicionReviewService,
+  ReportService,
+  CombinedService,
 ];
 
-const CONTROLLERS = [BsaAnalysesController, BsaJobsController, BsaCatalogController, BsaAdminController];
+const CONTROLLERS = [BsaSuspicionController, BsaAnalysesController, BsaJobsController, BsaCatalogController, BsaAdminController];
 
 export interface BsaModuleOptions {
-  /** Сэжигтэй гүйлгээний модуль `SuspicionCounter`-ээ энд өгнө (анхдагч: NullSuspicionCounter = 0) */
+  /** SuspicionCounter-ийг солих (тест). Анхдагч: SuspicionDetectorService — 8 дохио илрүүлж bsa_suspicion-д хадгална (M12c) */
   suspicionCounter?: Type<SuspicionCounter>;
   /** Нэмэлт модуль (suspicionCounter-ийн хамаарал гэх мэт) */
   imports?: ModuleMetadata['imports'];
@@ -62,7 +70,7 @@ export interface BsaModuleOptions {
     BsaUploadInterceptor,
     { provide: BSA_IMPORT_OPTIONS, useFactory: () => resolveImportOptions(process.env) },
     { provide: BSA_CLOCK, useValue: SYSTEM_CLOCK },
-    { provide: SUSPICION_COUNTER, useClass: NullSuspicionCounter },
+    { provide: SUSPICION_COUNTER, useClass: SuspicionDetectorService },
   ],
   exports: [...SERVICES, SUSPICION_COUNTER],
 })

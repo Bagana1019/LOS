@@ -26,6 +26,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { ErpSyncModule } from './modules/erp-sync/erp-sync.module';
 import { CollateralModule } from './modules/collateral/collateral.module';
 import { DocumentModule } from './modules/document/document.module';
+import { BsaModule } from './modules/bsa/bsa.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { DocumentModule } from './modules/document/document.module';
     ErpSyncModule,
     CollateralModule,
     DocumentModule,
+    BsaModule,
   ],
 })
 export class AppModule {}

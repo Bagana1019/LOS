@@ -40,7 +40,9 @@ describe('DEFAULT_BSA_SETTINGS', () => {
       pushPolicyWhenPendingSuspicious: 'WARN',
       maxUploadBytes: 20 * 1024 * 1024,
       maxFilesPerUpload: 10,
+      suspicion: DEFAULT_BSA_SETTINGS.suspicion, // DEMO босго — тусад нь доор шалгана
     });
+    expect(DEFAULT_BSA_SETTINGS.suspicion).toMatchObject({ structuringThreshold: 20_000_000, interAccountMinPairs: 3, collusionMinAccounts: 5 });
   });
 
   it('passes its own schema and is deeply immutable', () => {

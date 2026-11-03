@@ -18,6 +18,6 @@ import { SCORING_CLIENT, createScoringClient } from './scoring.client';
     { provide: SCORING_CLIENT, useFactory: () => createScoringClient() },
     { provide: CREDIT_HISTORY, useFactory: () => createCreditHistory() },
   ],
-  exports: [ScoreService],
+  exports: [ScoreService, ScoreInputAssembler],
 })
 export class ScoreModule {}

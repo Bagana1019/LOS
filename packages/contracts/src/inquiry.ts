@@ -224,7 +224,7 @@ export const IncomeBorrowerView = z.object({
   manualMonthlyTotal: z.number(),
   summary: IncomeSummaryView,
   hasIncome: z.boolean(),
-  /** FR-4.2 · Модуль 12 (BSA) ирэх хүртэл идэвхгүй */
+  /** FR-4.2 · BSA «Системрүү татах»-аар `available=true` */
   business: z.object({ available: z.boolean(), message: z.string() }),
 });
 export type IncomeBorrowerView = z.infer<typeof IncomeBorrowerView>;
