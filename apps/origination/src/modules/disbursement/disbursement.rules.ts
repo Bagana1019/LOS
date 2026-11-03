@@ -14,7 +14,7 @@ export interface ReconDiff { field: string; decision: unknown; disbursement: unk
 /** FR-12.2: шийдвэр (хүсэлтийн батлагдсан нөхцөл + ЭТХ) ≠ олголтын нөхцөл бол зөрүүг жагсаана. Хоосон = таарсан. */
 export function reconcile(decision: DecisionTerms, d: DisbursementTerms): ReconDiff[] {
   const diffs: ReconDiff[] = [];
-  const cmp = (field: string, a: unknown, b: unknown, eq: (x: never, y: never) => boolean = (x, y) => x === y) => { if (!eq(a, b)) diffs.push({ field, decision: a, disbursement: b }); };
+  const cmp = <T>(field: string, a: T, b: T, eq: (x: T, y: T) => boolean = (x, y) => x === y) => { if (!eq(a, b)) diffs.push({ field, decision: a, disbursement: b }); };
   cmp('approvedAmount', decision.amount, d.approvedAmount, (x, y) => money2(x) === money2(y));
   cmp('termMonths', decision.termMonths, d.termMonths);
   cmp('interestRate', decision.interestRate, d.interestRate, (x, y) => Math.abs(x - y) < 0.00005);
