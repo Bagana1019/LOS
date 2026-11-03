@@ -2,11 +2,12 @@
 // (эрэмбэ, хувилбар олголт, dedupe, хуудаслалт, бөөрөнхийлөл, алдаа) — repository.contract.ts хоёуланг нэг тестээр шалгана.
 // Ялгаа: шифрлэлтгүй (PII-г шууд хадгална), транзакцийн тусгаарлалтгүй (нэг transaction нэг дор ажиллана, алдаа гарвал snapshot-оор буцаана).
 import { createHash, randomUUID } from 'node:crypto';
+import type { ReviewStatus, SuspicionFlag } from '@los/contracts';
 import type { BsaCategoryDef, BsaRuleDef } from '../../classify/classify.types';
 import {
   BsaDuplicateError, BsaInvalidError, BsaNotFoundError, MANUAL_OVERRIDE_CONFIDENCE,
   type BsaAnalysisEventRecord, type BsaAnalysisRecord, type BsaAnalysisRepo, type BsaConfigRepo, type BsaEventRepo,
-  type BsaImportJobFilter, type BsaImportJobRecord, type BsaImportJobRepo, type BsaRepository, type BsaRetentionRepo, type BsaTransactionCounts,
+  type BsaImportJobFilter, type BsaImportJobRecord, type BsaImportJobRepo, type BsaRepository, type BsaRetentionRepo, type BsaSuspicionRecord, type BsaSuspicionRepo, type BsaTransactionCounts,
   type BsaTransactionRecord, type BsaTransactionRepo, type ImportJobStatus, type Page, type PageRequest, type TenantScope,
 } from './bsa.repository';
 import { matchesText, textNeedle, txnComparator } from './bsa.query';
@@ -33,12 +34,13 @@ interface State {
   jobs: Map<string, BsaImportJobRecord>;
   txns: Map<string, TxnRow>;
   events: Map<string, EventRow>;
+  suspicions: Map<string, BsaSuspicionRecord>;
   categories: Map<string, BsaCategoryDef>; // түлхүүр: `${orgId}\u0000${code}`
   rules: Map<string, RuleRow>;
 }
-const emptyState = (): State => ({ analyses: new Map(), jobs: new Map(), txns: new Map(), events: new Map(), categories: new Map(), rules: new Map() });
+const emptyState = (): State => ({ analyses: new Map(), jobs: new Map(), txns: new Map(), events: new Map(), suspicions: new Map(), categories: new Map(), rules: new Map() });
 const snapshot = (s: State): State => ({
-  analyses: new Map(s.analyses), jobs: new Map(s.jobs), txns: new Map(s.txns), events: new Map(s.events), categories: new Map(s.categories), rules: new Map(s.rules),
+  analyses: new Map(s.analyses), jobs: new Map(s.jobs), txns: new Map(s.txns), events: new Map(s.events), suspicions: new Map(s.suspicions), categories: new Map(s.categories), rules: new Map(s.rules),
 });
 
 const clone = <T>(v: T): T => structuredClone(v);
@@ -337,6 +339,56 @@ export class InMemoryBsaRepository implements BsaRepository {
     },
   };
 
+  // ───────────────────────── suspicions (M12c) ─────────────────────────
+  readonly suspicions: BsaSuspicionRepo = {
+    list: async (analysisId, filter, page) => {
+      const rows = [...this.state.suspicions.values()]
+        .filter((x) => x.analysisId === analysisId && (!filter.status || x.status === filter.status) && (!filter.flag || x.flag === filter.flag))
+        .sort((a, b) => compareStrings(a.status, b.status) || a.createdAt.getTime() - b.createdAt.getTime() || compareStrings(a.id, b.id));
+      return clone(paged(rows, page));
+    },
+    getMany: async (analysisId, ids) =>
+      clone([...this.state.suspicions.values()].filter((x) => x.analysisId === analysisId && ids.includes(x.id)).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || compareStrings(a.id, b.id))),
+    counts: async (analysisId) => {
+      const m = new Map<string, number>();
+      for (const x of this.state.suspicions.values()) if (x.analysisId === analysisId) m.set(`${x.flag}|${x.status}`, (m.get(`${x.flag}|${x.status}`) ?? 0) + 1);
+      return [...m.entries()].map(([k, count]) => {
+        const [flag, status] = k.split('|') as [SuspicionFlag, ReviewStatus];
+        return { flag, status, count };
+      });
+    },
+    countPending: async (analysisId) => [...this.state.suspicions.values()].filter((x) => x.analysisId === analysisId && x.status === 'PENDING').length,
+    sync: async (analysisId, detected) => {
+      const a = this.analysisOrThrow(analysisId);
+      const existing = [...this.state.suspicions.values()].filter((x) => x.analysisId === analysisId);
+      const have = new Set(existing.map((x) => x.detectKey));
+      const want = new Set(detected.map((d) => d.detectKey));
+      const stale = existing.filter((x) => x.status === 'PENDING' && !want.has(x.detectKey));
+      for (const x of stale) this.state.suspicions.delete(x.id);
+      const fresh = detected.filter((d) => !have.has(d.detectKey));
+      const at = this.now();
+      for (const d of fresh) {
+        const id = randomUUID();
+        this.state.suspicions.set(id, {
+          id, orgId: a.orgId, analysisId, flag: d.flag, detectKey: d.detectKey, transactionIds: [...d.transactionIds], confidence: d.confidence,
+          status: d.autoResolved ? 'RESOLVED' : 'PENDING', action: d.autoResolved ? 'EXCLUDE' : null, newCategoryCode: null, comment: d.comment ?? null,
+          resolvedBy: null, resolvedAt: d.autoResolved ? at : null, createdAt: at,
+        });
+      }
+      const pending = [...this.state.suspicions.values()].filter((x) => x.analysisId === analysisId && x.status === 'PENDING').length;
+      return { created: fresh.length, removed: stale.length, pending };
+    },
+    resolve: async (analysisId, ids, patch) => {
+      let n = 0;
+      for (const x of this.state.suspicions.values()) {
+        if (x.analysisId !== analysisId || x.status !== 'PENDING' || !ids.includes(x.id)) continue;
+        this.state.suspicions.set(x.id, { ...x, status: 'RESOLVED', action: patch.action, newCategoryCode: patch.newCategoryCode ?? null, comment: patch.comment ?? null, resolvedBy: patch.by, resolvedAt: patch.at ?? this.now() });
+        n += 1;
+      }
+      return n;
+    },
+  };
+
   // ───────────────────────── config ─────────────────────────
   readonly config: BsaConfigRepo = {
     listCategories: async (orgId) =>
@@ -383,6 +435,7 @@ export class InMemoryBsaRepository implements BsaRepository {
       const counts = { importJobs: jobs.length, transactions: 0, events: 0 };
       for (const [id, t] of this.state.txns) if (t.analysisId === analysisId && this.state.txns.delete(id)) counts.transactions += 1;
       for (const [id, e] of this.state.events) if (e.analysisId === analysisId && this.state.events.delete(id)) counts.events += 1;
+      for (const [id, x] of this.state.suspicions) if (x.analysisId === analysisId) this.state.suspicions.delete(id);
       for (const j of jobs) this.state.jobs.delete(j.id);
       this.state.analyses.delete(analysisId);
       return { analysisId, objectKeys: jobs.map((j) => j.fileId), counts };

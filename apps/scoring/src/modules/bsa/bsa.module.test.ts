@@ -17,8 +17,9 @@ import { DtiAnalysisService } from './dti';
 import { DEFAULT_BSA_CATEGORIES, DEFAULT_BSA_RULES } from './classify';
 import { TEST_SETTINGS } from './dti/testing/fixtures';
 import { BsaModule } from './bsa.module';
+import { SuspicionDetectorService } from './suspicion/suspicion-detector.service';
 import {
-  AnalysisService, BSA_CLOCK, BSA_IMPORT_OPTIONS, FinalizeService, ImportPipelineService, ImportProcessor, NullSuspicionCounter, RecalculationService,
+  AnalysisService, BSA_CLOCK, BSA_IMPORT_OPTIONS, FinalizeService, ImportPipelineService, ImportProcessor, RecalculationService,
   ReclassifyService, RetentionService, SUSPICION_COUNTER, UploadService, type ImportOptions, type SuspicionCounter,
 } from './import';
 import { OCR_PROVIDER, StatementTextService } from './parsers/text-extraction';
@@ -76,15 +77,15 @@ describe('BsaModule dependency injection', () => {
     expect(current.get(StatementVerificationService, { strict: false })).toBeDefined();
   });
 
-  it('provides the default options, the system clock and a null suspicion counter', async () => {
+  it('provides the default options, the system clock and the real suspicion detector (M12c)', async () => {
     const { builder } = build();
     current = await builder.compile();
     const options = current.get<ImportOptions>(BSA_IMPORT_OPTIONS, { strict: false });
     expect(options).toMatchObject({ maxRowsPerFile: 50_000, retentionIntervalMs: 0 });
     expect(current.get<{ now(): Date }>(BSA_CLOCK, { strict: false }).now()).toBeInstanceOf(Date);
     const counter = current.get<SuspicionCounter>(SUSPICION_COUNTER, { strict: false });
-    expect(counter).toBeInstanceOf(NullSuspicionCounter);
-    await expect(counter.countPending('org-1', 'a1')).resolves.toBe(0);
+    expect(counter).toBeInstanceOf(SuspicionDetectorService);
+    expect(typeof counter.refresh).toBe('function');
   });
 
   it('BsaModule.register({ suspicionCounter }) replaces the default counter', async () => {

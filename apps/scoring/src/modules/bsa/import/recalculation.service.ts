@@ -64,6 +64,8 @@ interface Loaded {
   rules: Awaited<ReturnType<BsaRepository['config']['listRules']>>;
   txns: BsaTransactionRecord[];
   jobs: BsaImportJobRecord[];
+  /** Ачаалсан repo (транзакц дотор бол транзакцийн repo) — хүлээгдэж буй дохионы тоог ижил транзакцаас унших */
+  repo: BsaRepository;
 }
 
 interface Computed {
@@ -176,6 +178,16 @@ export class RecalculationService {
       results = this.storedResults(loaded);
     }
 
+    // BSA-FR-5.1: 8 дохиог дахин илрүүлж хадгална (шийдвэрлэсэн нь хэвээр) — pending тоо computeFromLoaded-д ижил транзакцаас уншигдана
+    await this.suspicion.refresh?.(
+      repo,
+      analysis,
+      results.map(({ txn, result }) => ({
+        id: txn.key, txnDate: txn.txnDate, txnTime: txn.txnTime, direction: txn.direction, amount: txn.amount, description: txn.description,
+        counterpartyAccount: txn.counterpartyAccount, counterpartyName: txn.counterpartyName, channel: result.channel, isOwnTransfer: result.isOwnTransfer,
+      })),
+      loaded.settings,
+    );
     const computed = await this.computeFromLoaded(loaded, results);
     if (computed === null) return { analysis, summary: null, details: null, reclassified };
 
@@ -222,7 +234,7 @@ export class RecalculationService {
       if (e instanceof ClassifierConfigError) throw unprocessable('CATALOG_INCOMPLETE');
       throw e;
     }
-    return { analysis, settings, categories, rules, txns, jobs };
+    return { analysis, settings, categories, rules, txns, jobs, repo };
   }
 
   private async loadJobs(repo: BsaRepository, analysisId: string): Promise<BsaImportJobRecord[]> {
@@ -387,7 +399,7 @@ export class RecalculationService {
       }
     }
 
-    const pending = await this.suspicion.countPending(analysis.orgId, analysis.id);
+    const pending = await this.suspicion.countPending(analysis.orgId, analysis.id, loaded.repo);
     const dtiResult = result.dti;
     const summary = buildBsaSummary({
       analysis: {

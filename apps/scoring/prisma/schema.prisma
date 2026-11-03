@@ -364,24 +364,29 @@ model BsaAnalysisEvent {
 }
 
 model BsaSuspicion {
-  id             String    @id @default(uuid())
-  orgId          String    @map("org_id")
-  analysisId     String    @map("analysis_id")
-  flag           String // SuspicionFlag
-  transactionIds String[]  @map("transaction_ids")
-  confidence     Decimal?  @db.Decimal(5, 2) // 0–100
-  status         String    @default("PENDING") // ReviewStatus
-  action         String? // ReviewAction
-  comment        String?
-  resolvedBy     String?   @map("resolved_by")
-  resolvedAt     DateTime? @map("resolved_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-  createdBy      String?   @map("created_by")
-  updatedBy      String?   @map("updated_by")
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  analysisId      String    @map("analysis_id")
+  flag            String // SuspicionFlag
+  /// M12c: sha256(flag + эрэмблэсэн гүйлгээний id) — дахин илрүүлэхэд шийдвэрлэсэн дохио хадгалагдана
+  detectKey       String    @map("detect_key")
+  transactionIds  String[]  @map("transaction_ids")
+  confidence      Decimal?  @db.Decimal(5, 2) // 0–100
+  status          String    @default("PENDING") // ReviewStatus
+  action          String? // ReviewAction
+  /// RECLASSIFY үед сонгосон ангилал
+  newCategoryCode String?   @map("new_category_code")
+  comment         String?
+  resolvedBy      String?   @map("resolved_by")
+  resolvedAt      DateTime? @map("resolved_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdBy       String?   @map("created_by")
+  updatedBy       String?   @map("updated_by")
 
   analysis BsaAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
 
+  @@unique([analysisId, detectKey], map: "bsa_suspicion_detect_key_uq")
   @@index([analysisId, status])
   @@map("bsa_suspicion")
   @@schema("scoring")

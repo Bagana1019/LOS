@@ -24,6 +24,8 @@ import { ImportProcessor } from '../import.processor';
 import { RecalculationService } from '../recalculation.service';
 import { ReclassifyService } from '../reclassify.service';
 import { RetentionService } from '../retention.service';
+import { SuspicionDetectorService } from '../../suspicion/suspicion-detector.service';
+import { SuspicionReviewService } from '../../suspicion/suspicion-review.service';
 import type { SuspicionCounter } from '../suspicion.counter';
 import { UploadService, type UploadResult } from '../upload.service';
 import type { AnalysisView, ImportJobView } from '../views';
@@ -67,6 +69,7 @@ class ScopedRepository implements BsaRepository {
   readonly events: BsaRepository['events'];
   readonly config: BsaRepository['config'];
   readonly retention: BsaRepository['retention'];
+  readonly suspicions: BsaRepository['suspicions'];
 
   constructor(private readonly inner: InMemoryBsaRepository, private readonly publisher: InMemoryEventPublisher) {
     this.analyses = inner.analyses;
@@ -75,6 +78,7 @@ class ScopedRepository implements BsaRepository {
     this.events = inner.events;
     this.config = inner.config;
     this.retention = inner.retention;
+    this.suspicions = inner.suspicions;
   }
 
   runInTransaction<T>(fn: (repo: BsaRepository, tx: unknown) => Promise<T>): Promise<T> {
@@ -95,6 +99,8 @@ export interface HarnessOptions {
   parsers?: StatementParser[];
   /** false: worker-ийг эхлүүлэхгүй (ажил дараалалд хүлээнэ) */
   startWorker?: boolean;
+  /** true: SuspicionDetectorService (8 дохио)-г бодитоор залгана. Анхдагч: `suspicion.pending` гараар тааруулдаг тоолуур */
+  realSuspicion?: boolean;
 }
 
 export interface Harness {
@@ -120,6 +126,7 @@ export interface Harness {
   reclassify: ReclassifyService;
   finalize: FinalizeService;
   retention: RetentionService;
+  review: SuspicionReviewService;
   createAnalysis(over?: Record<string, unknown>, ctx?: RequestContext): Promise<AnalysisView>;
   uploadFiles(analysisId: string, files: SynFile[], ctx?: RequestContext, bankCode?: BankCode): Promise<UploadResult>;
   jobs(analysisId: string): Promise<ImportJobView[]>;
@@ -141,7 +148,7 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const queue = new InlineImportQueue({ mode: opts.queueMode ?? 'sync', attempts: opts.attempts ?? 3, logger: recorder });
   const options: ImportOptions = { ...IMPORT_DEFAULTS, ...opts.options };
   const suspicion = { pending: 0 };
-  const suspicionCounter: SuspicionCounter = { countPending: async () => suspicion.pending };
+  const suspicionCounter: SuspicionCounter = opts.realSuspicion ? new SuspicionDetectorService(repo) : { countPending: async () => suspicion.pending };
 
   const classifier = new ClassifierService();
   const dti = new DtiAnalysisService();
@@ -158,11 +165,12 @@ export async function createHarness(opts: HarnessOptions = {}): Promise<Harness>
   const reclassify = new ReclassifyService(repo, classifier, recalc, clock);
   const finalize = new FinalizeService(repo, settingsProvider, recalc, suspicionCounter, clock);
   const retention = new RetentionService(repo, settingsProvider, objects, options, clock);
+  const review = new SuspicionReviewService(repo, recalc, clock);
   if (opts.startWorker !== false) await processor.start();
 
   return {
     clock, settings, memory, repo, store, objects, publisher, queue, cipher, suspicion, queueLog, options,
-    analysis, upload, pipeline, processor, recalc, reclassify, finalize, retention,
+    analysis, upload, pipeline, processor, recalc, reclassify, finalize, retention, review,
     createAnalysis: (over = {}, ctx = OFFICER) =>
       analysis.create(ctx, {
         loanApplicationId: 'app-1',

@@ -10,6 +10,7 @@ export * from './payment-allocation';
 export * from './reminders';
 export * from './pos-lease';
 export * from './bsa-dti';
+export * from './bsa-combine';
 export * from './market-price';
 export * from './collateral-value';
 export * from './income';

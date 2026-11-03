@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { BsaSummary } from './dto';
-import { BsaChannel, BsaDtiRole, BsaRuleMatchType, BsaRuleSource, BsaStatus, ImportStatus, TxnDirection } from './enums';
+import { BsaChannel, BsaDtiRole, BsaRuleMatchType, BsaRuleSource, BsaStatus, ImportStatus, ReviewAction, ReviewStatus, SuspicionFlag, TxnDirection } from './enums';
 
 // BSA (docs/02-bsa-requirements.md) — enum болон service хоорондын гэрээ. Enum-ийг өөр газар давтахгүй.
 
@@ -460,3 +460,174 @@ export const BsaFinalizeResponse = z.object({
   firstTime: z.boolean(),
 });
 export type BsaFinalizeResponse = z.infer<typeof BsaFinalizeResponse>;
+
+// ───────────────────────── M12c · Сэжигтэй гүйлгээ (BSA-FR-5), хамтран зээлдэгчийн нэгтгэл (BSA-BR-9) ─────────────────────────
+
+/** BSA-FR-5.4: 8 дохионы босго (admin). Мөнгөн дүн төгрөгөөр, хугацаа цагаар. Анхдагч — DEMO (docs/DECISIONS.md) */
+export const BsaSuspicionThresholds = z
+  .object({
+    /** Тойрог шилжүүлэг: орлого↔зарлагын дүнгийн харьцангуй зөрүү (0.02 = 2%) */
+    circularAmountTolerance: z.number().min(0).max(1),
+    /** Тойрог шилжүүлэг: хугацааны зөрүү (цаг) */
+    circularWindowHours: z.number().positive(),
+    /** Данс хоорондын залилан: нэг харьцсан дансны тойрог хосын доод тоо */
+    interAccountMinPairs: z.number().int().min(2),
+    /** Хурдан бэлэн авалт: орлогын дараах цагийн зөрүү */
+    quickCashWindowHours: z.number().positive(),
+    /** Хурдан бэлэн авалт: орлогын доод дүн ба авалт/орлогын доод харьцаа */
+    quickCashMinIncome: z.number().min(0),
+    quickCashMinShare: z.number().min(0).max(1),
+    /** Хуваан авалт: цонх (цаг), доод тоо, нийлбэрийн доод дүн */
+    splitWindowHours: z.number().positive(),
+    splitMinCount: z.number().int().min(2),
+    splitMinTotal: z.number().min(0),
+    /** Хамтарсан залилан: цонх (хоног), ялгаатай харьцсан дансны доод тоо, дүнгийн ойролцоо байдал, нийлбэрийн доод дүн */
+    collusionWindowDays: z.number().positive(),
+    collusionMinAccounts: z.number().int().min(3),
+    collusionAmountTolerance: z.number().min(0).max(1),
+    collusionMinTotal: z.number().min(0),
+    /** Бүтэцлэгдсэн төлбөр: тайлагналын босго, түүнээс доош хувь, давтамж, цонх (хоног) */
+    structuringThreshold: z.number().positive(),
+    structuringBandRatio: z.number().min(0).max(1),
+    structuringMinCount: z.number().int().min(2),
+    structuringWindowDays: z.number().positive(),
+    /** Мөрийтэй тоглоом: утга/харилцагчийн нэрэнд агуулагдах түлхүүр үгс (жижиг үсгээр) */
+    gamblingKeywords: z.array(z.string().trim().min(1).max(64)).max(200),
+  })
+  .strict();
+export type BsaSuspicionThresholds = z.infer<typeof BsaSuspicionThresholds>;
+
+export const BsaSuspicionListQuery = z
+  .object({
+    status: z.enum(ReviewStatus).optional(),
+    flag: z.enum(SuspicionFlag).optional(),
+    offset: z.coerce.number().int().min(0).default(0),
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+  })
+  .strict();
+export type BsaSuspicionListQuery = z.infer<typeof BsaSuspicionListQuery>;
+
+/** BSA-FR-5.2: нэг/бөөнөөр шийдвэрлэх. RECLASSIFY үед `categoryCode` заавал; EXCLUDE нь орлого/зардлыг «Сэжигтэй» ангилалд оруулж дайчлахгүй */
+export const BsaResolveSuspicionsRequest = z
+  .object({
+    ids: z.array(Id).min(1).max(500),
+    action: z.enum(ReviewAction),
+    categoryCode: z.string().trim().min(1).max(64).optional(),
+    comment: z.string().trim().max(1000).optional(),
+  })
+  .strict()
+  .superRefine((v, ctx) => {
+    if (v.action === 'RECLASSIFY' && !v.categoryCode) ctx.addIssue({ code: 'custom', path: ['categoryCode'], message: 'required for RECLASSIFY' });
+    if (v.action !== 'RECLASSIFY' && v.categoryCode) ctx.addIssue({ code: 'custom', path: ['categoryCode'], message: 'only for RECLASSIFY' });
+  });
+export type BsaResolveSuspicionsRequest = z.infer<typeof BsaResolveSuspicionsRequest>;
+
+/** Нэг дохио (хос/бүлэг гүйлгээ). Гүйлгээнүүд нь далдалсан хэлбэрээр (дансны сүүл л харагдана) */
+export const BsaSuspicionView = z.object({
+  id: Id,
+  flag: z.enum(SuspicionFlag),
+  status: z.enum(ReviewStatus),
+  action: z.enum(ReviewAction).nullable(),
+  confidence: z.number().nullable(),
+  comment: z.string().nullable(),
+  resolvedBy: z.string().nullable(),
+  resolvedAt: z.string().nullable(),
+  /** UI-д шууд харуулах товч (огноо, дүн) */
+  firstDate: z.string(),
+  totalAmount: z.number(),
+  transactionIds: z.array(Id),
+  transactions: z.array(
+    z.object({
+      id: Id, txnDate: z.string(), txnTime: z.string().nullable(), direction: z.enum(TxnDirection), amount: z.number(), description: z.string(),
+      counterpartyAccount: z.string().nullable(), categoryCode: z.string().nullable(),
+    }),
+  ),
+});
+export type BsaSuspicionView = z.infer<typeof BsaSuspicionView>;
+
+/** BSA-FR-5.1: нийт/хүлээгдэж буй/шийдвэрлэгдсэн + 8 дохионы тоо */
+export const BsaSuspicionCounts = z.object({
+  total: z.number().int(),
+  pending: z.number().int(),
+  resolved: z.number().int(),
+  byFlag: z.record(z.enum(SuspicionFlag), z.object({ total: z.number().int(), pending: z.number().int() })),
+});
+export type BsaSuspicionCounts = z.infer<typeof BsaSuspicionCounts>;
+
+export const BsaSuspicionListResponse = z.object({
+  items: z.array(BsaSuspicionView),
+  total: z.number().int(),
+  offset: z.number().int(),
+  limit: z.number().int(),
+  counts: BsaSuspicionCounts,
+});
+export type BsaSuspicionListResponse = z.infer<typeof BsaSuspicionListResponse>;
+
+/** BSA-BR-9 / BSA-FR-4.10: хүсэлтийн түвшний нэгтгэл (зээлдэгч бүрийн идэвхтэй шинжилгээ) */
+export const BsaCombinedSummary = z.object({
+  applicationId: z.string(),
+  analysisCount: z.number().int(),
+  /** Бүх шинжилгээ ANALYZED эсэх (үгүй бол нэгтгэл урьдчилсан) */
+  allAnalyzed: z.boolean(),
+  /** DTI орлого = Σ, өрийн үйлчилгээ = Σ */
+  dtiIncome: z.number(),
+  existingDebtServiceMonthly: z.number(),
+  businessIncomeMonthly: z.number(),
+  businessExpenseMonthly: z.number(),
+  netCashFlowMonthly: z.number(),
+  /** Орлогоор жигнэсэн дундаж */
+  incomeReliability: z.number(),
+  pendingSuspiciousCount: z.number().int(),
+  dtiLevel: z.enum(DtiLevel),
+  /** Нэгтгэсэн DTI % (өрийн үйлчилгээ + санал болгосон төлбөр) / нийт DTI орлого */
+  dtiPercent: z.number(),
+  members: z.array(z.object({ analysisId: z.string(), borrowerId: z.string(), status: z.enum(BsaStatus), dtiIncome: z.number(), existingDebtServiceMonthly: z.number() })),
+});
+export type BsaCombinedSummary = z.infer<typeof BsaCombinedSummary>;
+
+// ───────────────────────── M12c · origination (LOS) талын гэрээ: /api/origination/applications/:id/bsa… ─────────────────────────
+
+/** INT-1: хүсэлтийн зээлдэгчид BSA шинжилгээ үүсгэх. Регистр, нэр, данс, санал болгосон төлбөрийг LOS өөрөө дүүргэнэ */
+export const BsaLosCreateAnalysisBody = z
+  .object({
+    customerId: z.string().min(1).max(128),
+    periodMonths: z.number().int().min(1).max(120).nullish(),
+    periodFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+    periodTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
+  })
+  .strict();
+export type BsaLosCreateAnalysisBody = z.infer<typeof BsaLosCreateAnalysisBody>;
+
+export const BsaLosBorrowerRow = z.object({
+  customerId: z.string(),
+  role: z.enum(['PRIMARY', 'CO_BORROWER', 'GUARANTOR', 'COLLATERAL_OWNER']),
+  displayName: z.string(),
+  /** Хамгийн сүүлийн хувилбар; байхгүй бол null */
+  analysisId: z.string().nullable(),
+  status: z.enum(BsaStatus).nullable(),
+  version: z.number().int().nullable(),
+  dtiPercent: z.number().nullable(),
+  pendingSuspiciousCount: z.number().int().nullable(),
+});
+export type BsaLosBorrowerRow = z.infer<typeof BsaLosBorrowerRow>;
+
+export const BsaLosOverview = z.object({
+  applicationId: z.string(),
+  /** `loan_application.bsa_summary_json` — татагдаагүй бол null */
+  summary: z.record(z.unknown()).nullable(),
+  /** Санал болгосон сарын төлбөр (ЭТХ/нөхцөлөөс, INT-6) — тооцох боломжгүй бол null */
+  proposedMonthlyPayment: z.number().nullable(),
+  borrowers: z.array(BsaLosBorrowerRow),
+  /** Scoring түр ажиллахгүй бол false (хадгалагдсан хураангуйг л харуулна) */
+  available: z.boolean(),
+  editable: z.boolean(),
+});
+export type BsaLosOverview = z.infer<typeof BsaLosOverview>;
+
+export const BsaLosPushResponse = z.object({
+  summary: z.record(z.unknown()),
+  warnings: z.array(z.string()),
+  /** INT-9: PDF тайлан 8-р алхамд орсон эсэх */
+  reportAttached: z.boolean(),
+});
+export type BsaLosPushResponse = z.infer<typeof BsaLosPushResponse>;

@@ -9,7 +9,7 @@
 //  - Алдаа: BsaNotFoundError / BsaDuplicateError / BsaInvalidError (доор). Алдааны мессежид PII орохгүй.
 //  - `runInTransaction`: callback шидвэл бүх бичилт буцна; `tx` нь DomainEventPublisher.enqueue(tx, event)-д өгөх объект
 //    (CLAUDE.md §3.2(4): event-ийг бизнес бичилттэй НЭГ транзакцид outbox-д бичнэ).
-import type { BsaStatus, BsaSummary, ImportFormat, ImportStatus, BsaChannel, TxnDirection } from '@los/contracts';
+import type { BsaStatus, BsaSummary, ImportFormat, ImportStatus, BsaChannel, ReviewAction, ReviewStatus, SuspicionFlag, TxnDirection } from '@los/contracts';
 import type { BsaCategoryDef, BsaRuleDef } from '../../classify/classify.types';
 
 export const BSA_REPOSITORY = Symbol('BSA_REPOSITORY');
@@ -469,6 +469,74 @@ export interface BsaRetentionRepo {
   purge(analysisId: string): Promise<PurgeResult>;
 }
 
+// ───────────────────────── Сэжигтэй гүйлгээ (M12c, BSA-FR-5) ─────────────────────────
+
+export interface BsaSuspicionRecord {
+  id: string;
+  orgId: string;
+  analysisId: string;
+  flag: SuspicionFlag;
+  /** sha256(flag + эрэмблэсэн гүйлгээний id) — (analysisId, detectKey) өвөрмөц */
+  detectKey: string;
+  transactionIds: string[];
+  confidence: number | null;
+  status: ReviewStatus;
+  action: ReviewAction | null;
+  newCategoryCode: string | null;
+  comment: string | null;
+  /** null + RESOLVED = систем автоматаар шийдвэрлэсэн (OWN_ACCOUNT) */
+  resolvedBy: string | null;
+  resolvedAt: Date | null;
+  createdAt: Date;
+}
+
+export interface NewBsaSuspicion {
+  detectKey: string;
+  flag: SuspicionFlag;
+  transactionIds: string[];
+  confidence: number;
+  /** true ⇒ RESOLVED/EXCLUDE (resolvedBy=null) төлөвөөр үүснэ */
+  autoResolved: boolean;
+  comment?: string;
+}
+
+export interface BsaSuspicionFilter {
+  status?: ReviewStatus;
+  flag?: SuspicionFlag;
+}
+
+export interface BsaSuspicionCountRow {
+  flag: SuspicionFlag;
+  status: ReviewStatus;
+  count: number;
+}
+
+export interface SuspicionSyncResult {
+  created: number;
+  /** Дахин илрээгүй, шийдвэрлэгдээгүй тул устгасан */
+  removed: number;
+  pending: number;
+}
+
+export interface BsaSuspicionRepo {
+  list(analysisId: string, filter: BsaSuspicionFilter, page?: PageRequest): Promise<Page<BsaSuspicionRecord>>;
+  /** Зөвхөн энэ шинжилгээний мөр; олдохгүй id-г алгасна */
+  getMany(analysisId: string, ids: readonly string[]): Promise<BsaSuspicionRecord[]>;
+  counts(analysisId: string): Promise<BsaSuspicionCountRow[]>;
+  countPending(analysisId: string): Promise<number>;
+  /**
+   * Илрүүлсэн жагсаалттай тулгана: шинэ detectKey-г нэмнэ; байгаа RESOLVED-ийг ХЭЗЭЭ Ч өөрчлөхгүй; дахин илрээгүй PENDING-ийг устгана
+   * (ангилал өөрчлөгдөж дохио алга болсон). Идемпотент.
+   */
+  sync(analysisId: string, detected: readonly NewBsaSuspicion[], by?: ActorId): Promise<SuspicionSyncResult>;
+  /** Зөвхөн PENDING мөрийг шийдвэрлэнэ. Буцаах: шийдвэрлэсэн тоо */
+  resolve(
+    analysisId: string,
+    ids: readonly string[],
+    patch: { action: ReviewAction; newCategoryCode?: string | null; comment?: string | null; by: string; at?: Date },
+  ): Promise<number>;
+}
+
 // ───────────────────────── Нэгдсэн port ─────────────────────────
 
 export interface BsaRepository {
@@ -478,6 +546,7 @@ export interface BsaRepository {
   readonly events: BsaEventRepo;
   readonly config: BsaConfigRepo;
   readonly retention: BsaRetentionRepo;
+  readonly suspicions: BsaSuspicionRepo;
   /**
    * Callback дотор өгөгдсөн `repo`-оор хийсэн бүх бичилт нэг транзакцид; callback шидвэл бүгд буцна. `tx`-ийг
    * DomainEventPublisher.enqueue(tx, event)-д дамжуулж event-ийг ижил транзакцид outbox-д бичнэ. Доторх дуудлага (nested) гадаад
