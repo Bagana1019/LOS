@@ -43,6 +43,7 @@ export class InternalHttpClient {
 
   get<T = unknown>(service: ServiceName, path: string, opts: CallOptions<T> = {}): Promise<T> { return this.request('GET', service, path, undefined, opts); }
   post<T = unknown>(service: ServiceName, path: string, body: unknown, opts: CallOptions<T> = {}): Promise<T> { return this.request('POST', service, path, body, opts); }
+  delete<T = unknown>(service: ServiceName, path: string, opts: CallOptions<T> = {}): Promise<T> { return this.request('DELETE', service, path, undefined, opts); }
   put<T = unknown>(service: ServiceName, path: string, body: unknown, opts: CallOptions<T> = {}): Promise<T> { return this.request('PUT', service, path, body, opts); }
 
   private async request<T>(method: string, service: ServiceName, path: string, body: unknown, opts: CallOptions<T>): Promise<T> {

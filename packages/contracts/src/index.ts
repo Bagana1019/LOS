@@ -11,3 +11,4 @@ export * from './scoring';
 export * from './customer';
 export * from './erp-sync';
 export * from './portal';
+export * from './inquiry';

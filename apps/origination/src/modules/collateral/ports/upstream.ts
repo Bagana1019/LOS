@@ -15,7 +15,7 @@ export const INTERNAL_TIMEOUT_MS = 3_000;
  * Бусад дотоод сервисийн хэрэглэгчид зориулсан (монгол) тогтвортой алдаануудыг (5xx хэдий ч) хэвээр дамжуулна.
  * Жагсаалт хаалттай: үл мэдэгдэх 5xx-ийн агуулгыг (дотоод мэдээлэл агуулж болно) эргүүлэхгүй — `UpstreamError` 502/504 хэвээр.
  */
-export const USER_FACING_UPSTREAM_CODES = ['XYP_UNAVAILABLE', 'INTEGRATION_NOT_IMPLEMENTED', 'ENCUMBRANCE_UNAVAILABLE', 'REGISTRY_UNAVAILABLE'] as const;
+export const USER_FACING_UPSTREAM_CODES = ['XYP_UNAVAILABLE', 'INTEGRATION_NOT_IMPLEMENTED', 'ENCUMBRANCE_UNAVAILABLE', 'REGISTRY_UNAVAILABLE', 'NDSH_UNAVAILABLE'] as const;
 
 export function mapUpstreamError(service: ServiceName, e: unknown): unknown {
   // Хариу гэрээнд нийцээгүй = дотоод гэрээний зөрүү; ЗЭЗ-ийн маягтын алдаа (400 VALIDATION_FAILED) биш.
