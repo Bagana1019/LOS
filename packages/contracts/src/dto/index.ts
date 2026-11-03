@@ -24,3 +24,5 @@ export * from './collateral-valuation';
 export * from './collateral-registry';
 export * from './document';
 export * from './application';
+export * from './loan-terms';
+export * from './schedule';
