@@ -1,0 +1,63 @@
+{
+  "income.title": "Орлого",
+  "income.subtitle": "Цалин (НДШ эсвэл гараар), гар орлого, өрхийн ба бизнесийн зардал. Цалингийн сарын дундажийг хугацаа сонгож тооцно.",
+  "income.loading": "Орлогыг ачаалж байна",
+  "income.empty.noBorrower": "Орлого оруулах оролцогч алга. Эхлээд «Харилцагч» алхамд үндсэн зээлдэгчээ нэмнэ үү.",
+  "income.notEditable": "Хүсэлт «Шинэ» эсвэл «Буцаасан» төлөвт байх үед л орлого өөрчилнө.",
+
+  "income.step.complete": "Алхам бүрдсэн",
+  "income.step.incomplete": "Алхам бүрдээгүй",
+  "income.step.reason.INCOME_MISSING": "Орлого оруулаагүй оролцогч байна",
+  "income.step.reason.NO_PRIMARY_BORROWER": "Үндсэн зээлдэгч сонгогдоогүй байна",
+  "income.action.refresh": "Төлөв дахин шалгах",
+
+  "income.role.PRIMARY": "Үндсэн зээлдэгч",
+  "income.role.CO_BORROWER": "Хамтран зээлдэгч",
+  "income.notIncluded": "Орлого нэгтгэхгүй",
+  "income.hasIncome": "Орлоготой",
+  "income.noIncome": "Орлого байхгүй",
+
+  "income.salary.title": "Цалин",
+  "income.salary.fetchNdsh": "НДШ-ээс татах",
+  "income.salary.empty": "Цалингийн мөр алга. НДШ-ээс татах эсвэл гараар нэмнэ үү.",
+  "income.salary.employer": "Ажил олгогч",
+  "income.salary.period": "Он-сар",
+  "income.salary.amount": "Цалин",
+  "income.salary.contribution": "Шимтгэл",
+  "income.salary.source": "Эх сурвалж",
+  "income.salary.source.NDSH": "НДШ",
+  "income.salary.source.MANUAL": "Гараар",
+  "income.salary.add": "Гар цалин нэмэх",
+  "income.salary.remove": "Устгах",
+
+  "income.calc.title": "Сарын дундаж",
+  "income.calc.from": "Эхлэх сар",
+  "income.calc.to": "Дуусах сар",
+  "income.calc.button": "Тооцоолох",
+  "income.calc.hint": "Дундаж = нийлбэр ÷ сонгосон сарын тоо. Цалин ороогүй сар 0 гэж тооцогдоно.",
+  "income.calc.total": "Нийт цалин",
+  "income.calc.months": "Сарын тоо",
+  "income.calc.average": "Сарын дундаж",
+  "income.calc.none": "Хугацаа сонгож «Тооцоолох»-ыг дарна уу",
+
+  "income.manual.title": "Гар орлого",
+  "income.manual.empty": "Гар орлого алга",
+  "income.manual.type": "Төрөл",
+  "income.manual.type.RENT": "Түрээс",
+  "income.manual.type.PENSION": "Тэтгэвэр",
+  "income.manual.type.OTHER": "Бусад",
+  "income.manual.monthly": "Сарын дүн",
+  "income.manual.note": "Тайлбар",
+  "income.manual.add": "Нэмэх",
+  "income.manual.total": "Сарын нийт гар орлого: {amount}",
+
+  "income.expense.title": "Зардал",
+  "income.expense.household": "Өрхийн сарын зардал",
+  "income.expense.business": "Бизнесийн сарын зардал",
+  "income.expense.save": "Хадгалах",
+
+  "income.business.title": "Бизнесийн орлого",
+
+  "income.form.required": "Заавал бөглөнө",
+  "income.toast.saved": "Хадгалагдлаа"
+}
