@@ -9,7 +9,7 @@
 ```
 cp .env.example .env     # + ERP_API_URL/ERP_WEBHOOK_SECRET/ERP_API_TOKEN хоосон мөрийг `# `-ээр тайлбар болго
 docker compose up -d postgres dwh redis && pnpm install
-pnpm db:generate && pnpm turbo run build --filter='./packages/*'   # seed-д @los/database-ийн dist хэрэгтэй
+pnpm turbo run db:generate --concurrency=1 && pnpm turbo run build --filter='./packages/*'   # seed-д @los/database-ийн dist хэрэгтэй
 pnpm db:migrate && pnpm db:seed && pnpm dev
 ```
 Тест: `TEST_DATABASE_URL=… REDIS_URL=… pnpm test` (дэлгэрэнгүй `docs/00-foundation.md` §4).

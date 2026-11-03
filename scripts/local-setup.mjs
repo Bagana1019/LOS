@@ -51,13 +51,15 @@ function fail(msg, hint) {
   if (hint) console.error(hint);
   process.exit(1);
 }
-/** Командыг терминалд шууд хэвлэж ажиллуулна. Windows-д `pnpm`/`docker` нь .cmd тул shell хэрэгтэй. */
+// Windows-д `pnpm` нь pnpm.cmd тул shell хэрэгтэй; `docker` бодит .exe — shell-гүй байвал зайтай аргууд (SQL гэх мэт) хуваагдахгүй
+const needsShell = (cmd) => IS_WIN && cmd === 'pnpm';
+/** Командыг терминалд шууд хэвлэж ажиллуулна. */
 function run(cmd, cmdArgs, extra = {}) {
   say(`  $ ${[cmd, ...cmdArgs].join(' ')}`);
-  return spawnSync(cmd, cmdArgs, { cwd: ROOT, stdio: 'inherit', shell: IS_WIN, env: childEnv, ...extra }).status ?? 1;
+  return spawnSync(cmd, cmdArgs, { cwd: ROOT, stdio: 'inherit', shell: needsShell(cmd), env: childEnv, ...extra }).status ?? 1;
 }
 function capture(cmd, cmdArgs) {
-  const r = spawnSync(cmd, cmdArgs, { cwd: ROOT, encoding: 'utf8', shell: IS_WIN, env: childEnv });
+  const r = spawnSync(cmd, cmdArgs, { cwd: ROOT, encoding: 'utf8', shell: needsShell(cmd), env: childEnv });
   return { status: r.status ?? 1, out: `${r.stdout ?? ''}${r.stderr ?? ''}`.trim() };
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -134,10 +136,31 @@ function ensureEnv() {
 }
 
 function envValue(name, fallback) {
+  if (process.env[name]) return process.env[name]; // орчинд тавигдсан утга `.env`-ээс давуу (loadEnvFile-тэй адил)
   try {
     const m = readFileSync(resolve(ROOT, '.env'), 'utf8').match(new RegExp(`^${name}=(.*?)\\r?$`, 'm'));
     return m && m[1] ? m[1] : fallback;
   } catch { return fallback; }
+}
+
+/** gateway-ийн `iam.user` хүснэгтийн хэрэглэгчийн тоо: -1 = хүснэгт алга (migration хийгдээгүй), null = Docker-оор шалгах боломжгүй. */
+function countSeedUsers() {
+  if (SKIP_INFRA) return null;
+  let user = 'los', db = 'los';
+  try { const u = new URL(envValue('DATABASE_URL', 'postgresql://los:los@localhost:5432/los')); user = decodeURIComponent(u.username) || user; db = u.pathname.slice(1) || db; } catch { /* анхдагч */ }
+  const r = capture('docker', ['compose', 'exec', '-T', 'postgres', 'psql', '-U', user, '-d', db, '-tAc', 'select count(*) from iam."user"']);
+  if (r.status === 0 && /^\d+$/.test(r.out)) return Number(r.out);
+  if (/does not exist/.test(r.out)) return -1;
+  return null;
+}
+/** Seed үнэхээр ажилласан эсэхийг баталгаажуулж, үр дүнг хэвлэнэ. `true` = 5 хэрэглэгч бэлэн. */
+function reportSeed() {
+  const n = countSeedUsers();
+  if (n === null) { warn('Seed хэрэглэгчийн тоог Docker-оор шалгаж чадсангүй (Docker/`--skip-infra`)'); return null; }
+  if (n === -1) { console.log('  \x1b[31m✗\x1b[0m `iam.user` хүснэгт алга — migration хийгдээгүй (энэ үед вэб «Нэвтэрч чадсангүй. Дахин оролдоно уу.» гэж харуулна)'); return false; }
+  if (n === 0) { console.log('  \x1b[31m✗\x1b[0m `iam.user` хоосон — seed хийгдээгүй (энэ үед вэб «Нэвтрэх нэр эсвэл нууц үг буруу» гэж харуулна)'); return false; }
+  ok(`Seed хэрэглэгч: ${n} (admin, approver, manager, officer.a, officer.b)`);
+  return true;
 }
 
 async function infraUp() {
@@ -163,6 +186,13 @@ async function infraUp() {
   await waitFor('Redis', () => /PONG/.test(capture('docker', ['compose', 'exec', '-T', 'redis', 'redis-cli', 'ping']).out));
 }
 
+/** Prisma client-үүдийг ДАРААЛУУЛЖ үүсгэнэ: зэрэг (turbo-ийн анхдагч) ажиллахад Windows дээр query engine файлд `EPERM: operation not permitted, rename …` гардаг. */
+function generateClients() {
+  if (run('pnpm', ['turbo', 'run', 'db:generate', '--concurrency=1']) !== 0) {
+    fail('Prisma client үүсгэж чадсангүй (db:generate)', '  Windows-д EPERM гарвал: антивирус/өөр терминалыг хааж, `pnpm turbo run db:generate --concurrency=1`-ийг дахин ажиллуул.');
+  }
+}
+
 function buildLibs() {
   if (run('pnpm', ['turbo', 'run', 'build', '--filter=./packages/*']) !== 0) fail('packages/* build амжилтгүй');
 }
@@ -186,7 +216,7 @@ async function setup() {
   head('1/4 Хамаарлуудыг суулгаж байна (pnpm install)');
   if (run('pnpm', ['install', '--frozen-lockfile']) !== 0) fail('pnpm install амжилтгүй');
   head('2/4 Prisma client үүсгэж, нийтлэг сангуудыг build хийж байна');
-  if (run('pnpm', ['db:generate']) !== 0) fail('pnpm db:generate амжилтгүй');
+  generateClients();
   buildLibs(); // seed нь @los/database-ийн dist-ийг ашигладаг тул ЗААВАЛ seed-ээс өмнө
   head('3/4 Өгөгдлийн сангийн migration (6 сервис)');
   if (run('pnpm', ['db:migrate']) !== 0) fail('pnpm db:migrate амжилтгүй', '  Postgres ажиллаж байгаа эсэх, DATABASE_URL-ийг шалга: docker compose ps');
@@ -197,6 +227,8 @@ async function setup() {
     say('  + туршилтын жишээ хүсэлт (SEED_DEMO=1)');
     if (run('pnpm', ['--filter', '@los/origination', 'db:seed'], { env: { ...childEnv, SEED_DEMO: '1' } }) !== 0) fail('SEED_DEMO seed амжилтгүй');
   }
+  head('Seed-ийг баталгаажуулж байна');
+  if (reportSeed() === false) fail('Seed/migration дутуу байна', '  Дахин: node scripts/local-setup.mjs (давтаж болно). Алдааны мөрүүдийг дээрээс хар.');
   head('Бэлэн боллоо ✔');
   say('  Асаах:        node scripts/local-setup.mjs start');
   say('  Шалгах:       node scripts/local-setup.mjs check   (өөр терминалд)');
@@ -216,7 +248,7 @@ async function ensurePortsFree(ports) {
 /** Хэд хэдэн урт процессийг зэрэг ажиллуулж, Ctrl+C дээр бүгдийг нь зогсооно. */
 function runForeground(jobs) {
   return new Promise((done) => {
-    const kids = jobs.map((j) => spawn(j.cmd, j.args, { cwd: ROOT, stdio: 'inherit', shell: IS_WIN, env: childEnv }));
+    const kids = jobs.map((j) => spawn(j.cmd, j.args, { cwd: ROOT, stdio: 'inherit', shell: needsShell(j.cmd), env: childEnv }));
     let stopping = false;
     const stopAll = () => { stopping = true; kids.forEach(killTree); };
     // Терминалын Ctrl+C нь хүүхдүүдэд өөрөө хүрдэг (давхар SIGINT turbo-г хүчээр зогсооно) → энд зөвхөн хүлээнэ, гацвал 15с-ийн дараа зогсооно
@@ -254,7 +286,7 @@ async function demo() {
   }
   if (!existsSync(LIBS_BUILT_MARKER)) {
     head('Prisma client + нийтлэг сангуудыг бэлдэж байна');
-    if (run('pnpm', ['db:generate']) !== 0) fail('pnpm db:generate амжилтгүй');
+    generateClients();
     buildLibs();
   }
   await ensurePortsFree([WEB_PORT, 4000]);
@@ -282,16 +314,25 @@ async function check() {
   if (web?.ok) ok(`web          :${WEB_PORT}`); else { bad += 1; console.log(`  \x1b[31m✗\x1b[0m web          :${WEB_PORT}`); }
 
   head('Нэвтрэлт (admin)');
+  const pw = envValue('SEED_PASSWORD', 'Los@2026!dev');
+  const seeded = reportSeed();
+  if (seeded === false) bad += 1;
   const login = await get('http://localhost:4000/api/auth/login', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: envValue('SEED_PASSWORD', 'Los@2026!dev') }),
+    body: JSON.stringify({ username: 'admin', password: pw }),
   });
   if (login?.ok) {
     const j = await login.json();
     ok(`admin нэвтэрлээ · дүр: ${j.user.roles.join(', ')} · цэс: ${j.menu.map((m) => m.id).join(', ')}`);
   } else {
     bad += 1;
-    console.log(`  \x1b[31m✗\x1b[0m нэвтрэлт амжилтгүй (${login ? `HTTP ${login.status}` : 'gateway хариу өгсөнгүй'}). Seed хийсэн үү? Нэвтрэлт минутад 10 удаагаар хязгаарлагдсан.`);
+    const body = login ? await login.json().catch(() => ({})) : {};
+    const problem = (m) => console.log(`  \x1b[31m✗\x1b[0m ${m}`);
+    if (!login) problem('gateway (:4000) хариу өгсөнгүй — асаагүй эсвэл өөр програм эзэлсэн');
+    else if (login.status === 401) problem(`HTTP 401 ${body.code ?? ''}: gateway ажиллаж байна, гэхдээ \`admin\` / \`${pw}\` таарсангүй. Seed хийгдээгүй, эсвэл seed өөр SEED_PASSWORD-оор хийгдсэн (seed нууц үгийг дахин тохируулдаггүй)`);
+    else if (login.status === 429) problem('HTTP 429: нэвтрэлт минутад 10-аар хязгаарлагдсан — 1 минут хүлээнэ үү');
+    else if (login.status >= 500) problem(`HTTP ${login.status} ${body.code ?? ''}: gateway-ийн дотоод алдаа — ихэвчлэн \`iam\` хүснэгт үүсээгүй (migration) эсвэл Prisma client буруу. Зас: node scripts/local-setup.mjs (давтаж болно); gateway-ийн лог: \`@los/gateway:dev\` мөрүүд`);
+    else problem(`HTTP ${login.status} ${body.code ?? ''}: :4000 дээр gateway биш өөр програм хариулж байж магадгүй`);
   }
   say(bad ? `\n\x1b[31m${bad} алдаа.\x1b[0m docs/LOCAL-SETUP.md §8 (асуудал шийдэх)-ийг үз.` : '\n\x1b[32mБүгд хэвийн ✔\x1b[0m');
   process.exit(bad ? 1 : 0);
