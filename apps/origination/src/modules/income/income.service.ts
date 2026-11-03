@@ -12,7 +12,7 @@ import { applyStepUpdates, loadSteps, planScoreStale, planStepTarget } from '../
 import { isEditableStatus } from '../borrower/borrower.rules';
 import { CustomerDirectory, customerDisplayName, customerRegisterNo } from '../borrower/customer-directory';
 import {
-  BSA_INACTIVE_MESSAGE, dateToYearMonth, hasIncome, incomeBlockers, incomeStepTarget, isFutureMonth, monthEnd, monthStart, parseYearMonth, summaryView,
+  BSA_PENDING_MESSAGE, BSA_PULLED_MESSAGE, dateToYearMonth, hasIncome, incomeBlockers, incomeStepTarget, isFutureMonth, monthEnd, monthStart, parseYearMonth, summaryView,
   type IncomeParticipant,
 } from './income.rules';
 import { KYC_NDSH_PORT, type KycNdshPort } from './ports/kyc-ndsh.port';
@@ -26,7 +26,7 @@ const num = (v: { toNumber(): number } | number | null | undefined): number | nu
  * Мутаци бүр: эрх → (гадны дуудлага — НДШ, транзакцаас гадна) → нэг транзакц { хүсэлтийн мөрийг FOR UPDATE → төлөв → бичих → дундаж шинэчлэх → `income` алхам →
  * `score` алхмыг STALE → аудит }. Цалингийн дундаж `income_summary.avg_salary_monthly`-д хадгалагдаж Модуль 8 унших ба «Тооцоолох»-оор тодорхойлсон
  * хугацаа өөрчлөгдөөгүй бол цалингийн мөр өөрчлөгдөх бүрт ижил хугацаагаар автоматаар шинэчлэгдэнэ.
- * Бизнесийн орлого (FR-4.2) нь BSA (Модуль 12)-ээс `business_ncf_monthly`-д орно; одоогоор placeholder.
+ * Бизнесийн орлого (FR-4.2) нь BSA (Модуль 12)-ээс `business_ncf_monthly`-д орно (`BsaService.push` бичнэ — modules/bsa); татагдаагүй бол `business.available=false`.
  */
 @Injectable()
 export class IncomeService {
@@ -230,7 +230,7 @@ export class IncomeService {
         salaries: mySalaries.map((s) => ({ id: s.id, employer: s.employer, year: s.year, month: s.month, salary: s.salary.toNumber(), contributionPaid: num(s.contributionPaid), source: s.source as 'NDSH' | 'MANUAL' })),
         manual: myManual.map((m) => ({ id: m.id, type: m.type as ManualIncomeType, monthlyAmount: m.monthlyAmount.toNumber(), fileId: m.fileId, note: m.note })),
         manualMonthlyTotal: manualTotal, summary, hasIncome: hasIncome(summary, manualTotal),
-        business: { available: false, message: BSA_INACTIVE_MESSAGE },
+        business: summary.businessNcfMonthly !== null ? { available: true, message: BSA_PULLED_MESSAGE } : { available: false, message: BSA_PENDING_MESSAGE },
       };
     });
     const blockers = incomeBlockers(participants, new Map(borrowers.map((b) => [b.customerId, b])));

@@ -29,6 +29,10 @@ export type BsaErrorCode =
   | 'INVALID_MULTIPART'
   | 'UNEXPECTED_FILE_FIELD'
   | 'SUMMARY_NOT_AVAILABLE'
+  | 'SUSPICION_NOT_FOUND'
+  | 'SUSPICION_ALREADY_RESOLVED'
+  | 'COMBINED_NOT_AVAILABLE'
+  | 'REPORT_NOT_AVAILABLE'
   // Upload-ын файл бүрийн татгалзах код (бүх файл татгалзагдвал HTTP алдаа болно)
   | UploadRejectCode;
 
@@ -56,6 +60,10 @@ export const BSA_ERROR_MESSAGES: Readonly<Record<BsaErrorCode, string>> = {
   INVALID_MULTIPART: 'Файл хүлээн авах хүсэлтийн хэлбэр буруу байна (multipart/form-data, талбар нь files).',
   UNEXPECTED_FILE_FIELD: 'Файлыг зөвхөн files талбараар илгээнэ үү.',
   SUMMARY_NOT_AVAILABLE: 'Шинжилгээний хураангуй хараахан тооцогдоогүй байна. Эхлээд хуулга оруулна уу.',
+  SUSPICION_NOT_FOUND: 'Сонгосон сэжигтэй дохио шинжилгээнд олдсонгүй.',
+  SUSPICION_ALREADY_RESOLVED: 'Сонгосон дохионууд аль хэдийн шийдвэрлэгдсэн байна.',
+  COMBINED_NOT_AVAILABLE: 'Хүсэлтэд шинжилгээ байхгүй тул нэгтгэх боломжгүй.',
+  REPORT_NOT_AVAILABLE: 'Тайлан гаргахад шинжилгээнд гүйлгээ байхгүй байна.',
   // QUEUE_UNAVAILABLE, FILE_*, STORAGE_FAILED, INVALID_BANK, INTERNAL_ERROR (upload татгалзалтын мессеж)
   ...UPLOAD_REJECT_MESSAGES,
 };

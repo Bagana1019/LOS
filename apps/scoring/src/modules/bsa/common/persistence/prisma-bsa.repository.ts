@@ -6,6 +6,7 @@ import type { BsaRepository } from './bsa.repository';
 import { createAnalysisRepo } from './prisma-analyses';
 import { createConfigRepo, createEventRepo, createRetentionRepo } from './prisma-config';
 import { createImportJobRepo } from './prisma-import-jobs';
+import { createSuspicionRepo } from './prisma-suspicions';
 import {
   BSA_REPOSITORY_OPTIONS, PRISMA_BSA_REPOSITORY_DEFAULTS, type Ctx, type Db, type PrismaBsaRepositoryOptions,
 } from './prisma-support';
@@ -20,6 +21,7 @@ class PrismaBsaCore implements BsaRepository {
   readonly events: BsaRepository['events'];
   readonly config: BsaRepository['config'];
   readonly retention: BsaRepository['retention'];
+  readonly suspicions: BsaRepository['suspicions'];
 
   constructor(protected readonly ctx: Ctx) {
     this.analyses = createAnalysisRepo(ctx);
@@ -28,6 +30,7 @@ class PrismaBsaCore implements BsaRepository {
     this.events = createEventRepo(ctx);
     this.config = createConfigRepo(ctx);
     this.retention = createRetentionRepo(ctx);
+    this.suspicions = createSuspicionRepo(ctx);
   }
 
   /** Nested дуудлага (ctx.root = null) гадаад транзакцдаа нэгдэнэ. `tx` нь Prisma транзакцийн клиент (outbox бичихэд) */

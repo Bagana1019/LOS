@@ -18,6 +18,10 @@ export interface CallOptions<T> {
   timeoutMs?: number;
   schema?: ZodType<T>;
   query?: Record<string, string | number | boolean | undefined>;
+  /** multipart/form-data илгээх (файл upload). `post`-ын `body` нь `undefined` байх ёстой */
+  form?: FormData;
+  /** 'buffer': хариуг (PDF/Excel) Buffer болгож авна; алдааны хариу JSON хэвээр. `schema` хэрэглэгдэхгүй */
+  responseType?: 'json' | 'buffer';
 }
 export class UpstreamError extends DomainError {
   constructor(readonly service: ServiceName, readonly upstreamStatus: number | null, message: string, status: number, readonly upstreamBody?: unknown) {
@@ -67,7 +71,8 @@ export class InternalHttpClient {
     const url = new URL(`${serviceUrl(service, this.env)}${path.startsWith('/') ? path : `/${path}`}`);
     for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined) url.searchParams.set(k, String(v));
     const headers: Record<string, string> = { accept: 'application/json' };
-    if (body !== undefined) headers['content-type'] = 'application/json';
+    if (body !== undefined && !opts.form) headers['content-type'] = 'application/json';
+    if (opts.responseType === 'buffer') headers.accept = '*/*';
     if (ctx) {
       if (ctx.userId) headers[CTX_HEADERS.userId] = ctx.userId;
       if (ctx.roles.length) headers[CTX_HEADERS.roles] = ctx.roles.join(',');
@@ -81,11 +86,12 @@ export class InternalHttpClient {
 
     let res: Response;
     try {
-      res = await this.fetchFn(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(opts.timeoutMs ?? 3000) });
+      res = await this.fetchFn(url, { method, headers, body: opts.form ?? (body === undefined ? undefined : JSON.stringify(body)), signal: AbortSignal.timeout(opts.timeoutMs ?? 3000) });
     } catch (e) {
       const timeout = e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError');
       throw new UpstreamError(service, null, timeout ? `${service} хариу өгсөнгүй (timeout)` : `${service} сервис руу холбогдож чадсангүй`, timeout ? HttpStatus.GATEWAY_TIMEOUT : HttpStatus.BAD_GATEWAY);
     }
+    if (res.ok && opts.responseType === 'buffer') return Buffer.from(await res.arrayBuffer()) as unknown as T;
     const text = await res.text();
     let json: unknown = undefined;
     if (text) { try { json = JSON.parse(text); } catch { json = text; } }

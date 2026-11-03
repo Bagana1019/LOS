@@ -11,6 +11,7 @@ import { OrgSettings } from '../../shared/org-settings';
 import { ApplicationStateMachine } from '../application/application-state-machine';
 import { isEditable } from '../application/application.rules';
 import { INSTALLMENT_STEP, scheduleOutdated } from '../loan-terms/loan-terms.rules';
+import { BsaService } from '../bsa/bsa.service';
 import { ScoreService } from '../score/score.service';
 
 const TX_OPTIONS = { timeout: 20_000, maxWait: 10_000 };
@@ -34,6 +35,7 @@ export class ScheduleService {
     private readonly machine: ApplicationStateMachine,
     private readonly settings: OrgSettings,
     private readonly score: ScoreService,
+    private readonly bsa: BsaService,
   ) {}
 
   async get(ctx: RequestContext, applicationId: string): Promise<ScheduleResponse> {
@@ -88,6 +90,7 @@ export class ScheduleService {
     } catch (e) {
       this.logger.warn({ msg: 'could not mark the calculation stale after schedule generation', applicationId, correlationId: ctx.correlationId, error: e instanceof Error ? e.message : String(e) });
     }
+    await this.bsa.syncPayment(ctx, applicationId); // INT-6: ЭТХ-ийн төлбөр өөрчлөгдсөн → BSA-ийн DTI дахин (best effort)
     return this.get(ctx, applicationId);
   }
 

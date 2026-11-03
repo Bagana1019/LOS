@@ -53,7 +53,7 @@ export class FinalizeService {
       if (counts.PENDING + counts.PROCESSING > 0) throw conflict('JOBS_IN_PROGRESS', { pending: counts.PENDING, processing: counts.PROCESSING });
       if (counts.COMPLETED === 0) throw unprocessable('NO_COMPLETED_IMPORT');
 
-      const pending = await this.suspicion.countPending(analysis.orgId, analysisId);
+      const pending = await this.suspicion.countPending(analysis.orgId, analysisId, r);
       if (pending > 0 && settings.pushPolicyWhenPendingSuspicious === 'BLOCK') {
         throw unprocessable('PENDING_SUSPICIOUS_BLOCK', { pendingSuspiciousCount: pending });
       }

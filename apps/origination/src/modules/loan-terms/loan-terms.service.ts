@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
 import { ApplicationStateMachine } from '../application/application-state-machine';
 import { isEditable } from '../application/application.rules';
+import { BsaService } from '../bsa/bsa.service';
 import { ScoreService } from '../score/score.service';
 import { checkLimits, INSTALLMENT_STEP, LOAN_STEP, planTermsSteps, termsChanged, type TermsCore } from './loan-terms.rules';
 import { PricingService } from './pricing/pricing.service';
@@ -35,6 +36,7 @@ export class LoanTermsService {
     private readonly machine: ApplicationStateMachine,
     private readonly pricing: PricingService,
     private readonly score: ScoreService,
+    private readonly bsa: BsaService,
   ) {}
 
   /** FR-5.1 · идэвхтэй бүтээгдэхүүн + хязгаар (сонгоход UI автоматаар бөглөнө). */
@@ -105,7 +107,10 @@ export class LoanTermsService {
     }, TX_OPTIONS);
 
     // FR-7.3: commit-ийн дараа тооцооллыг хуучирсан гэж тэмдэглэнэ (scoring унасан ч нөхцөл хадгалагдсан хэвээр — алхам нь эцсийн эх сурвалж).
-    if (changed) await this.markScoreStale(ctx, applicationId);
+    if (changed) {
+      await this.markScoreStale(ctx, applicationId);
+      await this.bsa.syncPayment(ctx, applicationId); // INT-6 (best effort, алдаа шидэхгүй)
+    }
     return this.get(ctx, applicationId);
   }
 

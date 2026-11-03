@@ -695,6 +695,63 @@ export function describeRepositoryContract(name: string, factory: () => Promise<
     });
 
     // ───────────────────────── retention ─────────────────────────
+    // ───────────────────────── suspicions (M12c) ─────────────────────────
+    describe('suspicions', () => {
+      const d = (key: string, o: Partial<{ flag: 'GAMBLING' | 'CIRCULAR'; ids: string[]; autoResolved: boolean }> = {}) => ({
+        detectKey: key, flag: o.flag ?? ('GAMBLING' as const), transactionIds: o.ids ?? ['t1'], confidence: 85, autoResolved: o.autoResolved ?? false,
+      });
+
+      it('sync creates new, keeps existing and resolved, removes only stale PENDING; idempotent', async () => {
+        const { analysis } = await seedBase();
+        const r1 = await repo().suspicions.sync(analysis.id, [d('k1'), d('k2', { flag: 'CIRCULAR', ids: ['t2', 't3'] }), d('k3', { autoResolved: true })]);
+        expect(r1).toEqual({ created: 3, removed: 0, pending: 2 });
+        expect((await repo().suspicions.sync(analysis.id, [d('k1'), d('k2', { flag: 'CIRCULAR', ids: ['t2', 't3'] }), d('k3', { autoResolved: true })]))).toEqual({ created: 0, removed: 0, pending: 2 });
+
+        const all = (await repo().suspicions.list(analysis.id, {})).items;
+        const k1 = all.find((x) => x.detectKey === 'k1')!;
+        expect(await repo().suspicions.resolve(analysis.id, [k1.id], { action: 'APPROVE', comment: 'ok', by: 'u1' })).toBe(1);
+        // k1 дахин илрээгүй ч RESOLVED тул үлдэнэ; k2 илрээгүй PENDING тул устна
+        const r3 = await repo().suspicions.sync(analysis.id, [d('k3', { autoResolved: true })]);
+        expect(r3).toEqual({ created: 0, removed: 1, pending: 0 });
+        const left = (await repo().suspicions.list(analysis.id, {})).items.map((x) => x.detectKey).sort();
+        expect(left).toEqual(['k1', 'k3']);
+      });
+
+      it('autoResolved rows are RESOLVED/EXCLUDE with null resolver; resolve only touches PENDING; filters, counts, getMany', async () => {
+        const { analysis } = await seedBase();
+        await repo().suspicions.sync(analysis.id, [d('a', { autoResolved: true }), d('b'), d('c', { flag: 'CIRCULAR' })]);
+        const auto = (await repo().suspicions.list(analysis.id, { status: 'RESOLVED' })).items;
+        expect(auto).toHaveLength(1);
+        expect(auto[0]).toMatchObject({ action: 'EXCLUDE', resolvedBy: null, confidence: 85 });
+        expect((await repo().suspicions.list(analysis.id, { flag: 'CIRCULAR' })).items).toHaveLength(1);
+        const pending = (await repo().suspicions.list(analysis.id, { status: 'PENDING' })).items;
+        expect(pending).toHaveLength(2);
+        // PENDING эхэнд (status asc)
+        expect((await repo().suspicions.list(analysis.id, {})).items[2]?.status).toBe('RESOLVED');
+
+        const ids = [...pending.map((x) => x.id), auto[0]!.id, 'missing'];
+        expect(await repo().suspicions.resolve(analysis.id, ids, { action: 'RECLASSIFY', newCategoryCode: 'OTHER_EXPENSE', comment: 'c', by: 'u1' })).toBe(2);
+        const done = await repo().suspicions.getMany(analysis.id, ids);
+        expect(done).toHaveLength(3);
+        expect(done.filter((x) => x.resolvedBy === 'u1').every((x) => x.action === 'RECLASSIFY' && x.newCategoryCode === 'OTHER_EXPENSE' && x.comment === 'c')).toBe(true);
+        expect(await repo().suspicions.countPending(analysis.id)).toBe(0);
+        const counts = await repo().suspicions.counts(analysis.id);
+        expect(counts.reduce((s, c) => s + c.count, 0)).toBe(3);
+        // өөр шинжилгээний id-г хөндөхгүй
+        const other = await seedAnalysis({ customerId: 'cust-2' });
+        await repo().suspicions.sync(other.id, [d('a')]);
+        expect(await repo().suspicions.getMany(analysis.id, (await repo().suspicions.list(other.id, {})).items.map((x) => x.id))).toEqual([]);
+      });
+
+      it('sync on a missing analysis is NOT_FOUND; purge removes suspicions', async () => {
+        await expect(repo().suspicions.sync('00000000-0000-4000-8000-000000000000', [d('x')])).rejects.toBeInstanceOf(BsaNotFoundError);
+        const { analysis } = await seedBase();
+        await repo().suspicions.sync(analysis.id, [d('x')]);
+        await repo().retention.purge(analysis.id);
+        expect((await repo().suspicions.list(analysis.id, {})).total).toBe(0);
+      });
+    });
+
     describe('retention', () => {
       it('findExpired returns analyses created before the cutoff, oldest first, limited and org-scoped (BSA-BR-8)', async () => {
         const made = [];

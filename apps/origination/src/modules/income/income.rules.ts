@@ -2,7 +2,8 @@
 import { averageMonthlySalary, type YearMonth } from '@los/calc';
 import type { IncomeBlocker, IncomeBorrowerView, IncomeSummaryView } from '@los/contracts';
 
-export const BSA_INACTIVE_MESSAGE = 'BSA дэд модуль хараахан идэвхгүй (Модуль 12 ирэх хүртэл бизнесийн орлого тооцогдохгүй)';
+export const BSA_PENDING_MESSAGE = 'Бизнесийн орлого оруулаагүй байна. BSA (банкны хуулгын шинжилгээ) хийж «Системрүү татах» товчийг дарна уу';
+export const BSA_PULLED_MESSAGE = 'Бизнесийн орлого BSA шинжилгээнээс татагдсан';
 
 export const parseYearMonth = (s: string): YearMonth => ({ year: Number(s.slice(0, 4)), month: Number(s.slice(5, 7)) });
 export const formatYearMonth = (ym: YearMonth): string => `${ym.year}-${String(ym.month).padStart(2, '0')}`;
