@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Optional } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import {
   ApplicationStatus, type ApplicationDetail, type ApplicationExportQuery, type ApplicationHistoryResponse, type ApplicationListQuery,
@@ -12,6 +12,7 @@ import { ApplicationAccessService } from '../../shared/application-access.servic
 import { OrgSettings } from '../../shared/org-settings';
 import { hasRole } from '../../shared/roles';
 import { customerDisplayName, customerRegisterNoMasked } from '../borrower/customer-directory';
+import { APPROVAL_FLOW, type ApprovalFlowPort } from './approval-flow.port';
 import { ApplicationStateMachine } from './application-state-machine';
 import { canTransition, formatAppNo, initialStepStatus, isEditable, isHttpTransition, isUserTransition, missingRequiredSteps, stage1Progress, stageOf, STEP_ORDER } from './application.rules';
 import { resolveApplicationScope } from './application.scope';
@@ -36,6 +37,7 @@ export class ApplicationService {
     private readonly access: ApplicationAccessService,
     private readonly machine: ApplicationStateMachine,
     private readonly settings: OrgSettings,
+    @Optional() @Inject(APPROVAL_FLOW) private readonly approval?: ApprovalFlowPort,
   ) {}
 
   // ── үүсгэх (FR-1; docs/01 §4 "Шинэ") ───────────────────────────────────────────────────
@@ -92,8 +94,8 @@ export class ApplicationService {
     ]);
     const required = await this.settings.get(ctx.orgId, 'br7.required_steps');
     const counts = Object.fromEntries(ApplicationStatus.map((s) => [s, grouped.find((g) => g.status === s)?._count._all ?? 0])) as ApplicationListResponse['counts'];
-    // TODO(M10): "Миний батлах" — approval_request-ээс тоолно.
-    return { items: rows.map((r) => this.toRow(r, required)), total, page: query.page, pageSize: query.pageSize, counts, myApprovalCount: 0 };
+    const myApprovalCount = (await this.approval?.myApprovalCount(ctx)) ?? 0; // FR-10.2 "Миний батлах"
+    return { items: rows.map((r) => this.toRow(r, required)), total, page: query.page, pageSize: query.pageSize, counts, myApprovalCount };
   }
 
   private scopeWhere(scope: { orgId: string; branchId: string | null; officerId: string | null }): Prisma.LoanApplicationWhereInput {
@@ -180,7 +182,10 @@ export class ApplicationService {
     if (!canTransition(app.status as ApplicationStatus, input.to)) throw new DomainError('INVALID_TRANSITION', `"${app.status}" төлвөөс "${input.to}" төлөвт шилжих боломжгүй`, 400, { from: app.status, to: input.to });
     if (!isHttpTransition(app.status as ApplicationStatus, input.to)) throw new ForbiddenException({ code: 'TRANSITION_NOT_ALLOWED', message: `"${input.to}" төлөвт шилжилт нь системийн (батлах урсгал, олголт) үйлдэл`, details: { from: app.status, to: input.to } });
     await this.access.load(ctx, applicationId, 'write');
-    await this.prisma.$transaction((tx) => this.machine.apply(tx, ctx, applicationId, input.to, { via: 'USER', reason: input.reason }), TX_OPTIONS);
+    await this.prisma.$transaction(async (tx) => {
+      await this.machine.apply(tx, ctx, applicationId, input.to, { via: 'USER', reason: input.reason });
+      if (input.to === 'SUBMITTED') await this.approval?.start(tx, ctx, applicationId); // FR-10: илгээмэгц эхний түвшин нээгдэнэ (IN_APPROVAL)
+    }, TX_OPTIONS);
     return this.detail(ctx, applicationId);
   }
 

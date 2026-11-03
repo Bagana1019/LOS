@@ -1470,3 +1470,14 @@ model ErpDeliveryAttempt {
   @@map("erp_delivery_attempt")
   @@schema("origination")
 }
+
+/// BR-11: гэрээний дугаарын дарааллын тоолуур (загвар × хүрээ: DAY → YYYYMMDD, BRANCH → branchId, GLOBAL → ALL). Атомик `INSERT … ON CONFLICT` (Модуль 10).
+model ContractNumberCounter {
+  templateId String @map("template_id")
+  scopeKey   String @map("scope_key")
+  nextSeq    Int    @default(1) @map("next_seq")
+
+  @@id([templateId, scopeKey])
+  @@map("contract_number_counter")
+  @@schema("origination")
+}
