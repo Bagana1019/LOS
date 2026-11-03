@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Post, Query, StreamableFile } f
 import { ApplicationExportQuery, ApplicationListQuery, CreateApplicationRequest, TransitionRequest, type RequestContext } from '@los/contracts';
 import { Ctx, Roles, ZodValidationPipe } from '@los/nest-common';
 import { ApplicationService } from './application.service';
+import { DraftArchiveService } from './draft-archive.service';
 
 // docs/01 §3: ЗЭЗ үүсгэж/илгээнэ; салбарын захирал, батлагч унших. Хүрээг ApplicationAccessService / resolveApplicationScope шалгана.
 const READERS = ['OFFICER', 'BRANCH_MANAGER', 'APPROVER', 'ADMIN'];
@@ -10,7 +11,15 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 
 @Controller()
 export class ApplicationController {
-  constructor(private readonly applications: ApplicationService) {}
+  constructor(private readonly applications: ApplicationService, private readonly archive: DraftArchiveService) {}
+
+  /** FR-1.6: хуучирсан ноорогийг гараар архивлах (sweeper-тэй адил). */
+  @Post('applications/archive-stale')
+  @Roles('ADMIN')
+  @HttpCode(200)
+  archiveStale(@Ctx() ctx: RequestContext) {
+    return this.archive.archiveStale(ctx.orgId, ctx.userId ?? null);
+  }
 
   @Post('applications')
   @Roles(...WRITERS)

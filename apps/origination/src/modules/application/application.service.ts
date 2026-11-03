@@ -99,7 +99,7 @@ export class ApplicationService {
   }
 
   private scopeWhere(scope: { orgId: string; branchId: string | null; officerId: string | null }): Prisma.LoanApplicationWhereInput {
-    return { orgId: scope.orgId, ...(scope.branchId ? { branchId: scope.branchId } : {}), ...(scope.officerId ? { officerId: scope.officerId } : {}) };
+    return { orgId: scope.orgId, archivedAt: null, ...(scope.branchId ? { branchId: scope.branchId } : {}), ...(scope.officerId ? { officerId: scope.officerId } : {}) };
   }
 
   private filterWhere(scope: { branchId: string | null; officerId: string | null }, q: ApplicationExportQuery | ApplicationListQuery): Prisma.LoanApplicationWhereInput {
