@@ -21,11 +21,14 @@ async function main() {
   }
   const passwordHash = await hashPassword(password);
   for (const u of Object.values(SEED.users)) {
+    const branchId = u.branch ? SEED.branches[u.branch].id : null;
     await prisma.user.upsert({
       where: { username: u.username },
-      create: { id: u.id, orgId: SEED.org.id, branchId: u.branch ? SEED.branches[u.branch].id : null, username: u.username, passwordHash, fullName: u.fullName, roles: [...u.roles], isActive: true },
+      create: { id: u.id, orgId: SEED.org.id, branchId, username: u.username, passwordHash, fullName: u.fullName, roles: [...u.roles], isActive: true },
       update: {},
     });
+    // Хуучин seed-ээр үүссэн хэрэглэгчийн салбар хоосон (admin) → "Таны салбар тодорхойгүй" алдаа. Зөвхөн хоосон салбарыг нөхнө (гараар солисныг хөндөхгүй).
+    if (branchId) await prisma.user.updateMany({ where: { username: u.username, branchId: null }, data: { branchId } });
   }
   console.log(`gateway seed: org ${SEED.org.code}, ${Object.keys(SEED.branches).length} branches, ${Object.keys(SEED.users).length} users`);
 }
