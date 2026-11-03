@@ -73,8 +73,8 @@ node scripts/local-setup.mjs check    # өөр терминалд: бүх сер
 | 2 | `.env` | `.env.example`-ээс `.env` үүсгэнэ (байвал **дарахгүй**). Хоёр засвартай — §4.3 |
 | 3 | Дэд бүтэц | `docker compose up -d postgres dwh redis`, бэлэн болтол хүлээнэ |
 | 4 | Суулгалт | `pnpm install --frozen-lockfile` |
-| 5 | Бэлтгэл | `pnpm db:generate` + нийтлэг сангуудыг build (`@los/database` гэх мэт — seed-д хэрэгтэй) |
-| 6 | Өгөгдлийн сан | `pnpm db:migrate` (6 сервис, schema тус бүр), `pnpm db:seed`, дараа нь `SEED_DEMO=1`-ээр **туршилтын нэг хүсэлт** `DEMO-COL-0001` (`--no-demo-data` өгвөл алгасна) |
+| 5 | Бэлтгэл | `pnpm turbo run db:generate --concurrency=1` (Prisma client-уудыг **нэг нэгээр нь** — Windows-д зэрэг үүсгэхэд `EPERM` гардаг, §8) + нийтлэг сангуудыг build (`@los/database` гэх мэт — seed-д хэрэгтэй) |
+| 6 | Өгөгдлийн сан | `pnpm db:migrate` (6 сервис, schema тус бүр), `pnpm db:seed`, дараа нь `SEED_DEMO=1`-ээр **туршилтын нэг хүсэлт** `DEMO-COL-0001` (`--no-demo-data` өгвөл алгасна). Үүний дараа `iam.user` хүснэгтэд seed хэрэглэгч байгаа эсэхийг **өөрөө шалгаж**, байхгүй бол юу дутууг нэрлээд зогсоно |
 
 `start` нь Docker-ийн дэд бүтцийг шаардлагатай бол асааж, `pnpm dev`-ээр 8 сервис + вэбийг нэг дор асаана. Анхны ачаалал ~1 минут; вэбийн хуудас бүр анхны удаа compile хийхдээ 2–20 сек удна. **Зогсоох: Ctrl+C** (бүх процесс цэвэр зогсоно).
 
@@ -86,7 +86,7 @@ node scripts/local-setup.mjs check    # өөр терминалд: бүх сер
 cp .env.example .env            # дараа нь §4.3-ын засваруудыг .env-д хий
 docker compose up -d postgres dwh redis
 pnpm install --frozen-lockfile
-pnpm db:generate
+pnpm turbo run db:generate --concurrency=1      # Windows-д `pnpm db:generate` (зэрэг) EPERM өгч болно (§8)
 pnpm turbo run build --filter='./packages/*'   # ← README-д байхгүй, гэвч seed үүнгүйгээр унана (§8)
 pnpm db:migrate && pnpm db:seed
 SEED_DEMO=1 pnpm --filter @los/origination db:seed   # заавал биш: туршилтын 1 хүсэлт
@@ -113,7 +113,7 @@ pnpm dev
 
 ### 4.5 Нэвтрэх хэрэглэгчид (seed)
 
-Нууц үг бүгдэд `.env` дахь `SEED_PASSWORD` — анхдагч **`Los@2026!dev`**.
+Нууц үг бүгдэд `.env` дахь `SEED_PASSWORD` — анхдагч **`Los@2026!dev`** (яг 12 тэмдэгт: `L` `o` `s` `@` `2` `0` `2` `6` `!` `d` `e` `v`; том/жижиг үсэг чухал, гараар бичихээсээ **copy-paste** хий). Нэвтрэх нэр том/жижиг үсгийг ялгахгүй (`Admin` = `admin`). Seed нь **зөвхөн анх удаа** хэрэглэгч үүсгэдэг — `.env`-д `SEED_PASSWORD`-ийг дараа нь солиход байгаа хэрэглэгчийн нууц үг **солигдохгүй**; нууц үгээ солих бол `node scripts/local-setup.mjs reset` хийж дахин суулга.
 
 | Нэвтрэх нэр | Дүр | Харах хүрээ | Цэс |
 | --- | --- | --- | --- |
@@ -203,7 +203,11 @@ node scripts/local-setup.mjs test
 | `port is already allocated` / `EADDRINUSE` | Порт өөр програмд эзлэгдсэн (өөрийн PostgreSQL/Redis, өмнөх `pnpm dev`). Түүнийг зогсоо; скрипт эзлэгдсэн портыг нэрлэж зогсдог |
 | `pnpm: command not found` / pnpm хувилбар буруу | `corepack enable && corepack prepare pnpm@9.12.0 --activate` |
 | Docker «not running» | Docker Desktop-ийг нээж «Engine running» болтол хүлээ; эсвэл Docker-гүй **А** арга / `--skip-infra` |
-| Нэвтрэхэд `429` / «хэт олон оролдлого» | Нэвтрэлт IP тутамд минутад 10 — 1 минут хүлээ |
+| Вэб нэвтрэхэд **«Нэвтэрч чадсангүй. Дахин оролдоно уу.»** | Нууц үг буруу гэсэн мессеж **биш** — gateway **алдаа (HTTP 500)** буцаасан гэсэн утга. Бараг үргэлж `iam` хүснэгт үүсээгүй (migration дуусаагүй/унасан), эсвэл Prisma client буруу. `node scripts/local-setup.mjs check` ажиллуулбал «`iam.user` хүснэгт алга — migration хийгдээгүй» гэж нэрлэнэ. Зас: `node scripts/local-setup.mjs` (давтаж болно) — эсвэл гараар `pnpm turbo run db:generate --concurrency=1` → `pnpm db:migrate` → `pnpm db:seed`, дараа нь `check`. Алдааны шалтгаан gateway-ийн лог (`@los/gateway:dev: …`) дээр байна |
+| Вэб нэвтрэхэд **«Нэвтрэх нэр эсвэл нууц үг буруу»** | gateway ажиллаж, хариу өгсөн (HTTP 401). Нэр/нууц үг таарсангүй: (а) нууц үгийг copy-paste хий (§4.5, 12 тэмдэгт); (б) seed хийгдээгүй — `check` «`iam.user` хоосон» гэж хэлнэ → `pnpm db:seed`; (в) seed өөр `SEED_PASSWORD`-оор хийгдсэн → `reset` хийж дахин суулга |
+| Вэб нэвтрэхэд «Серверт холбогдож чадсангүй. Сүлжээгээ шалгаад дахин оролдоно уу.» | gateway (`:4000`) асаагүй. `start` ажиллаж байгаа эсэх, `check` дээр `gateway :4000` ✓ эсэхийг шалга |
+| Нэвтрэхэд `429` / «хэт олон оролдлого» | Нэвтрэлт IP тутамд минутад 10 — 1 минут хүлээ. 5 удаа буруу бол акаунт 15 минут түгжигдэнэ |
+| **Windows:** `db:generate` үед `EPERM: operation not permitted, rename … query_engine-windows.dll.node` | Prisma client-уудыг зэрэг үүсгэхэд нэг engine файл дээр зөрчилддөг (антивирус/зэрэгцээ процесс). `pnpm turbo run db:generate --concurrency=1` (нэг нэгээр) — скрипт үүнийг өөрөө ингэж ажиллуулдаг. Дахин гарвал `pnpm dev`/өөр терминал, VS Code-ийн TS server, антивирусыг түр хаагаад давт. **Анхаар:** generate унасан бол migration/seed хийгдээгүй байж болно — дээрх «Нэвтэрч чадсангүй» мөрийг үз |
 | Вэбийн хуудас анх нээхэд 10–20 сек хоосон/удаан | `next dev` хуудас бүрийг анхны хандалтад compile хийдэг — хэвийн |
 | `/customer` (404), `/los/loan-application/blacklist`, `/los/loan/list` (хоосон), `/settings` (админд хоосон, бусдад «Эрх хүрэхгүй») | Эдгээр дэлгэц хараахан хийгдээгүй (§9) — алдаа биш |
 | Дахин эхнээс нь эхлэх | `node scripts/local-setup.mjs reset` (өгөгдөл устна) → `node scripts/local-setup.mjs` |
@@ -216,7 +220,7 @@ node scripts/local-setup.mjs test
 * **Backend нь UI-аас түрүүлсэн.** Харилцагч + ХУР/KYC, барьцаа/үнэлгээ, баримт, Sosco/тооцоолол, e-sign, maker-checker, мерчант POS, ERP синк зэрэг нь API болон тестээр бэлэн (§6, §7), харин үүнийг холбосон дэлгэц (харилцагчийн хуудас, зээлдэгч/орлого/зээлийн нөхцөл, батлах урсгал, гэрээ, олголт) дутуу. Хүсэлт үүссэн ч зээл олгогдохгүй тул тайлан/самбар хоосон хэвээр.
 * **`minio/minio` image Docker Hub-аас устсан** (`hub.docker.com/v2/repositories/minio/` жагсаалтад `minio`, `mc` байхгүй; `docker pull` → `repository does not exist`, 2026-11-02). Иймээс `docker-compose.yml`-ийн `minio`, `minio-init` үйлчилгээ одоо ажиллахгүй; локал горимд `STORAGE_DRIVER=memory`. Байнгын файл хадгалалт хэрэгтэй бол өөр S3-тохирох image (жишээ нь `quay.io/minio/minio` — энд татаж шалгаагүй) сонгож compose-ийг засах ёстой — энэ нь тусдаа шийдвэр.
 * **`.env.example`-ийн ERP_* хоосон мөр** origination-ийг эхлүүлэхгүй (§4.3). Скрипт тойрдог; үндсэн засвар = тэр гурван мөрийг `.env.example`-д тайлбар болгох.
-* **README-ийн нэг мөрт заавар** (`pnpm db:generate && db:migrate && db:seed`) нийтлэг сангуудыг build хийхгүй тул цэвэр clone дээр seed унана — `node scripts/local-setup.mjs` үүнийг зөв дарааллаар хийдэг.
+* **README-ийн нэг мөрт заавар** (`pnpm db:generate && db:migrate && db:seed`) нийтлэг сангуудыг build хийхгүй тул цэвэр clone дээр seed унана — `node scripts/local-setup.mjs` үүнийг зөв дарааллаар хийдэг. (README одоо зөв дарааллаар засагдсан.)
 * **Mock-ууд:** ХУР, ЗМС, FICO, НДШ, банк, QPay, SMS, e-sign (Tridum/Monpass), Core, ERP — бүгд deterministic mock; `INTEGRATION_MODE=mock`. OCR (`dms` `/api/ocr`) нь `tesseract`, `pdftoppm`-ийг PATH-д шаардана (суулгаагүй бол зөвхөн OCR ажиллахгүй).
 * `dwh-sync` одоогоор зөвхөн health өгдөг (event → DWH хэрэгжээгүй). DWH Postgres (5433) асаж, схем нь үүснэ.
-* **Windows native (PowerShell, WSL-гүй)** болон **macOS** дээр скриптийг шалгаагүй; Node-ын суурь сангаар бичсэн тул ажиллах ёстой боловч баталгаагүй.
+* **Windows native (PowerShell, WSL-гүй)** болон **macOS** дээр скриптийг би (Linux-д) бүтнээр нь шалгаагүй. Windows-ийн тухай мэдэгдэж буй зүйл: `pnpm` нь `pnpm.cmd` тул скрипт `pnpm`-ийг shell-ээр дууддаг (`docker`-ийг шууд); Prisma generate зэрэг ажиллахад `EPERM` гардаг (§8) тул нэг нэгээр нь ажиллуулдаг. Эзний Windows (Node 24, pnpm 9.15) дээр үүнийг дараа нь баталгаажуулна.
