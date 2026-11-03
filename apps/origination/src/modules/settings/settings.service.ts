@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { SETTING_KEYS, SETTING_REGISTRY, type RequestContext, isSettingKey, parseSetting } from '@los/contracts';
+import { DomainError } from '@los/nest-common';
 import { buildEvent, enqueueOutbox, recordAudit } from '@los/database';
 import { PrismaService } from '../../prisma.service';
 
@@ -24,6 +25,10 @@ export class SettingsService {
   async set(ctx: RequestContext, key: string, value: unknown): Promise<SettingView> {
     if (!isSettingKey(key)) throw new NotFoundException({ code: 'SETTING_NOT_FOUND', message: `Тохиргоо олдсонгүй: ${key}` });
     const parsed = parseSetting(key, value); // ZodError → AllExceptionsFilter 400
+    if (key === 'contract.branch_codes') { // BR-11: салбарын код давхцвал хоёр салбарын гэрээний дугаар андуурагдана
+      const codes = Object.values(parsed as Record<string, string>).map((c) => c.toUpperCase());
+      if (new Set(codes).size !== codes.length) throw new DomainError('BRANCH_CODE_DUPLICATE', 'Салбарын код давхардсан байна', 422);
+    }
     const row = await this.db.$transaction(async (tx) => {
       const before = await tx.setting.findUnique({ where: { orgId_key: { orgId: ctx.orgId, key } } });
       const saved = await tx.setting.upsert({

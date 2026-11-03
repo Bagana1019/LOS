@@ -82,3 +82,13 @@ describe('isInternalOnly (staff proxy blocks internal sync paths)', () => {
     expect(isInternalOnly('/api/valuation/base-prices')).toBe(false);
   });
 });
+
+describe('requiredPermission (M13 админ)', () => {
+  it('гэрээний дугаарын загвар унших/бичих бүгд settings:manage', () => {
+    expect(requiredPermission('GET', '/api/origination/contract-number-template')).toBe('settings:manage');
+    expect(requiredPermission('PUT', '/api/origination/contract-number-template')).toBe('settings:manage');
+  });
+  it('аудит лог унших нь audit:read', () => {
+    expect(requiredPermission('GET', '/api/origination/audit-logs')).toBe('audit:read');
+  });
+});

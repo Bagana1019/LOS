@@ -15,4 +15,5 @@ export function configureGateway(app: INestApplication): void {
   a.use(helmet());
   a.use(cookieParser());
   a.use('/api/auth', json({ limit: '10kb' }));
+  a.use('/api/admin', json({ limit: '10kb' })); // M13 · хэрэглэгч-салбар оноолт
 }

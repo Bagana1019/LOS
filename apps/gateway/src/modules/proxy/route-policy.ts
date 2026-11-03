@@ -11,6 +11,8 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { service: 'origination', prefix: '/api/origination/blacklist', writeOnly: true, permission: 'blacklist:manage' },
   { service: 'origination', prefix: '/api/origination/products', writeOnly: true, permission: 'settings:manage' },
   { service: 'origination', prefix: '/api/origination/approval-levels', writeOnly: true, permission: 'settings:manage' },
+  { service: 'origination', prefix: '/api/origination/contract-number-template', permission: 'settings:manage' }, // BR-11
+  { service: 'origination', prefix: '/api/origination/audit-logs', permission: 'audit:read' }, // FR-13.5
   { service: 'origination', prefix: '/api/origination/loan-terms/pricing/tiers', writeOnly: true, permission: 'settings:manage' }, // FR-5.5
   // Policy өөрчлөх (4 нүдтэй хүсэлт үүсгэнэ); service давхар шалгана (maker=ADMIN)
   { service: 'origination', prefix: '/api/origination/maker-checker/policies', writeOnly: true, permission: 'settings:manage' },

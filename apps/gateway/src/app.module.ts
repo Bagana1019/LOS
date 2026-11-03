@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { CommonModule, HealthModule, envFilePaths } from '@los/nest-common';
+import { AdminModule } from './modules/admin/admin.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
@@ -18,6 +19,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
     CommonModule.forRoot({ contextGuard: false, trustIdentityHeaders: false }),
     PrismaModule,
     HealthModule.forServiceAsync({ service: 'gateway', inject: [PrismaService], useFactory: (db: PrismaService) => ({ db: () => db.$queryRaw`SELECT 1` }) }),
+    AdminModule,
     AuditModule,
     AuthModule,
     ProxyModule,
