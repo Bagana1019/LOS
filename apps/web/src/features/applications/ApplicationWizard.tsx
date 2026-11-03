@@ -51,6 +51,7 @@ export function ApplicationWizard({ children }: { children: ReactNode }) {
         <Typography.Title level={4} style={{ margin: 0 }} data-testid="app-no">{app.appNo}</Typography.Title>
         <Tag data-testid="app-status">{t(`status.${app.status}`)}</Tag>
       </Flex>
+      <Button block style={{ marginTop: 8 }} data-testid="wizard-bsa" onClick={() => router.push(`/los/bsa/${encodeURIComponent(app.id)}`)}>{t('application.wizard.bsa')}</Button>
       {submitTransition ? <Button type="primary" block style={{ marginTop: 12 }} loading={transition.isPending} data-testid="submit-application" onClick={submit}>{t('application.submit.button')}</Button> : null}
     </div>
   );
