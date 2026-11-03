@@ -310,6 +310,7 @@ model LoanApplication {
   version             Int       @default(1)
   parentApplicationId String?   @map("parent_application_id") // дахин илгээлтийн хувилбар
   createdAt           DateTime  @default(now()) @map("created_at")
+  archivedAt          DateTime? @map("archived_at") // FR-1.6: N хоног хөдөлгөөнгүй ноорог (DRAFT) автоматаар архивлагдсан
   updatedAt           DateTime  @updatedAt @map("updated_at")
   createdBy           String?   @map("created_by")
   updatedBy           String?   @map("updated_by")
@@ -339,6 +340,7 @@ model LoanApplication {
   @@index([officerId])
   @@index([branchId])
   @@index([productId])
+  @@index([status, archivedAt, updatedAt], map: "loan_application_status_archived_at_updated_at_idx")
   @@map("loan_application")
   @@schema("origination")
 }

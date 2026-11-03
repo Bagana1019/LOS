@@ -28,6 +28,7 @@ import { ErpSyncModule } from './modules/erp-sync/erp-sync.module';
 import { CollateralModule } from './modules/collateral/collateral.module';
 import { DocumentModule } from './modules/document/document.module';
 import { BsaModule } from './modules/bsa/bsa.module';
+import { CommentModule } from './modules/comment/comment.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { BsaModule } from './modules/bsa/bsa.module';
     CollateralModule,
     DocumentModule,
     BsaModule,
+    CommentModule,
   ],
 })
 export class AppModule {}

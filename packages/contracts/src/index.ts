@@ -14,3 +14,4 @@ export * from './portal';
 export * from './inquiry';
 export * from './contract-docs';
 export * from './admin';
+export * from './comments';

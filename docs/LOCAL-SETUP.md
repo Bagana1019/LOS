@@ -286,3 +286,31 @@ node scripts/local-setup.mjs test
 6. Хамтран зээлдэгчтэй бол хоёуланд нь татсаны дараа «Нэгтгэсэн дүн» (Σ) гарна. ЭТХ-ийн нөхцөл өөрчлөөд «Төлбөр шинэчлэх» дарвал ӨОХ дахин тооцогдоно.
 
 Бүх босго DEMO (docs/DECISIONS.md, Модуль 12c).
+
+## 6.2. M14 — аюулгүй байдал, тайлбар/@mention, ноорог архив, гүйцэтгэл (тестлэх заавар)
+
+Автомат тестүүд (Postgres + Redis асаалттай, `TEST_DATABASE_URL=postgresql://<user>@127.0.0.1:5432/los_test`, нэр нь `test`-ээр төгсөх ёстой):
+
+```bash
+# 1) Gateway-н OWASP суурь шалгалт (хуурамч JWT, эрх дээшлүүлэх, зам хууран тойрох, injection, 413, толгой/CORS)
+pnpm --filter @los/gateway exec vitest run test/security
+# 2) Тайлбар/@mention (FR-13.4) ба ноорог архив (FR-1.6)
+pnpm --filter @los/origination exec vitest run src/modules/comment src/modules/application/draft-archive
+# 3) NFR-1 гүйцэтгэл: 10,000 хүсэлт дээр жагсаалт/хайлт/шүүлт ≤ 2с (тайлангийн гүйцэтгэл өмнөх report.perf-д)
+pnpm --filter @los/origination exec vitest run src/modules/application/application.perf
+# 4) Бүтэн урсгалын Playwright e2e (бодит stack): §5.1 ба apps/web/e2e/wizard-live.spec.ts
+E2E_LIVE=1 pnpm --filter @los/web test:e2e wizard-live
+```
+
+Гараар (curl, §6-ийн `TOKEN`-ийг `officer.a`-аар аваад; `$APP` = өөрийн хүсэлтийн id):
+
+```bash
+# Тайлбар бичих, @mention (mentions = хэрэглэгчийн id) — дурдсан хүнд «хонх»-оор MENTION мэдэгдэл очно
+curl -s -X POST localhost:4000/api/origination/applications/$APP/comments -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d '{"body":"Баримтыг нөхнө үү","mentions":["<approver-user-id>"]}'
+curl -s localhost:4000/api/origination/applications/$APP/comments -H "authorization: Bearer $TOKEN"
+# Ноорог архив (зөвхөн ADMIN token): draft.auto_archive_days (DEMO 30) хоног өөрчлөгдөөгүй DRAFT-ийг жагсаалтаас нууна
+curl -s -X POST localhost:4000/api/origination/applications/archive-stale -H "authorization: Bearer $ADMIN_TOKEN"
+```
+
+Хүлээгдэх: өөр ЗЭЗ-ийн хүсэлтийн тайлбар унших/бичих → 403; 2000 тэмдэгтээс урт → 400; архивлах дуудлага `{"archived":N,"days":30}` буцаана. Sweeper-ийг `DRAFT_ARCHIVE_SWEEP_SECONDS` (анхдагч 3600, `0` = унтраана)-аар удирдана. Тайлбар/@mention-ийн вэб UI энэ PR-д ороогүй (backend + API).
