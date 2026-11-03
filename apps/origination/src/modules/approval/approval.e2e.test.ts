@@ -187,6 +187,12 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     expect((await t.prisma.notification.findMany({ where: { applicationId: app.id, type: 'SLA_BREACH' } })).map((n) => n.userId).sort()).toEqual(['bm-1', 'officer-1']);
   });
 
+  it('{BRANCH} код setting-ээс (admin тохируулсан) авна', async () => {
+    await t.prisma.setting.upsert({ where: { orgId_key: { orgId: ORG, key: 'contract.branch_codes' } }, create: { orgId: ORG, key: 'contract.branch_codes', valueJson: { 'branch-1': '10026' } }, update: { valueJson: { 'branch-1': '10026' } } });
+    const a = await draft(1_000_000); await submit(a.id); await vote(a.id, bm, 'APPROVE').expect(200);
+    expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } })).contractNo).toBe('B1002626110301');
+  });
+
   it('гэрээний дугаар: нэг өдөр 01, 02 дарааллаар; маргааш (DAY хүрээ) дахин 01', async () => {
     const nos: string[] = [];
     for (let i = 0; i < 2; i++) { const a = await draft(1_000_000); await submit(a.id); await vote(a.id, bm, 'APPROVE').expect(200); nos.push((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } })).contractNo!); }
