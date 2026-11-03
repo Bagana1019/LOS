@@ -6,7 +6,8 @@ import { SharedModule } from './shared/shared.module';
 // Feature модуль бүр: өөрийн мөрийг `import` + `imports` хоёрт задлана (мөр тус бүр тусдаа тул зэрэгцээ салбар мерж хийхэд зөрчилгүй).
 import { ApplicationModule } from './modules/application/application.module';
 import { BorrowerModule } from './modules/borrower/borrower.module';
-// import { IncomeModule } from './modules/income/income.module';
+import { InquiryModule } from './modules/inquiry/inquiry.module';
+import { IncomeModule } from './modules/income/income.module';
 import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
 import { ScoreModule } from './modules/score/score.module';
 import { ScheduleModule } from './modules/schedule/schedule.module';
@@ -35,7 +36,8 @@ import { DocumentModule } from './modules/document/document.module';
     SharedModule,
     ApplicationModule,
     BorrowerModule,
-    // IncomeModule,
+    InquiryModule,
+    IncomeModule,
     LoanTermsModule,
     ScoreModule,
     ScheduleModule,

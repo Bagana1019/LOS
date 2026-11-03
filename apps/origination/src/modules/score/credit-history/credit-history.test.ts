@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RequestContext } from '@los/contracts';
 import { createCreditHistory } from './credit-history.provider';
+import type { KycInquiryPort } from '../../inquiry/ports/kyc-inquiry.port';
 import { KycCreditHistory } from './kyc-credit-history';
 import { MockCreditHistory, mockCreditHistoryFor } from './mock-credit-history';
 
@@ -45,20 +46,28 @@ describe('MockCreditHistory (DEMO)', () => {
   });
 });
 
-describe('KycCreditHistory (real горим, Модуль 3 хүртэл)', () => {
-  it('null буцаана — зохиомол утга хэзээ ч өгөхгүй', async () => {
-    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    await expect(new KycCreditHistory().get(ctx, 'app-1', 'customer-1')).resolves.toBeNull();
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(warn.mock.calls)).toContain('not available');
+describe('KycCreditHistory (real горим, Модуль 3)', () => {
+  const summary = { ficoScore: 701, activeLoanCount: 2, overdueHistoryMonths: 1, existingDebtServiceMonthly: 620_000 };
+  const port = (impl: KycInquiryPort['creditHistory']): KycInquiryPort => ({ creditHistory: impl } as unknown as KycInquiryPort);
+
+  it('kyc-ийн хураангуйг (ЗМС/FICO + бүртгэлгүй зээл) хэвээр буцаана', async () => {
+    const calls: unknown[][] = [];
+    const h = await new KycCreditHistory(port(async (...a) => { calls.push(a); return summary; })).get(ctx, 'app-1', 'customer-1');
+    expect(h).toEqual(summary);
+    expect(calls).toEqual([[ctx, 'app-1', 'customer-1']]);
   });
 
-  it('анхааруулгыг нэг instance-д нэг л удаа логлоно; харилцагчийн id логт орохгүй', async () => {
+  it('лавлагаа татаагүй (бүх талбар null) → null талбарууд хэвээр: зохиомол утга өгөхгүй', async () => {
+    const empty = { ficoScore: null, activeLoanCount: null, overdueHistoryMonths: null, existingDebtServiceMonthly: null };
+    expect(await new KycCreditHistory(port(async () => empty)).get(ctx, 'app-1', 'customer-1')).toEqual(empty);
+  });
+
+  it('kyc унасан үед null (мэдэгдэхгүй) + анхааруулга; харилцагчийн id логт орохгүй', async () => {
     const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-    const port = new KycCreditHistory();
-    await port.get(ctx, 'app-1', 'customer-SECRET');
-    await port.get(ctx, 'app-1', 'customer-SECRET');
+    const h = new KycCreditHistory(port(async () => { throw new Error('kyc down'); }));
+    await expect(h.get(ctx, 'app-1', 'customer-SECRET')).resolves.toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(warn.mock.calls)).toContain('unavailable');
     expect(JSON.stringify(warn.mock.calls)).not.toContain('customer-SECRET');
   });
 });

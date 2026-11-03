@@ -12,3 +12,4 @@ export * from './pos-lease';
 export * from './bsa-dti';
 export * from './market-price';
 export * from './collateral-value';
+export * from './income';

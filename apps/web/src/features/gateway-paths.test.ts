@@ -3,6 +3,8 @@ import { API } from '../lib/api';
 import * as borrowers from './borrowers/borrowers.api';
 import * as collateral from './collateral/collateral.api';
 import * as documents from './documents/documents.api';
+import * as income from './income/income.api';
+import * as inquiry from './inquiry/inquiry.api';
 import { downloadDmsFile, uploadDmsFile } from './documents/shared/files';
 import * as notifications from './notifications/notifications.api';
 import * as payments from './payments/payments.api';
@@ -32,6 +34,21 @@ describe('origination-ий feature API-ууд gateway-ийн `/origination` уг
   ];
   it.each(cases)('%s', async (_name, call, path) => {
     await call();
+    expect(urls).toEqual([`${API}/origination${path}`]);
+  });
+});
+
+// Лавлагаа, орлого (Модуль 3, 4): хариу нь схемд нийцэхгүй ({}) тул дуудлага шалгалтад унана — энд зөвхөн илгээсэн хаяг, method-ыг шалгана.
+describe('inquiry, income: gateway-ийн `/origination` угтвартай', () => {
+  const cases: Array<[string, () => Promise<unknown>, string, string]> = [
+    ['inquiry: list', () => inquiry.fetchInquiries('a1'), '/applications/a1/inquiries', 'GET'],
+    ['inquiry: fetch', () => inquiry.fetchInquiriesNow('a1', {}), '/applications/a1/inquiries/fetch', 'POST'],
+    ['income: overview', () => income.fetchIncome('a1'), '/applications/a1/income', 'GET'],
+    ['income: ndsh', () => income.fetchNdsh('a1', 'c1'), '/applications/a1/income/ndsh/fetch', 'POST'],
+    ['income: calculate', () => income.calculate('a1', { customerId: 'c1', periodFrom: '2025-11', periodTo: '2026-10' }), '/applications/a1/income/calculate', 'POST'],
+  ];
+  it.each(cases)('%s', async (_name, call, path) => {
+    await call().catch(() => undefined);
     expect(urls).toEqual([`${API}/origination${path}`]);
   });
 });

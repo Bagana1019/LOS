@@ -13,6 +13,8 @@ import customer from './mn.customer.json';
 import esign from './esign.mn.json'; // FR-11.4 цахим гарын үсэг: esign.*, verify.*, contractSigning.*
 import application from './mn.application.json'; // Модуль 2 — Хүсэлт, wizard: application.*
 import score from './mn.score.json'; // Модуль 8 — Тооцоолол (FR-8): score.*
+import inquiry from './mn.inquiry.json'; // Модуль 3 — Лавлагаа (FR-3): inquiry.*
+import income from './mn.income.json'; // Модуль 4 — Орлого (FR-4): income.*
 
 // Модуль бүр `mn.<module>.json` үүсгээд доор НЭГ import + `mnSources`-д НЭГ мөр нэмнэ (зэрэгцээ салбар зөрчилгүй мерж хийгдэнэ).
 // Түлхүүр модулиар угтвартай (`auth.*`, `shell.*`, `customer.*`); давхардлыг web-ийн i18n тест барина.
@@ -32,6 +34,8 @@ export const mnSources = {
   esign,
   score,
   application,
+  inquiry,
+  income,
 } as const;
 
 type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
