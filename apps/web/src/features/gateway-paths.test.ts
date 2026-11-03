@@ -6,6 +6,7 @@ import * as documents from './documents/documents.api';
 import * as income from './income/income.api';
 import * as inquiry from './inquiry/inquiry.api';
 import { downloadDmsFile, uploadDmsFile } from './documents/shared/files';
+import * as admin from './admin/admin.api';
 import * as notifications from './notifications/notifications.api';
 import * as payments from './payments/payments.api';
 import * as reports from './reports/reports.api';
@@ -39,10 +40,13 @@ describe('origination-ий feature API-ууд gateway-ийн `/origination` уг
 });
 
 // Лавлагаа, орлого (Модуль 3, 4): хариу нь схемд нийцэхгүй ({}) тул дуудлага шалгалтад унана — энд зөвхөн илгээсэн хаяг, method-ыг шалгана.
-describe('inquiry, income: gateway-ийн `/origination` угтвартай', () => {
+describe('inquiry, income, admin: gateway-ийн `/origination` угтвартай', () => {
   const cases: Array<[string, () => Promise<unknown>, string, string]> = [
     ['inquiry: list', () => inquiry.fetchInquiries('a1'), '/applications/a1/inquiries', 'GET'],
     ['inquiry: fetch', () => inquiry.fetchInquiriesNow('a1', {}), '/applications/a1/inquiries/fetch', 'POST'],
+    ['admin: approval levels', () => admin.fetchLevels(), '/approval-levels', 'GET'],
+    ['admin: contract number template', () => admin.fetchTemplate(), '/contract-number-template', 'GET'],
+    ['admin: audit log', () => admin.fetchOriginationAudit({ page: 1 }), '/audit-logs?page=1', 'GET'],
     ['income: overview', () => income.fetchIncome('a1'), '/applications/a1/income', 'GET'],
     ['income: ndsh', () => income.fetchNdsh('a1', 'c1'), '/applications/a1/income/ndsh/fetch', 'POST'],
     ['income: calculate', () => income.calculate('a1', { customerId: 'c1', periodFrom: '2025-11', periodTo: '2026-10' }), '/applications/a1/income/calculate', 'POST'],
@@ -110,5 +114,15 @@ describe('барьцаа, баримтын API-ууд gateway-ийн зөв ха
       create.mockRestore();
       revoke.mockRestore();
     }
+  });
+});
+
+// M13 · gateway-ийн өөрийн (iam) админ API: `/api/admin/*` (origination-ий угтваргүй)
+describe('admin (iam): gateway-ийн `/admin` хаяг', () => {
+  it('users, branches, assign', async () => {
+    await admin.fetchUsers().catch(() => undefined);
+    await admin.fetchBranches().catch(() => undefined);
+    await admin.assignUserBranch('u1', null).catch(() => undefined);
+    expect(urls).toEqual([`${API}/admin/users`, `${API}/admin/branches`, `${API}/admin/users/u1/branch`]);
   });
 });

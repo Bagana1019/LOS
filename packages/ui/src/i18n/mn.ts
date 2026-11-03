@@ -15,6 +15,7 @@ import application from './mn.application.json'; // Модуль 2 — Хүсэ�
 import score from './mn.score.json'; // Модуль 8 — Тооцоолол (FR-8): score.*
 import inquiry from './mn.inquiry.json'; // Модуль 3 — Лавлагаа (FR-3): inquiry.*
 import income from './mn.income.json'; // Модуль 4 — Орлого (FR-4): income.*
+import admin from './mn.admin.json'; // Модуль 13 — Админ (FR-13): admin.*
 import bsa from './mn.bsa.json'; // Модуль 12 — BSA: bsa.*
 
 // Модуль бүр `mn.<module>.json` үүсгээд доор НЭГ import + `mnSources`-д НЭГ мөр нэмнэ (зэрэгцээ салбар зөрчилгүй мерж хийгдэнэ).
@@ -37,6 +38,7 @@ export const mnSources = {
   application,
   inquiry,
   income,
+  admin,
   bsa,
 } as const;
 
