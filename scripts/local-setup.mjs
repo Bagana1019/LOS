@@ -30,7 +30,13 @@ const SERVICES = [
   ['valuation', 4004], ['dms', 4005], ['dwh-sync', 4006], ['portal-bff', 4007],
 ];
 const WEB_PORT = 3000;
-const INFRA_SERVICES = ['postgres', 'dwh', 'redis']; // minio нь Docker Hub-аас устсан тул локал горимд ашиглахгүй (docs/LOCAL-SETUP.md §9)
+// minio нь Docker Hub-аас устсан тул локал горимд ашиглахгүй (docs/LOCAL-SETUP.md §9). host/inner = docker-compose.yml-ийн `ports: ["host:inner"]`
+const INFRA = [
+  { name: 'postgres', host: 5432, inner: 5432, program: 'PostgreSQL', winService: 'postgresql-x64-…' },
+  { name: 'dwh', host: 5433, inner: 5432, program: 'PostgreSQL', winService: 'postgresql-x64-…' },
+  { name: 'redis', host: 6379, inner: 6379, program: 'Redis', winService: 'Redis' },
+];
+const INFRA_SERVICES = INFRA.map((i) => i.name);
 const LIBS_BUILT_MARKER = resolve(ROOT, 'packages/database/dist/index.js');
 const ENV_PATH = resolve(ROOT, '.env');
 const ENV_STASH = resolve(ROOT, 'node_modules/.env.stashed-for-tests'); // node_modules git-д ордоггүй
@@ -163,23 +169,66 @@ function reportSeed() {
   return true;
 }
 
+/** Манай compose-ийн контейнер одоо АСААЛТТАЙ эсэх (`ps --status`-аас үл хамаарна — хуучин compose дээр ч ажиллана). */
+function ownRunning(name) {
+  const r = capture('docker', ['compose', 'ps', '-q', name]);
+  if (r.status !== 0) return false;
+  return r.out.split(/\s+/).filter((id) => /^[0-9a-f]{12,64}$/.test(id))
+    .some((id) => capture('docker', ['inspect', '-f', '{{.State.Running}}', id]).out === 'true');
+}
+/** Контейнерийн `inner` порт хост дээр аль портоор нээгдсэн бэ (`docker compose port`). Нээгдээгүй бол хоосон жагсаалт. */
+function publishedHostPorts(name, inner) {
+  const r = capture('docker', ['compose', 'port', name, String(inner)]);
+  if (r.status !== 0) return [];
+  return [...r.out.matchAll(/:(\d+)\s*$/gm)].map((m) => Number(m[1])).filter((n) => n > 0); // нээгдээгүй үед `:0` гэж хэвлэдэг хувилбар бий
+}
+/** Хост порт дээр (манай биш) Docker контейнер нээсэн бол нэрсийг нь буцаана. */
+function dockerPublishers(port) {
+  const r = capture('docker', ['ps', '--filter', `publish=${port}`, '--format', '{{.Names}}']);
+  return r.status === 0 ? r.out.split(/\s+/).filter(Boolean) : [];
+}
+/** Хост дээрх өөрийн PostgreSQL/Redis-ийг зогсоох заавар. */
+function stopHostServiceHint(i) {
+  return IS_WIN
+    ? `  1) Win+R → services.msc → «${i.winService}» (${i.program}) үйлчилгээг олж баруун товч → Stop (байнга бол Properties → Startup type: Manual)\n` +
+      '     эсвэл Administrator PowerShell: `Get-Service *' + i.program.toLowerCase() + '*` → `Stop-Service <нэр>`'
+    : `  1) Хост дээрх ${i.program}-ийг зогсоо: \`brew services stop ${i.program === 'Redis' ? 'redis' : 'postgresql'}\` эсвэл \`sudo systemctl stop ${i.program === 'Redis' ? 'redis-server' : 'postgresql'}\``;
+}
+/** Манай контейнер асаалттай ч порт нь гадагш нээгдээгүй бол зогсоно: ингэвэл migration танай өөрийн PostgreSQL руу холбогдож `P1000` өгнө. */
+function verifyPublished(i) {
+  const ports = publishedHostPorts(i.name, i.inner);
+  if (ports.includes(i.host)) return;
+  const now = ports.length ? `одоогийн порт: ${ports.join(', ')}` : `\`docker compose ps\` дээр «${i.inner}/tcp» гэж л харагдана`;
+  fail(`${i.name} контейнер асаалттай боловч :${i.host} порт гадагш нээгдээгүй байна (${now})`,
+    `  Шалтгаан: ихэвчлэн хост дээрх өөрийн ${i.program} :${i.host}-ыг эзэлсэн тул Docker порт нээж чадаагүй. Үүнийг засахгүй бол migration манай контейнер биш,\n` +
+    `  таны ӨӨРИЙН ${i.program} руу холбогдож \`P1000: Authentication failed\` алдаа өгнө.\n` +
+    `  Засах:\n${stopHostServiceHint(i)}\n  2) docker compose down\n  3) node scripts/local-setup.mjs`);
+}
+
 async function infraUp() {
   if (SKIP_INFRA) { warn('--skip-infra: Docker алгасав. DATABASE_URL болон REDIS_URL-д ажиллаж буй Postgres/Redis хэрэгтэй'); return; }
   head('Docker: Postgres, DWH, Redis асааж байна');
-  const ps = capture('docker', ['compose', 'ps', '--status', 'running', '--services']);
-  const running = ps.status === 0 ? ps.out.split(/\s+/) : null; // хуучин compose `--status`-гүй бол null → доор `up -d` (давтаж болно)
-  const missing = running ? INFRA_SERVICES.filter((s) => !running.includes(s)) : INFRA_SERVICES;
-  if (missing.length) {
-    for (const [name, port] of [['postgres', 5432], ['dwh', 5433], ['redis', 6379]]) {
-      if (running && missing.includes(name) && (await portBusy(port))) {
-        fail(`:${port} порт өөр програмд эзлэгдсэн байна (${name} эхэлж чадахгүй)`,
-          '  Ихэвчлэн өөрийн суулгасан PostgreSQL / Redis байдаг. Түүнийг түр зогсоох эсвэл --skip-infra хэрэглэнэ.');
+  const missing = [];
+  for (const i of INFRA) {
+    if (ownRunning(i.name)) continue; // манай контейнер аль хэдийн асаалттай → порт нь "эзлэгдсэн" нь хэвийн
+    missing.push(i);
+    if (await portBusy(i.host)) {
+      const others = dockerPublishers(i.host);
+      if (others.length) {
+        fail(`:${i.host} портыг өөр Docker контейнер эзэлж байна: ${others.join(', ')} (${i.name} эхэлж чадахгүй)`,
+          `  Түүнийг зогсоо: docker stop ${others[0]}   (хэрэв энэ өмнөх LOS-ийн контейнер бол: docker compose down)\n  Дараа нь: node scripts/local-setup.mjs`);
       }
+      fail(`:${i.host} порт өөр програмд эзлэгдсэн байна (${i.name} эхэлж чадахгүй)`,
+        `  Ихэвчлэн өөрийн суулгасан ${i.program} байдаг.\n  Засах:\n${stopHostServiceHint(i)}\n  2) node scripts/local-setup.mjs   (эсвэл Docker-гүй: --skip-infra)`);
     }
+  }
+  if (missing.length) {
     if (run('docker', ['compose', 'up', '-d', ...INFRA_SERVICES]) !== 0) fail('docker compose up амжилтгүй');
   } else {
-    ok('Docker-ийн дэд бүтэц аль хэдийн ажиллаж байна');
+    ok('Манай Docker-ийн дэд бүтэц (postgres, dwh, redis) аль хэдийн ажиллаж байна');
   }
+  INFRA.forEach(verifyPublished); // "Started" гэсэн ч порт нь нээгдээгүй байж болно
+  ok(INFRA.map((i) => `${i.name} :${i.host}`).join(' · ') + ' — портууд хост дээр нээлттэй');
   const px = (svc, ...cmd) => () => capture('docker', ['compose', 'exec', '-T', svc, ...cmd]).status === 0;
   await waitFor('Postgres', px('postgres', 'pg_isready', '-U', 'los', '-d', 'los'));
   await waitFor('DWH', px('dwh', 'pg_isready', '-U', 'dwh', '-d', 'dwh'));
@@ -219,7 +268,12 @@ async function setup() {
   generateClients();
   buildLibs(); // seed нь @los/database-ийн dist-ийг ашигладаг тул ЗААВАЛ seed-ээс өмнө
   head('3/4 Өгөгдлийн сангийн migration (6 сервис)');
-  if (run('pnpm', ['db:migrate']) !== 0) fail('pnpm db:migrate амжилтгүй', '  Postgres ажиллаж байгаа эсэх, DATABASE_URL-ийг шалга: docker compose ps');
+  if (run('pnpm', ['db:migrate']) !== 0) {
+    fail('pnpm db:migrate амжилтгүй',
+      '  Postgres ажиллаж байгаа эсэх, DATABASE_URL-ийг шалга: docker compose ps\n' +
+      '  `P1000: Authentication failed` гарсан бол :5432 дээр манай биш, таны ӨӨРИЙН PostgreSQL хариулж байна: түүнийг зогсоо (Windows: services.msc → postgresql → Stop),\n' +
+      '  дараа нь `docker compose down` → `node scripts/local-setup.mjs` (docs/LOCAL-SETUP.md §8).');
+  }
   head('4/4 Анхны өгөгдөл (seed): хэрэглэгч, тохиргоо, бүтээгдэхүүн, үнийн суурь');
   if (run('pnpm', ['db:seed']) !== 0) fail('pnpm db:seed амжилтгүй');
   // Туршилтын 1 ноорог хүсэлт (DEMO-COL-0001; барьцааны алхмуудыг гараар туршихад). turbo `SEED_DEMO`-г дамжуулдаггүй тул origination-ийг шууд дуудна; давтаж болно
