@@ -68,12 +68,12 @@ describe.skipIf(!hasTestDb)('income API (DB)', () => {
     expect((await step(app.id)).status).toBe('COMPLETED');
   });
 
-  it('the average counts missing months as zero; a longer period lowers it', async () => {
+  it('the average is over months that have salary; a longer period does not lower it', async () => {
     const { app, primary } = await setup();
     ndsh.rows = monthlySalaries(6, 1_200_000);
     await fetchNdsh(app.id, primary.id);
     expect(parse(await calculate(app.id, primary.id, '2026-05', '2026-10')).borrowers[0]!.summary.avgSalaryMonthly).toBe(1_200_000);
-    expect(parse(await calculate(app.id, primary.id, '2025-11', '2026-10')).borrowers[0]!.summary.avgSalaryMonthly).toBe(600_000);
+    expect(parse(await calculate(app.id, primary.id, '2025-11', '2026-10')).borrowers[0]!.summary.avgSalaryMonthly).toBe(1_200_000);
   });
 
   it('re-fetching NDSH replaces only NDSH rows (manual rows stay) and refreshes the stored average for the same period', async () => {

@@ -12,7 +12,7 @@
 | `PUT …/income/expenses/:customerId` | ижил | Өрхийн/бизнесийн зардал (FR-4.4) |
 | `POST …/income/refresh` | ижил | `income` алхмыг дахин тооцно (оролцогч өөрчлөгдөж STALE болсон үед) |
 
-- Дундаж = нийлбэр ÷ хугацааны сарын тоо (цалингүй сар 0); `@los/calc` `averageMonthlySalary`.
+- Дундаж = нийлбэр ÷ ЦАЛИНТАЙ сарын тоо (цалингүй сар тооцогдохгүй); `@los/calc` `averageMonthlySalary`.
 - `income` алхам COMPLETED ⇔ нэгтгэгдэх оролцогч бүрд орлого (цалингийн дундаж > 0 | гар орлого | BSA ЦМУ). Үгүй бол PENDING + `INCOME_MISSING` / `NO_PRIMARY_BORROWER` (FR-8.6). Өөрчлөлт бүр COMPLETED `score`-ийг STALE (`INCOME_CHANGED`).
 - Бизнесийн орлого (FR-4.2): BSA (Модуль 12) ирэх хүртэл `business.available=false` placeholder.
 - Тест: `pnpm exec vitest run src/modules/income`.

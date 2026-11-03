@@ -9,7 +9,7 @@ export interface SalaryAverage {
   /** Цалин орсон сарын тоо */
   monthsWithSalary: number;
   total: number;
-  /** total / months — цалин ороогүй сар 0 гэж тооцогдоно (консерватив). 2 орон хүртэл */
+  /** total / monthsWithSalary — зөвхөн цалинтай саруудын дундаж (цалингүй сар тооцогдохгүй). Цалинтай сар байхгүй бол 0. 2 орон хүртэл */
   average: number;
 }
 
@@ -31,7 +31,7 @@ export function periodMonths(from: YearMonth, to: YearMonth): number {
 
 /**
  * Сонгосон хугацааны цалингийн нийт ба сарын дундаж. Нэг сард олон мөр (олон ажил олгогч) байвал нийлбэрлэнэ;
- * хугацаанаас гадуурх мөр, сөрөг/тоо биш цалинг тооцохгүй. Цалин ороогүй сар 0 гэж дундажид орно.
+ * хугацаанаас гадуурх мөр, сөрөг/тоо биш цалинг тооцохгүй. Дундаж нь ЗӨВХӨН цалинтай саруудаар (owner шийдвэр 2026-11-03).
  */
 export function averageMonthlySalary(rows: readonly SalaryMonth[], from: YearMonth, to: YearMonth): SalaryAverage {
   const months = periodMonths(from, to);
@@ -44,5 +44,5 @@ export function averageMonthlySalary(rows: readonly SalaryMonth[], from: YearMon
     perMonth.set(o, (perMonth.get(o) ?? 0) + r.salary);
   }
   const total = round2([...perMonth.values()].reduce((s, v) => s + v, 0));
-  return { months, monthsWithSalary: perMonth.size, total, average: round2(total / months) };
+  return { months, monthsWithSalary: perMonth.size, total, average: perMonth.size ? round2(total / perMonth.size) : 0 };
 }

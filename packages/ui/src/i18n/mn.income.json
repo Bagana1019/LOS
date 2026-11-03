@@ -34,7 +34,7 @@
   "income.calc.from": "Эхлэх сар",
   "income.calc.to": "Дуусах сар",
   "income.calc.button": "Тооцоолох",
-  "income.calc.hint": "Дундаж = нийлбэр ÷ сонгосон сарын тоо. Цалин ороогүй сар 0 гэж тооцогдоно.",
+  "income.calc.hint": "Дундаж = нийлбэр ÷ цалинтай сарын тоо. Цалин ороогүй сар тооцогдохгүй.",
   "income.calc.total": "Нийт цалин",
   "income.calc.months": "Сарын тоо",
   "income.calc.average": "Сарын дундаж",

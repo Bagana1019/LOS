@@ -29,10 +29,10 @@ describe('averageMonthlySalary (FR-4.1, M4 AC)', () => {
     expect(r.total).toBe(3_000_001);
     expect(r.average).toBe(1_000_000.33);
   });
-  it('months without salary count as zero (conservative)', () => {
+  it('months without salary are ignored: the average is over months that have salary', () => {
     const rows = year2025(1_200_000).slice(6); // Jul..Dec only
     const r = averageMonthlySalary(rows, { year: 2025, month: 1 }, { year: 2025, month: 12 });
-    expect(r).toMatchObject({ months: 12, monthsWithSalary: 6, total: 7_200_000, average: 600_000 });
+    expect(r).toMatchObject({ months: 12, monthsWithSalary: 6, total: 7_200_000, average: 1_200_000 });
   });
   it('several employers in one month are summed; out-of-period and non-positive rows ignored', () => {
     const rows = [
@@ -40,7 +40,7 @@ describe('averageMonthlySalary (FR-4.1, M4 AC)', () => {
       { year: 2024, month: 12, salary: 9_999_999 }, { year: 2025, month: 2, salary: 0 }, { year: 2025, month: 2, salary: -5 }, { year: 2025, month: 2, salary: Number.NaN },
     ];
     const r = averageMonthlySalary(rows, { year: 2025, month: 1 }, { year: 2025, month: 2 });
-    expect(r).toEqual({ months: 2, monthsWithSalary: 1, total: 1_000_000, average: 500_000 });
+    expect(r).toEqual({ months: 2, monthsWithSalary: 1, total: 1_000_000, average: 1_000_000 });
   });
   it('no rows → zero average', () => {
     expect(averageMonthlySalary([], { year: 2025, month: 1 }, { year: 2025, month: 3 })).toEqual({ months: 3, monthsWithSalary: 0, total: 0, average: 0 });
