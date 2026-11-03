@@ -1,6 +1,17 @@
 # loan-terms
 
-FR-5 Зээлийн нөхцөл. Одоогоор: **эрсдэлд суурилсан үнэ тогтоолт (FR-5.5, BR-14)** — Sosco Score → хүү, шимтгэлийн шатлал.
+FR-5 Зээлийн нөхцөл: **нөхцөл хадгалах (FR-5.1–5.3, 4-р алхам `loan`)** ба **эрсдэлд суурилсан үнэ тогтоолт (FR-5.5, BR-14)**.
+
+| Endpoint | Эрх | Үүрэг |
+| --- | --- | --- |
+| `GET /api/loan-terms/products` | `application:read` | Идэвхтэй бүтээгдэхүүн + хязгаар (дүн, хугацаа, хүү) |
+| `GET /api/loan-terms/cib-purposes` | `application:read` | ЗМС зориулалтын ангилал (DEMO каталог) |
+| `GET /api/applications/:id/loan-terms` | `application:read` | Нөхцөл + хязгаар + `loan`/`installment` алхмын төлөв |
+| `PUT /api/applications/:id/loan-terms` | `application:write` | Хязгаарт багтвал хадгална (үгүй бол 422 `LOAN_TERMS_OUT_OF_LIMITS`), `loan` → COMPLETED; ЭТХ-д нөлөөлөх талбар өөрчлөгдвөл `installment` → STALE, ЭТХ `is_stale`, `score` STALE (FR-7.3) |
+
+Цэвэр дүрэм: `loan-terms.rules.ts` (`checkLimits`, `termsChanged`, `planTermsSteps`). Тест: `loan-terms-schedule.e2e.test.ts` (M5+M7 AC). ЭТХ: `../schedule`.
+
+### Эрсдэлд суурилсан үнэ (FR-5.5, BR-14)
 
 | Endpoint (`/api/loan-terms/pricing`) | Эрх | Үүрэг |
 | --- | --- | --- |
