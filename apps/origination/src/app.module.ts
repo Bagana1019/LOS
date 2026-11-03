@@ -11,7 +11,7 @@ import { IncomeModule } from './modules/income/income.module';
 import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
 import { ScoreModule } from './modules/score/score.module';
 import { ScheduleModule } from './modules/schedule/schedule.module';
-// import { ApprovalModule } from './modules/approval/approval.module';
+import { ApprovalModule } from './modules/approval/approval.module';
 import { ContractModule } from './modules/contract/contract.module';
 // import { DisbursementModule } from './modules/disbursement/disbursement.module';
 import { BlacklistModule } from './modules/blacklist/blacklist.module';
@@ -41,7 +41,7 @@ import { DocumentModule } from './modules/document/document.module';
     LoanTermsModule,
     ScoreModule,
     ScheduleModule,
-    // ApprovalModule,
+    ApprovalModule,
     ContractModule,
     // DisbursementModule,
     BlacklistModule,

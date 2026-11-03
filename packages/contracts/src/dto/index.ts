@@ -26,3 +26,4 @@ export * from './document';
 export * from './application';
 export * from './loan-terms';
 export * from './schedule';
+export * from './approval';
