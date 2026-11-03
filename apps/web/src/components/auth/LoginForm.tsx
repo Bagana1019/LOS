@@ -7,7 +7,7 @@ import type { LoginRequest } from '@los/contracts';
 import { t } from '@los/ui';
 import { useAuth } from '../../lib/auth/auth-context';
 import { loginErrorKey } from '../../lib/auth/login-error';
-import { brand, BrandLogo } from '../../theme/brand';
+import { BrandLockup, brand } from '../../theme/brand';
 
 /** Амжилттай нэвтэрсний дараах шилжилтийг AppShell хийнэ (`next` параметрийг шалгаад). */
 export function LoginForm() {
@@ -29,12 +29,10 @@ export function LoginForm() {
   return (
     <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 16 }}>
       <Card style={{ width: '100%', maxWidth: 400 }} styles={{ body: { padding: 32 } }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-          <BrandLogo size={40} />
-          <div>
-            <Typography.Title level={4} style={{ margin: 0 }}>{brand.name}</Typography.Title>
-            <Typography.Text type="secondary">{t('auth.login.subtitle')}</Typography.Text>
-          </div>
+        <div style={{ marginBottom: 24 }}>
+          <BrandLockup size={44} />
+          <Typography.Title level={4} style={{ margin: '16px 0 0' }}>{brand.name}</Typography.Title>
+          <Typography.Text type="secondary">{t('auth.login.subtitle')}</Typography.Text>
         </div>
         {reason === 'expired' && !error && <Alert type="info" showIcon message={t('auth.session.expired')} style={{ marginBottom: 16 }} />}
         {error && <Alert type="error" showIcon role="alert" message={error} style={{ marginBottom: 16 }} />}

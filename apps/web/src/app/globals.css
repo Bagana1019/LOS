@@ -4,8 +4,19 @@ body {
   min-height: 100%;
 }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  font-family: var(--brand-font-body);
+  background: var(--brand-surface-0);
+  color: var(--brand-ink);
+  -webkit-font-smoothing: antialiased;
 }
+/* Гарчиг, тоо: Manrope; мөнгө/тоонд tabular-nums */
+h1, h2, h3, h4, h5, .ant-typography h1, .ant-typography h2, .ant-typography h3, .ant-typography h4, .ant-statistic-content {
+  font-family: var(--brand-font-display);
+  letter-spacing: -0.01em;
+}
+.ant-statistic-content, .ant-table-tbody td, .ant-descriptions-item-content { font-variant-numeric: tabular-nums; }
+/* Фокус: минт 2px хүрээ */
+:focus-visible { outline: 2px solid var(--brand-mint); outline-offset: 2px; }
 .los-skip {
   position: absolute;
   left: -9999px;
@@ -16,10 +27,10 @@ body {
   z-index: 1000;
   padding: 4px 12px;
   border-radius: 6px;
-  background: var(--los-surface, #fff);
+  background: var(--brand-surface-1, #fff);
 }
 .los-user-trigger:focus-visible {
-  outline: 2px solid var(--los-primary, currentColor);
+  outline: 2px solid var(--brand-mint, currentColor);
   outline-offset: 2px;
 }
 .ant-layout-sider-collapsed .los-brand-name {
@@ -45,4 +56,8 @@ body {
   inset: 0;
   z-index: 99;
   background: rgba(0, 0, 0, 0.45);
+}
+/* Брэнд: идэвхтэй цэсний мөр минт дэвсгэр + #042F22 текст; задарсан эцэг цэс (submenu) ойн ногоон дээр цагаан хэвээр */
+.ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  color: #fff;
 }

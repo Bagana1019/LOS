@@ -1,32 +1,32 @@
 /* Мерчант POS портал + back-office мерчант хуудсуудын стиль. Өнгө/хэмжээс: theme.ts-тэй нэг утга. Нэрийн угтвар: mp- */
 /* Токенууд :root дээр — antd-ийн Drawer/Modal/Select (document.body-д portal) ч ашиглана. */
 :root {
-  --mp-primary: #0b63ce;
-  --mp-primary-soft: #e8f1fc;
-  --mp-navy: #0f1f3d;
-  --mp-bg: #f4f6fa;
+  --mp-primary: var(--brand-forest-muted, #2f6b57);
+  --mp-primary-soft: #ecfdf5;
+  --mp-navy: var(--brand-forest, #0a3a2a);
+  --mp-bg: var(--brand-surface-0, #f8fafc);
   --mp-surface: #ffffff;
-  --mp-border: #e3e8ef;
+  --mp-border: var(--brand-border, #e2e8f0);
   --mp-border-strong: #cfd7e3;
-  --mp-text: #1a2433;
+  --mp-text: var(--brand-ink, #0f172a);
   --mp-muted: #5b6778;
-  --mp-success: #0f7a55;
-  --mp-success-soft: #e6f5ee;
-  --mp-warning: #a96400;
-  --mp-warning-soft: #fdf3e0;
-  --mp-danger: #c0342b;
-  --mp-danger-soft: #fbeceb;
-  --mp-radius: 12px;
+  --mp-success: #065f46;
+  --mp-success-soft: #d1fae5;
+  --mp-warning: #92400e;
+  --mp-warning-soft: #fef3c7;
+  --mp-danger: #b91c1c;
+  --mp-danger-soft: #fee2e2;
+  --mp-radius: var(--brand-radius-card, 14px);
   --mp-shadow: 0 1px 2px rgba(15, 31, 61, 0.06), 0 1px 3px rgba(15, 31, 61, 0.04);
 }
 .mp-root {
   min-height: 100dvh;
   color: var(--mp-text);
   background: var(--mp-bg);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'DejaVu Sans', sans-serif;
+  font-family: var(--brand-font-body);
   -webkit-font-smoothing: antialiased;
 }
-body:has(.mp-root) { margin: 0; background: #f4f6fa; }
+body:has(.mp-root) { margin: 0; background: var(--brand-surface-0, #f8fafc); }
 /* /settings/merchants, /los/pos-leases: ажилтны Frame (antd Layout.Content) дотор — өөрийн дэлгэцийн өндөр, дэвсгэргүй */
 .ant-layout-content .mp-root { min-height: 0; background: transparent; }
 .ant-layout-content .mp-boot { min-height: 40dvh; }
@@ -43,15 +43,15 @@ body:has(.mp-root) { margin: 0; background: #f4f6fa; }
 
 /* ───────── Shell ───────── */
 .mp-shell { display: grid; grid-template-columns: 232px minmax(0, 1fr); grid-template-rows: 60px 1fr; grid-template-areas: 'side head' 'side main'; min-height: 100dvh; }
-.mp-side { grid-area: side; position: sticky; top: 0; align-self: start; height: 100dvh; background: var(--mp-navy); color: #dbe4f5; padding: 16px 12px; display: flex; flex-direction: column; gap: 20px; }
+.mp-side { grid-area: side; position: sticky; top: 0; align-self: start; height: 100dvh; background: var(--mp-navy); color: #d1e7dd; padding: 16px 12px; display: flex; flex-direction: column; gap: 20px; }
 .mp-brand { display: flex; align-items: center; gap: 12px; padding: 6px 8px; color: #fff !important; text-decoration: none; }
-.mp-brand-mark, .mp-head-brand { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #1b7be0, #0b4aa3); color: #fff; font-weight: 800; font-size: 18px; flex: none; }
+.mp-brand-mark, .mp-head-brand { display: inline-grid; place-items: center; width: 44px; height: 36px; border-radius: 10px; background: transparent; color: var(--brand-forest); font-weight: 800; font-size: 18px; flex: none; }
 .mp-brand-text { display: flex; flex-direction: column; font-weight: 700; font-size: 16px; line-height: 1.15; }
-.mp-brand-text small { font-weight: 500; font-size: 12px; color: #9fb2d4; margin-top: 2px; }
+.mp-brand-text small { font-weight: 500; font-size: 12px; color: #a7c4b8; margin-top: 2px; }
 .mp-nav { display: flex; flex-direction: column; gap: 4px; }
-.mp-nav-link { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 14px; border-radius: 10px; color: #c4d1ea !important; text-decoration: none; font-weight: 600; font-size: 15px; }
+.mp-nav-link { display: flex; align-items: center; gap: 12px; min-height: 46px; padding: 0 14px; border-radius: 10px; color: #cfe3d9 !important; text-decoration: none; font-weight: 600; font-size: 15px; }
 .mp-nav-link:hover { background: rgba(255, 255, 255, 0.08); color: #fff !important; }
-.mp-nav-link[aria-current='page'] { background: rgba(255, 255, 255, 0.14); color: #fff !important; box-shadow: inset 3px 0 0 #5aa5f5; }
+.mp-nav-link[aria-current='page'] { background: rgba(255, 255, 255, 0.14); color: #fff !important; box-shadow: inset 3px 0 0 var(--brand-mint, #10b981); }
 .mp-head { grid-area: head; position: sticky; top: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 24px; background: var(--mp-surface); border-bottom: 1px solid var(--mp-border); }
 .mp-head-brand { display: none; width: 32px; height: 32px; font-size: 16px; }
 .mp-head-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -60,9 +60,9 @@ body:has(.mp-root) { margin: 0; background: #f4f6fa; }
 .mp-head-store { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--mp-muted); }
 .mp-head-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .mp-signout { flex: none; min-height: 44px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--mp-muted); font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
-.mp-signout:hover:not(:disabled) { background: var(--mp-primary-soft); color: #0a4f9f; }
+.mp-signout:hover:not(:disabled) { background: var(--mp-primary-soft); color: var(--brand-forest, #0a3a2a); }
 .mp-signout:disabled { opacity: 0.6; cursor: default; }
-.mp-role-chip { flex: none; padding: 5px 12px; border-radius: 999px; background: var(--mp-primary-soft); color: #0a4f9f; font-weight: 600; font-size: 13px; }
+.mp-role-chip { flex: none; padding: 5px 12px; border-radius: 999px; background: var(--mp-primary-soft); color: var(--brand-forest, #0a3a2a); font-weight: 600; font-size: 13px; }
 .mp-main { grid-area: main; min-width: 0; padding: 24px; width: 100%; max-width: 1360px; margin: 0 auto; }
 .mp-tabbar { display: none; }
 .mp-page { padding: 24px; max-width: 1360px; margin: 0 auto; width: 100%; }
@@ -78,7 +78,7 @@ body:has(.mp-root) { margin: 0; background: #f4f6fa; }
   .mp-tabbar { display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--mp-surface); border-top: 1px solid var(--mp-border); padding-bottom: env(safe-area-inset-bottom); box-shadow: 0 -2px 10px rgba(15, 31, 61, 0.06); }
   .mp-tab { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 64px; color: var(--mp-muted) !important; text-decoration: none; font-size: 12px; font-weight: 600; }
   .mp-tab[aria-current='page'] { color: var(--mp-primary) !important; }
-  .mp-tab:nth-child(2) svg { background: var(--mp-primary); color: #fff; border-radius: 999px; padding: 4px; width: 32px; height: 32px; margin-top: -14px; box-shadow: 0 2px 8px rgba(11, 99, 206, 0.4); }
+  .mp-tab:nth-child(2) svg { background: var(--mp-primary); color: #fff; border-radius: 999px; padding: 4px; width: 32px; height: 32px; margin-top: -14px; box-shadow: 0 2px 8px rgba(47, 107, 87, 0.4); }
 }
 
 /* ───────── Хуудасны гарчиг, хэсэг ───────── */
@@ -133,7 +133,7 @@ body:has(.mp-root) { margin: 0; background: #f4f6fa; }
 .mp-todo-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .mp-todo-body strong { font-size: 15px; }
 .mp-todo-body small { color: var(--mp-muted); font-size: 12.5px; line-height: 1.35; }
-.mp-todo.is-active { background: #fbfdff; }
+.mp-todo.is-active { background: #f8fffc; }
 .mp-todo-awaitingOtp.is-active { border-left-color: #d89614; } .mp-todo-awaitingOtp.is-active .mp-todo-count { color: #a96400; }
 .mp-todo-awaitingAcceptance.is-active { border-left-color: var(--mp-primary); } .mp-todo-awaitingAcceptance.is-active .mp-todo-count { color: var(--mp-primary); }
 .mp-todo-awaitingDelivery.is-active { border-left-color: var(--mp-success); } .mp-todo-awaitingDelivery.is-active .mp-todo-count { color: var(--mp-success); }
@@ -222,7 +222,7 @@ body:has(.mp-root) { margin: 0; background: #f4f6fa; }
 .mp-root .ant-form-item-label > label { font-weight: 600; }
 .mp-input-full { width: 100%; }
 .mp-shortcuts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -4px 0 18px; }
-.mp-min-down { margin: 0 4px 0 0; font-size: 13px; padding: 4px 10px; background: var(--mp-primary-soft); color: #0a4f9f; border-radius: 999px; }
+.mp-min-down { margin: 0 4px 0 0; font-size: 13px; padding: 4px 10px; background: var(--mp-primary-soft); color: var(--brand-forest, #0a3a2a); border-radius: 999px; }
 .mp-shortcuts .ant-btn { min-width: 64px; }
 .mp-term-group { display: flex; flex-wrap: wrap; gap: 8px; }
 .mp-term-group .ant-radio-button-wrapper { border-radius: 8px !important; border-inline-start-width: 1px; min-width: 88px; text-align: center; }
