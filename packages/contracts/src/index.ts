@@ -12,3 +12,4 @@ export * from './customer';
 export * from './erp-sync';
 export * from './portal';
 export * from './inquiry';
+export * from './contract-docs';

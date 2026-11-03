@@ -8,7 +8,7 @@ import { OBJECT_STORAGE, type ObjectStorage } from './modules/file/storage';
 import { EsignModule } from './modules/esign/esign.module';
 import { OcrModule } from './modules/ocr/ocr.module';
 import { DocumentModule } from './modules/document/document.module';
-// import { TemplateModule } from './modules/template/template.module';
+import { TemplateModule } from './modules/template/template.module';
 // import { RetentionModule } from './modules/retention/retention.module';
 
 @Module({
@@ -23,7 +23,7 @@ import { DocumentModule } from './modules/document/document.module';
     EsignModule.register(),
     OcrModule,
     DocumentModule,
-    // TemplateModule,
+    TemplateModule,
     // RetentionModule,
   ],
 })

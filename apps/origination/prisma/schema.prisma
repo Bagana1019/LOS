@@ -328,7 +328,7 @@ model LoanApplication {
   decisions        DecisionRecord[]
   contract         Contract?
   letters          OfficialLetter[]
-  disbursements    DisbursementRequest[]
+  disbursement     DisbursementRequest?
   comments         Comment[]
   invoices PaymentInvoice[]
   payments Payment[]
@@ -737,7 +737,7 @@ model DisbursementRequest {
 
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 
-  @@index([applicationId])
+  @@unique([applicationId])
   @@index([status, disburseDate])
   @@map("disbursement_request")
   @@schema("origination")

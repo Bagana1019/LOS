@@ -16,6 +16,7 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { service: 'origination', prefix: '/api/origination/maker-checker/policies', writeOnly: true, permission: 'settings:manage' },
   // ERP синкийн ops API (FIN-SYNC): унших/бичих бүгд ADMIN. Service давхар шалгана (@Permissions('erp-sync:manage'))
   { service: 'origination', prefix: '/api/origination/erp-sync', permission: 'erp-sync:manage' },
+  { service: 'dms', prefix: '/api/dms/templates', writeOnly: true, permission: 'settings:manage' }, // FR-11.2 загвар засварлагч
   { service: 'scoring', prefix: '/api/scoring/sosco/models', writeOnly: true, permission: 'settings:manage' },
   { service: 'scoring', prefix: '/api/scoring/bsa/categories', writeOnly: true, permission: 'settings:manage' },
   { service: 'scoring', prefix: '/api/scoring/bsa/rules', writeOnly: true, permission: 'settings:manage' },
@@ -42,7 +43,7 @@ export function requiredPermission(method: string, path: string): Permission | n
 // `dms/documents`: баримтыг origination (хүсэлтийн хүрээ/төлвийн шалгалттай) дамжуулан л үүсгэнэ. `valuation/valuate/collateral`: үнэлгээг origination л хадгална (хүрээ, төлөв, G0).
 // `kyc/xyp/{assets,property}`, `kyc/collateral-checks`, `valuation/valuate/vehicle-lookup`: бусдын регистр/нэр буцаадаг лавлагаа — хүсэлтийн хүрээгүйгээр ажилтан шууд дуудаж болохгүй, origination (FR-6.3, FR-6.5, FR-6.6) л дуудна.
 export const INTERNAL_ONLY_PREFIXES: readonly string[] = [
-  '/api/dms/esign', '/api/dms/public', '/api/dms/dev', '/api/dms/documents', '/api/valuation/valuate/collateral',
+  '/api/dms/esign', '/api/dms/public', '/api/dms/dev', '/api/dms/documents', '/api/dms/templates/render', '/api/valuation/valuate/collateral',
   '/api/kyc/xyp/assets', '/api/kyc/xyp/property', '/api/kyc/collateral-checks', '/api/valuation/valuate/vehicle-lookup',
   '/api/scoring/underwrite', '/api/scoring/sosco/score', '/api/scoring/sosco/results',
 ];

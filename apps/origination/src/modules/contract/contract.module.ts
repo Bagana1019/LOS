@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { APPLICATION_SIGNING_LOOKUP } from './application-signing-lookup';
 import { ContractEventsSubscriber } from './contract-events.subscriber';
+import { ContractDocumentsController } from './contract-documents.controller';
+import { ContractDocumentsService } from './contract-documents.service';
+import { DMS_DOCGEN } from './dms-docgen.port';
+import { createDmsDocgen } from './http-dms-docgen.port';
 import { ContractSigningController } from './contract-signing.controller';
 import { ContractSigningEventHandler } from './contract-signing.event-handler';
 import { ContractSigningService } from './contract-signing.service';
@@ -14,9 +18,11 @@ import { createSigningLinkNotifier, SIGNING_LINK_NOTIFIER } from './signing-link
 // FR-11.4 Цахим гарын үсэг (origination тал). Гэрээ үүсгэх (generated_file_id), цаасан гарын үсэг (скан) нь Module 9/11-ийн ажил.
 // PrismaService (global PrismaModule), EVENT_BUS (EventsModule), Clock (CommonModule) нь AppModule-аас.
 @Module({
-  controllers: [ContractSigningController],
+  controllers: [ContractSigningController, ContractDocumentsController],
   providers: [
     ContractSigningService,
+    ContractDocumentsService,
+    { provide: DMS_DOCGEN, useFactory: () => createDmsDocgen() },
     ContractSigningEventHandler,
     ContractEventsSubscriber,
     { provide: APPLICATION_SIGNING_LOOKUP, useClass: PrismaApplicationSigningLookup },
@@ -26,6 +32,6 @@ import { createSigningLinkNotifier, SIGNING_LINK_NOTIFIER } from './signing-link
     { provide: SIGNING_LINK_NOTIFIER, useFactory: () => createSigningLinkNotifier() },
   ],
   // G4 олголтын хаалга (disbursement модуль) contract.signed_file_id-ийг эндээс уншина
-  exports: [CONTRACT_REPOSITORY],
+  exports: [CONTRACT_REPOSITORY, DMS_DOCGEN],
 })
 export class ContractModule {}
