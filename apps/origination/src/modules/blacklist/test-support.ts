@@ -64,6 +64,7 @@ export function gateReads(repo: BlacklistRepository, parties: number): Blacklist
   const gate = new Promise<void>((resolve) => { open = resolve; });
   return {
     list: (...a) => repo.list(...a),
+    findExpired: (...a) => repo.findExpired(...a),
     findByKey: (...a) => repo.findByKey(...a),
     saveWithEvent: (...a) => repo.saveWithEvent(...a),
     findById: async (...a) => {
