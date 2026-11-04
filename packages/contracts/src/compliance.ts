@@ -215,11 +215,18 @@ export type AmlListStatus = z.infer<typeof AmlListStatus>;
 // ── Дотоод хар жагсаалт (origination.blacklist, FR-13.1) ───────────────────────
 /** BR-9: бүх шалтгаанд зөвхөн анхааруулга. list_type, reason_code = богино код (docs/03 §Хар жагсаалт). */
 const code = z.string().trim().min(1).max(32).regex(/^[A-Z0-9_]+$/);
+/**
+ * Хар (BLACK) / саарал (GREY) түвшин. BR-9 хэвээр: хоёул зөвхөн анхааруулга, автоматаар татгалзахгүй.
+ * BLACK = баталгаажсан (шүүх, залилан, хүнд зөрчил), GREY = сэжиг/ажиглалт (албан тушаалтан гараар шалгана). DEMO шалгуур (Q-101, docs/05 §11).
+ */
+export const BlacklistSeverity = ['BLACK', 'GREY'] as const;
+export type BlacklistSeverity = typeof BlacklistSeverity[number];
 export const BlacklistEntryInput = z.object({
   registerNo: z.string().trim().min(1).max(32),
   customerType: z.enum(AmlSubjectType),
   name: z.string().trim().min(1).max(200),
   listType: code.default('DELINQUENT'),
+  severity: z.enum(BlacklistSeverity).default('BLACK'),
   reasonCode: code,
   reasonText: z.string().trim().max(2000).optional(),
 });

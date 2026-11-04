@@ -56,7 +56,7 @@ describe('parseBlacklistCsv', () => {
     ['empty input', '', 'header row is required'],
     ['only blank lines', '\n\r\n  \n', 'header row is required'],
     ['missing required column', 'registerNo,name\nУБ1,Бат', 'Missing required column(s): customerType, reasonCode'],
-    ['unknown column', `${HEADER},nickname\n`, '1 unknown column(s) in the header row; allowed columns: registerNo, customerType, name, listType, reasonCode, reasonText'],
+    ['unknown column', `${HEADER},nickname\n`, '1 unknown column(s) in the header row; allowed columns: registerNo, customerType, name, listType, severity, reasonCode, reasonText'],
     ['duplicate column', `${HEADER},name\n`, 'Duplicate column'],
     ['unterminated quote', `${HEADER}\nУБ1,INDIVIDUAL,"Бат,DELINQUENT,LATE,`, 'Unterminated quoted field'],
   ])('rejects the whole file on %s', (_name, text, message) => {
@@ -86,7 +86,7 @@ describe('parseBlacklistCsv', () => {
       expect(e).toBeInstanceOf(CsvFormatError);
       message = (e as Error).message;
     }
-    expect(message).toBe('5 unknown column(s) in the header row; allowed columns: registerNo, customerType, name, listType, reasonCode, reasonText');
+    expect(message).toBe('5 unknown column(s) in the header row; allowed columns: registerNo, customerType, name, listType, severity, reasonCode, reasonText');
     for (const cell of ['УБ12345678', 'Бат', 'Болд', 'DELINQUENT', 'LATE_PAYMENT']) expect(message).not.toContain(cell);
   });
 

@@ -21,7 +21,7 @@ export class BlacklistLookupService {
     const rows = await this.db.blacklist.findMany({ where: { orgId, registerNoHash, isActive: true }, orderBy: [{ registeredAt: 'desc' }, { id: 'asc' }] });
     return rows.map((r) => ({
       code: 'BLACKLISTED' as const, severity: 'WARNING' as const,
-      listType: r.listType, reasonCode: r.reasonCode, reasonText: r.reasonText, registeredAt: r.registeredAt.toISOString(),
+      listType: r.listType, listSeverity: r.severity === 'GREY' ? 'GREY' as const : 'BLACK' as const, reasonCode: r.reasonCode, reasonText: r.reasonText, registeredAt: r.registeredAt.toISOString(),
     }));
   }
 

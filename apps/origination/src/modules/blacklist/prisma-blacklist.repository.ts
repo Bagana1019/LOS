@@ -4,12 +4,12 @@ import { enqueueOutbox } from '@los/database';
 import { BLACKLIST_PRISMA } from './blacklist.prisma';
 import {
   DuplicateBlacklistEntryError, StaleBlacklistEntryError,
-  type BlacklistChangedEvent, type BlacklistListFilter, type BlacklistRepository, type BlacklistRow,
+  type BlacklistAudit, type BlacklistChangedEvent, type BlacklistListFilter, type BlacklistRepository, type BlacklistRow,
 } from './blacklist.repository';
 
 // Зөвхөн энэ repository-н ашигладаг delegate-ийн хэлбэр: unit typecheck нь generate хийсэн client шаардахгүй.
 // Бодит PrismaClient (.prisma/client-origination) үүнд бүтцээрээ таарна — blacklist.prisma.ts-д шалгагдана.
-type BlacklistRecord = Omit<BlacklistRow, 'customerType'> & { customerType: string };
+type BlacklistRecord = Omit<BlacklistRow, 'customerType' | 'severity'> & { customerType: string; severity: string };
 interface BlacklistDelegate {
   findFirst(args: { where: object; orderBy?: object[] }): Promise<BlacklistRecord | null>;
   findMany(args: { where: object; orderBy: object[]; skip: number; take: number }): Promise<BlacklistRecord[]>;
@@ -18,10 +18,11 @@ interface BlacklistDelegate {
   updateMany(args: { where: object; data: object }): Promise<{ count: number }>;
 }
 interface OutboxDelegate { create(args: { data: { id: string; type: string; payload: object } }): Promise<unknown> }
-interface Tx { blacklist: BlacklistDelegate; outbox: OutboxDelegate }
+interface AuditDelegate { create(args: { data: { orgId: string; entity: string; entityId: string; action: string; actorId: string; beforeJson?: object; afterJson: object; correlationId: string } }): Promise<unknown> }
+interface Tx { blacklist: BlacklistDelegate; outbox: OutboxDelegate; auditLog: AuditDelegate }
 export interface BlacklistPrismaClient extends Tx { $transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> }
 
-const toRow = (r: BlacklistRecord): BlacklistRow => ({ ...r, customerType: r.customerType as AmlSubjectType });
+const toRow = (r: BlacklistRecord): BlacklistRow => ({ ...r, customerType: r.customerType as AmlSubjectType, severity: r.severity === 'GREY' ? 'GREY' : 'BLACK' });
 /** Зөвхөн blacklist-ийн unique зөрчил: outbox-ийн PK давхардал (eventId) нь код алдаа тул Duplicate болгож далдлахгүй. */
 const isBlacklistUniqueViolation = (e: unknown) => {
   const err = e as { code?: unknown; meta?: { modelName?: unknown } } | null;
@@ -39,6 +40,7 @@ export class PrismaBlacklistRepository implements BlacklistRepository {
       orgId,
       ...(filter.isActive !== undefined && { isActive: filter.isActive }),
       ...(filter.listType !== undefined && { listType: filter.listType }),
+      ...(filter.severity !== undefined && { severity: filter.severity }),
       ...(filter.search && {
         OR: [{ name: { contains: escapeLike(filter.search.text), mode: 'insensitive' } }, { registerNoHash: filter.search.registerNoHash }],
       }),
@@ -68,7 +70,7 @@ export class PrismaBlacklistRepository implements BlacklistRepository {
    * `updatedAt`-ыг service тодорхой дамжуулдаг (Prisma `@updatedAt` нь утга өгөөгүй үед л автоматаар тавьдаг) тул CAS-д
    * ашиглах утга ба event.changedAt-д гарах утга ижил хэвээр.
    */
-  async saveWithEvent(row: BlacklistRow, event: BlacklistChangedEvent, expectedUpdatedAt: Date | null) {
+  async saveWithEvent(row: BlacklistRow, event: BlacklistChangedEvent, expectedUpdatedAt: Date | null, audit?: BlacklistAudit) {
     try {
       await this.prisma.$transaction(async (tx) => {
         if (expectedUpdatedAt === null) {
@@ -80,6 +82,15 @@ export class PrismaBlacklistRepository implements BlacklistRepository {
         }
         // id = eventId → relay idempotent; enqueueOutbox нь event-ийг DomainEvent схемээр шалгана.
         await enqueueOutbox(tx, event);
+        // FR-13.5: аудит мөр нэг транзакцид (хэн, хэзээ, юуг). PII-гүй.
+        if (audit) {
+          await tx.auditLog.create({
+            data: {
+              orgId: row.orgId, entity: 'blacklist', entityId: row.id, action: audit.action, actorId: audit.actorId,
+              ...(audit.before && { beforeJson: audit.before }), afterJson: audit.after, correlationId: audit.correlationId,
+            },
+          });
+        }
       });
     } catch (e) {
       if (isBlacklistUniqueViolation(e)) throw new DuplicateBlacklistEntryError();

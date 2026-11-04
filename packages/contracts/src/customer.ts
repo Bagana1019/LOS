@@ -114,7 +114,7 @@ export type UpdateCustomerRequest = z.infer<typeof UpdateCustomerRequest>;
 // ── Хар жагсаалт (BR-9: зөвхөн анхааруулга, хориг биш) ──
 export const BlacklistWarning = z.object({
   code: z.literal('BLACKLISTED'), severity: z.literal('WARNING'),
-  listType: z.string(), reasonCode: z.string(), reasonText: z.string().nullable(), registeredAt: z.string().datetime(),
+  listType: z.string(), listSeverity: z.enum(['BLACK', 'GREY']).default('BLACK'), reasonCode: z.string(), reasonText: z.string().nullable(), registeredAt: z.string().datetime(),
 });
 export type BlacklistWarning = z.infer<typeof BlacklistWarning>;
 

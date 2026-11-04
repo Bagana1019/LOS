@@ -212,7 +212,7 @@ describe('BlacklistService', () => {
     const hash = hashRegisterNo(REGISTER);
     const expectedEvent = (entryId: string, over: Record<string, unknown>, ms: number, occurredMs = ms) => ({
       type: 'BlacklistEntryChanged', eventId: expect.any(String), version: 1, orgId: 'org-1', actorId: 'user-1', correlationId: 'corr-1',
-      entryId, registerNoHash: hash, customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', reasonCode: 'LATE_PAYMENT', isActive: true,
+      entryId, registerNoHash: hash, customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', severity: 'BLACK', reasonCode: 'LATE_PAYMENT', isActive: true,
       occurredAt: iso(occurredMs), changedAt: iso(ms), ...over,
     });
     const strictlyIncreasing = () => {

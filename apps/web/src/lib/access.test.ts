@@ -30,7 +30,7 @@ describe('safeNext (open redirect)', () => {
 describe('sidebar active item', () => {
   const menu = menuFor(['ADMIN']);
   it('picks the longest matching prefix', () => {
-    expect(activeHref('/los/loan-application/blacklist', menu)).toBe('/los/loan-application/blacklist');
+    expect(activeHref('/los/blacklist', menu)).toBe('/los/blacklist');
     expect(activeHref('/los/loan-application/abc/3', menu)).toBe('/los/loan-application');
     expect(activeHref('/customer/42', menu)).toBe('/customer');
   });
@@ -47,7 +47,7 @@ describe('route access (UX guard; gateway and services enforce for real)', () =>
     expect(requiredPermission('/settings/products')).toBe('settings:manage');
   });
   it('blacklist is gated by its own permission, not the parent list', () => {
-    expect(requiredPermission('/los/loan-application/blacklist')).toBe('blacklist:read');
+    expect(requiredPermission('/los/blacklist')).toBe('blacklist:read');
     expect(requiredPermission('/los/loan-application/abc/2')).toBe('application:read');
   });
   it('bsa pages need bsa:review (not in the menu)', () => {
@@ -75,7 +75,7 @@ describe('route access (UX guard; gateway and services enforce for real)', () =>
 describe('header search (FR-1.4)', () => {
   const menu = menuFor(['ADMIN']);
   const label = (i: { labelKey: string }) => ({ 'nav.customer': 'Харилцагч', 'nav.application': 'Хүсэлт', 'nav.blacklist': 'Хар жагсаалт', 'nav.loan': 'Зээл', 'nav.report': 'Тайлан', 'nav.settings': 'Тохиргоо' })[i.labelKey] ?? i.labelKey;
-  it('filters the menu by label, case-insensitively, including children', () => {
+  it('filters the menu by label, case-insensitively', () => {
     expect(searchMenu('жагс', menu, label).map((i) => i.id)).toEqual(['blacklist']);
     expect(searchMenu('ХҮС', menu, label).map((i) => i.id)).toEqual(['application']);
     expect(searchMenu('', menu, label).length).toBe(flattenMenu(menu).length);

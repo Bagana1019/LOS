@@ -1,4 +1,4 @@
-import type { AmlSubjectType, DomainEvent } from '@los/contracts';
+import type { AmlSubjectType, BlacklistSeverity, DomainEvent } from '@los/contracts';
 
 export const BLACKLIST_REPOSITORY = Symbol('BLACKLIST_REPOSITORY');
 
@@ -12,6 +12,7 @@ export interface BlacklistRow {
   customerType: AmlSubjectType;
   name: string;
   listType: string;
+  severity: BlacklistSeverity;
   reasonCode: string;
   reasonText: string | null;
   registeredBy: string;
@@ -25,10 +26,20 @@ export interface BlacklistRow {
 
 export type BlacklistChangedEvent = Extract<DomainEvent, { type: 'BlacklistEntryChanged' }>;
 
+/** FR-13.5: аудитын мөр (origination.audit_log). Регистр/hash/нэр ОРОХГҮЙ — зөвхөн entryId ба ангиллын талбарууд (CLAUDE.md §6.5). */
+export interface BlacklistAudit {
+  action: 'CREATE' | 'UPDATE' | 'DEACTIVATE' | 'REACTIVATE';
+  actorId: string;
+  correlationId: string;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown>;
+}
+
 export interface BlacklistListFilter {
   /** Нэрийн хэсэг (case-insensitive) ЭСВЭЛ регистрийн hash тэнцүү. */
   search?: { text: string; registerNoHash: string };
   listType?: string;
+  severity?: BlacklistSeverity;
   isActive?: boolean;
   limit: number;
   offset: number;
@@ -63,5 +74,5 @@ export interface BlacklistRepository {
    * мөрийн updatedAt үүнтэй тэнцүү үед л шинэчилнэ (compare-and-set), үгүй бол StaleBlacklistEntryError (мөр, event хоёул бичигдэхгүй).
    * Тиймээс нэг entry-ийн бичилт цуваа болж, `row.updatedAt` (= event.changedAt) commit-ийн дарааллаар өсдөг.
    */
-  saveWithEvent(row: BlacklistRow, event: BlacklistChangedEvent, expectedUpdatedAt: Date | null): Promise<void>;
+  saveWithEvent(row: BlacklistRow, event: BlacklistChangedEvent, expectedUpdatedAt: Date | null, audit?: BlacklistAudit): Promise<void>;
 }

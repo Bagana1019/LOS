@@ -759,6 +759,7 @@ model Blacklist {
   customerType        String   @map("customer_type")
   name                String
   listType            String   @map("list_type")
+  severity            String   @default("BLACK") // BLACK | GREY (migration 20261104200000_blacklist_severity)
   reasonCode          String   @map("reason_code")
   reasonText          String?  @map("reason_text")
   registeredBy        String?  @map("registered_by")

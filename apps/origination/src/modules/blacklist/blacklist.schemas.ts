@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BlacklistEntryInput, BlacklistEntryUpdate } from '@los/contracts';
+import { BlacklistEntryInput, BlacklistEntryUpdate, BlacklistSeverity } from '@los/contracts';
 import { normalizeRegisterNo } from '@los/database';
 
 /** Жагсаалтын дээд offset (хуудаслалт). */
@@ -46,6 +46,7 @@ export const BlacklistImportJsonBody = z.object({ rows: z.array(z.unknown()) });
 export const BlacklistListQuery = z.object({
   q: z.string().trim().max(200).optional().transform((v) => v || undefined),
   listType: z.string().trim().max(32).optional().transform((v) => v?.toUpperCase() || undefined),
+  severity: z.enum(BlacklistSeverity).optional(),
   isActive: z.enum(['true', 'false']).optional().transform((v) => (v === undefined ? undefined : v === 'true')),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   // Хэт том offset нь Prisma/Postgres-д 500 өгдөг тул дээд хязгаартай.

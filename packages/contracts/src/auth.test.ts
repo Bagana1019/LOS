@@ -26,9 +26,13 @@ describe('RBAC (docs/01 §3)', () => {
     for (const r of UserRole) expect(ids([r])).toEqual(expect.arrayContaining(['customer', 'application', 'loan', 'report']));
     expect(menuFor([])).toEqual([]);
   });
-  it('menu children are filtered by permission and MENU is not mutated', () => {
+  it('blacklist is a top-level item right above settings (not a sub-menu); menuFor does not mutate MENU', () => {
     const before = JSON.stringify(MENU);
-    expect(menuFor(['OFFICER']).find((m) => m.id === 'application')?.children?.map((c) => c.id)).toEqual(['blacklist']);
+    const admin = menuFor(['ADMIN']).map((m) => m.id);
+    expect(admin.indexOf('blacklist')).toBe(admin.indexOf('settings') - 1);
+    expect(menuFor(['ADMIN']).find((m) => m.id === 'blacklist')?.children).toBeUndefined();
+    expect(menuFor(['ADMIN']).find((m) => m.id === 'application')?.children).toBeUndefined();
+    for (const r of UserRole) expect(menuFor([r]).map((m) => m.id)).toContain('blacklist');
     expect(JSON.stringify(MENU)).toBe(before);
   });
   it('AuthResponse schema accepts a menu built by menuFor', () => {

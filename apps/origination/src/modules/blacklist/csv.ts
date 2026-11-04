@@ -1,6 +1,6 @@
 // FR-13.1: хар жагсаалтын CSV импорт. Header мөр заавал; UTF-8 BOM, CRLF, "..." талбар (таслал, "" -оор зугтаасан хашилт,
 // мөр таслалт), ',' эсвэл ';' (header-ээс автоматаар), хоосон мөр алгасна.
-const CSV_COLUMNS = ['registerNo', 'customerType', 'name', 'listType', 'reasonCode', 'reasonText'] as const;
+const CSV_COLUMNS = ['registerNo', 'customerType', 'name', 'listType', 'severity', 'reasonCode', 'reasonText'] as const;
 const REQUIRED = ['registerNo', 'customerType', 'name', 'reasonCode'];
 
 /** Бүтэц алдаатай файл (header байхгүй, хаагдаагүй хашилт) — бүх файлыг няцаана. */

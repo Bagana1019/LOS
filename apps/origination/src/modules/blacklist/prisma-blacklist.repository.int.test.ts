@@ -33,14 +33,14 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
   const key = (registerNo: string) => hashRegisterNo(registerNo);
   const makeRow = (over: Partial<BlacklistRow> = {}): BlacklistRow => ({
     id: randomUUID(), orgId, branchId: 'branch-1', registerNoEncrypted: fakeCipher.encrypt('УБ12345678'), registerNoHash: key('УБ12345678'),
-    customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', reasonCode: 'LATE_PAYMENT', reasonText: 'text',
+    customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', severity: 'BLACK', reasonCode: 'LATE_PAYMENT', reasonText: 'text',
     registeredBy: 'user-1', registeredAt: new Date('2026-10-28T09:00:00.123Z'), isActive: true,
     createdAt: new Date('2026-10-28T09:00:00.123Z'), updatedAt: new Date('2026-10-28T09:00:00.123Z'), createdBy: 'user-1', updatedBy: 'user-1', ...over,
   });
   const makeEvent = (row: BlacklistRow, over: Partial<BlacklistChangedEvent> = {}): BlacklistChangedEvent => ({
     type: 'BlacklistEntryChanged', eventId: randomUUID(), occurredAt: '2026-10-28T09:00:00.123Z', version: 1, orgId: row.orgId, actorId: 'user-1',
     correlationId: 'corr-1', entryId: row.id, registerNoHash: row.registerNoHash, customerType: row.customerType, name: row.name,
-    listType: row.listType, reasonCode: row.reasonCode, isActive: row.isActive, changedAt: '2026-10-28T09:00:00.123Z', ...over,
+    listType: row.listType, severity: row.severity, reasonCode: row.reasonCode, isActive: row.isActive, changedAt: '2026-10-28T09:00:00.123Z', ...over,
   });
   const outbox = (eventId: string) => prisma.outbox.findUnique({ where: { id: eventId } });
 

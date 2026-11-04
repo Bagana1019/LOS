@@ -243,7 +243,7 @@ export function computeSummary(args: { rows: BorrowerRow[]; loanAmount: number |
 }
 
 // ── анхааруулга (7; BR-9: хориг биш) ──────────────────────────────────────────────────
-export interface BlacklistHit { customerId: string; reasonCode: string; listType: string }
+export interface BlacklistHit { customerId: string; reasonCode: string; listType: string; severity?: 'BLACK' | 'GREY' }
 
 export function computeWarnings(args: { rows: BorrowerRow[]; loanAmount: number | null; hits: BlacklistHit[] }): BorrowerWarning[] {
   const { rows, hits } = args;
@@ -257,7 +257,7 @@ export function computeWarnings(args: { rows: BorrowerRow[]; loanAmount: number 
   for (const hit of hits) {
     const c = customers.get(hit.customerId);
     if (!c) continue;
-    out.push({ code: 'BLACKLISTED', customerId: hit.customerId, message: `${c.facts.displayName} хар жагсаалтад бүртгэлтэй байна (шалтгаан: ${hit.reasonCode}). Энэ нь анхааруулга бөгөөд хадгалахыг хориглохгүй — батлагч шийднэ`, details: { reasonCode: hit.reasonCode, listType: hit.listType, roles: c.roles } });
+    out.push({ code: 'BLACKLISTED', customerId: hit.customerId, message: `${c.facts.displayName} ${hit.severity === 'GREY' ? 'саарал' : 'хар'} жагсаалтад бүртгэлтэй байна (шалтгаан: ${hit.reasonCode}). Энэ нь анхааруулга бөгөөд хадгалахыг хориглохгүй — батлагч шийднэ`, details: { reasonCode: hit.reasonCode, listType: hit.listType, severity: hit.severity ?? 'BLACK', roles: c.roles } });
   }
   for (const [customerId, c] of customers) {
     if (c.facts.isPep) out.push({ code: 'PEP', customerId, message: `${c.facts.displayName} улс төрд нөлөө бүхий этгээд (PEP) гэж тэмдэглэгдсэн байна`, details: { roles: c.roles } });
