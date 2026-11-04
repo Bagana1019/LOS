@@ -6,8 +6,6 @@ const prisma = new PrismaClient();
 const orgId = SEED.org.id;
 
 const applicationDocs = [
-  { key: 'id_card', name: 'Иргэний үнэмлэхний хуулбар', relatedEntity: 'BORROWER' },
-  { key: 'salary_statement', name: 'Цалингийн тодорхойлолт', relatedEntity: 'BORROWER' },
   { key: 'business_license', name: 'Бизнесийн гэрчилгээ', relatedEntity: 'BORROWER' },
   { key: 'application_form', name: 'Зээлийн хүсэлтийн маягт', relatedEntity: 'APPLICATION' },
 ];

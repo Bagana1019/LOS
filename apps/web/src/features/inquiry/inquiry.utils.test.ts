@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InquirySource } from '@los/contracts';
 import { hasMessage } from '../../lib/i18n';
-import { statusColor, summaryLines, warningColor } from './inquiry.utils';
+import { detailView, fieldLabel, formatDetailValue, statusColor, summaryLines, warningColor } from './inquiry.utils';
 
 describe('summaryLines', () => {
   it('a missing inquiry has no summary', () => {
@@ -43,5 +43,22 @@ describe('colors and i18n', () => {
     for (const k of ['INCOME_MISSING', 'NO_PRIMARY_BORROWER']) expect(hasMessage(`income.step.reason.${k}`), k).toBe(true);
     for (const k of ['RENT', 'PENSION', 'OTHER']) expect(hasMessage(`income.manual.type.${k}`), k).toBe(true);
     for (const k of ['NDSH', 'MANUAL']) expect(hasMessage(`income.salary.source.${k}`), k).toBe(true);
+  });
+});
+
+describe('detailView', () => {
+  it('splits scalars, nested objects and arrays into fields and tables', () => {
+    const v = detailView({ score: 700, band: 'GOOD', loans: [{ lender: 'A', outstanding: 5 }, { lender: 'B', monthlyPayment: 7 }], nested: { x: true }, empty: [] });
+    expect(v.fields).toEqual([{ key: 'score', value: 700 }, { key: 'band', value: 'GOOD' }, { key: 'nested.x', value: true }]);
+    expect(v.tables).toHaveLength(1);
+    expect(v.tables[0]!.columns).toEqual(['lender', 'outstanding', 'monthlyPayment']);
+  });
+  it('null detail is empty; labels fall back to the key; money keys format as MNT', () => {
+    expect(detailView(null)).toEqual({ fields: [], tables: [] });
+    expect(fieldLabel('unknownKey')).toBe('unknownKey');
+    expect(fieldLabel('lender')).not.toBe('lender');
+    expect(formatDetailValue('outstanding', 1000)).toContain('₮');
+    expect(formatDetailValue('areaM2', 55)).not.toContain('₮');
+    expect(formatDetailValue('x', null)).toBe('—');
   });
 });

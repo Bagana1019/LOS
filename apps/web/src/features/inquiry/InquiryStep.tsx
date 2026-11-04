@@ -1,10 +1,10 @@
 'use client';
-import { App as AntApp, Alert, Button, Empty, Flex, Form, Input, InputNumber, Skeleton, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
+import { App as AntApp, Alert, Badge, Button, Descriptions, Empty, Flex, Form, Input, InputNumber, Skeleton, Space, Table, Tabs, Tag, Typography } from 'antd';
 import type { InquiryBorrowerView, InquiryItemView, UnregisteredLoan } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatDateTime, formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
-import { statusColor, summaryLines, warningColor } from './inquiry.utils';
+import { detailView, fieldLabel, formatDetailValue, statusColor, summaryLines, warningColor } from './inquiry.utils';
 import { useAddLoan, useFetchInquiries, useInquiries, useRecheckInquiries, useRemoveLoan } from './useInquiry';
 
 interface Props {
@@ -65,23 +65,52 @@ export function InquiryStep({ applicationId, onChanged }: Props) {
 }
 
 function BorrowerInquiries({ applicationId, borrower, fetching, onFetch, onChanged }: { applicationId: string; borrower: InquiryBorrowerView; fetching: boolean; onFetch: () => void; onChanged?: () => void }) {
-  const columns = [
-    { title: t('inquiry.col.source'), dataIndex: 'source', render: (s: InquiryItemView['source']) => t(`inquiry.source.${s}`) },
-    { title: t('inquiry.col.status'), dataIndex: 'status', render: (s: InquiryItemView['status'], r: InquiryItemView) => (
-      <Tooltip title={r.expiresAt ? formatDateTime(r.expiresAt) : undefined}><Tag color={statusColor(s)}>{t(`inquiry.status.${s}`)}</Tag></Tooltip>
-    ) },
-    { title: t('inquiry.col.fetchedAt'), dataIndex: 'fetchedAt', render: (v: string | null) => formatDateTime(v) },
-    { title: t('inquiry.col.warning'), dataIndex: 'warningLevel', render: (w: InquiryItemView['warningLevel'], r: InquiryItemView) => (r.status === 'MISSING' ? null : <Tag color={warningColor(w)}>{t(`inquiry.warning.${w}`)}</Tag>) },
-    { title: t('inquiry.col.summary'), key: 'summary', render: (_: unknown, r: InquiryItemView) => summaryLines(r).join(' · ') },
-  ];
   return (
     <Flex vertical gap={16}>
       <Flex justify="space-between" align="center" gap={12} wrap>
         <Typography.Text type="secondary">{borrower.registerNoMasked} · {t('inquiry.monthlyDebt', { amount: formatMnt(borrower.monthlyDebtPayment) })}</Typography.Text>
         <Button onClick={onFetch} loading={fetching}>{borrower.missing.length === borrower.items.length ? t('inquiry.action.fetchOne') : t('inquiry.action.refetch')}</Button>
       </Flex>
-      <Table size="small" rowKey="source" pagination={false} columns={columns} dataSource={borrower.items} scroll={{ x: 'max-content' }} />
+      <Tabs
+        size="small"
+        tabPosition="top"
+        items={borrower.items.map((item) => ({
+          key: item.source,
+          label: <Badge dot={item.status !== 'FRESH' || item.warningLevel !== 'NONE'} status={item.status === 'MISSING' ? 'default' : item.warningLevel === 'RED' ? 'error' : 'warning'} offset={[4, 0]}>{t(`inquiry.source.${item.source}`)}</Badge>,
+          children: <SourceDetail item={item} />,
+        }))}
+      />
       <UnregisteredLoans applicationId={applicationId} customerId={borrower.customerId} loans={borrower.unregisteredLoans} onChanged={onChanged} />
+    </Flex>
+  );
+}
+
+/** Нэг лавлагааны дэлгэрэнгүй: төлөв/огноо/анхааруулга, хураангуй, гадаад системийн хариуг талбар + хүснэгтээр. */
+function SourceDetail({ item }: { item: InquiryItemView }) {
+  if (item.status === 'MISSING') return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('inquiry.detail.missing')} />;
+  const view = detailView(item.detail);
+  return (
+    <Flex vertical gap={12} data-testid={`inquiry-detail-${item.source}`}>
+      <Descriptions size="small" bordered column={{ xs: 1, sm: 2, lg: 4 }}>
+        <Descriptions.Item label={t('inquiry.col.status')}><Tag color={statusColor(item.status)}>{t(`inquiry.status.${item.status}`)}</Tag></Descriptions.Item>
+        <Descriptions.Item label={t('inquiry.col.fetchedAt')}>{formatDateTime(item.fetchedAt)}</Descriptions.Item>
+        <Descriptions.Item label={t('inquiry.detail.expiresAt')}>{formatDateTime(item.expiresAt)}</Descriptions.Item>
+        <Descriptions.Item label={t('inquiry.col.warning')}><Tag color={warningColor(item.warningLevel)}>{t(`inquiry.warning.${item.warningLevel}`)}</Tag></Descriptions.Item>
+        <Descriptions.Item label={t('inquiry.col.summary')} span="filled">{summaryLines(item).join(' · ') || '—'}</Descriptions.Item>
+      </Descriptions>
+      {view.fields.length ? (
+        <Descriptions size="small" bordered title={t('inquiry.detail.fields')} column={{ xs: 1, sm: 2, lg: 3 }}>
+          {view.fields.map((f) => <Descriptions.Item key={f.key} label={fieldLabel(f.key)}>{formatDetailValue(f.key, f.value)}</Descriptions.Item>)}
+        </Descriptions>
+      ) : null}
+      {view.tables.map((tb) => (
+        <div key={tb.key}>
+          <Typography.Title level={5} style={{ marginTop: 0 }}>{fieldLabel(tb.key)} ({tb.rows.length})</Typography.Title>
+          <Table size="small" pagination={false} rowKey={(_, i) => String(i)} dataSource={tb.rows} scroll={{ x: 'max-content' }}
+            columns={tb.columns.map((c) => ({ title: fieldLabel(c), dataIndex: c, render: (v: string | number | boolean | null) => formatDetailValue(c, v) }))} />
+        </div>
+      ))}
+      {!view.fields.length && !view.tables.length ? <Typography.Text type="secondary">{t('inquiry.detail.none')}</Typography.Text> : null}
     </Flex>
   );
 }

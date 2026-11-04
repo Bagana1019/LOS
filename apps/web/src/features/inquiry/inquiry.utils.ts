@@ -1,6 +1,6 @@
 import type { InquiryItemView } from '@los/contracts';
 import { formatMnt, formatNumber } from '../../lib/format';
-import { t } from '../../lib/i18n';
+import { hasMessage, t } from '../../lib/i18n';
 
 const n = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -31,3 +31,36 @@ export function summaryLines(item: Pick<InquiryItemView, 'source' | 'status' | '
 
 export const statusColor = (status: InquiryItemView['status']): string => (status === 'FRESH' ? 'success' : status === 'STALE' ? 'warning' : 'default');
 export const warningColor = (level: InquiryItemView['warningLevel']): string => (level === 'RED' ? 'error' : level === 'WARNING' ? 'warning' : 'default');
+
+// ── Дэлгэрэнгүй (таб бүр) ───────────────────────────────────────────────────────────
+type Scalar = string | number | boolean | null;
+export interface DetailTable { key: string; rows: Record<string, Scalar>[]; columns: string[] }
+export interface DetailView { fields: { key: string; value: Scalar }[]; tables: DetailTable[] }
+
+const isScalar = (v: unknown): v is Scalar => v === null || ['string', 'number', 'boolean'].includes(typeof v);
+const flat = (o: Record<string, unknown>): Record<string, Scalar> => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, isScalar(v) ? v : JSON.stringify(v)]));
+
+/** Лавлагааны `detail`-ийг (гадаад системийн хариу) нэг түвшний талбар + хүснэгт болгон хуваана. Массив → хүснэгт, объект → түүний талбарууд (`parent.key`). */
+export function detailView(detail: Record<string, unknown> | null | undefined): DetailView {
+  const view: DetailView = { fields: [], tables: [] };
+  if (!detail) return view;
+  for (const [key, v] of Object.entries(detail)) {
+    if (isScalar(v)) view.fields.push({ key, value: v });
+    else if (Array.isArray(v)) {
+      const rows = v.map((x) => (x && typeof x === 'object' && !Array.isArray(x) ? flat(x as Record<string, unknown>) : { value: isScalar(x) ? x : JSON.stringify(x) }));
+      if (rows.length) view.tables.push({ key, rows, columns: [...new Set(rows.flatMap((r) => Object.keys(r)))] });
+    } else for (const [k2, v2] of Object.entries(v as Record<string, unknown>)) view.fields.push({ key: `${key}.${k2}`, value: isScalar(v2) ? v2 : JSON.stringify(v2) });
+  }
+  return view;
+}
+
+/** Талбарын нэр: `inquiry.field.<key>` орчуулга байвал түүгээр, үгүй бол түлхүүрээр. */
+export const fieldLabel = (key: string): string => (hasMessage(`inquiry.field.${key}`) ? t(`inquiry.field.${key}`) : key);
+
+const MONEY_KEY = /(amount|outstanding|payment|disbursed|pension|total|salary)/i;
+export function formatDetailValue(key: string, v: Scalar): string {
+  if (v === null || v === '') return '—';
+  if (typeof v === 'boolean') return v ? t('inquiry.summary.yes') : t('inquiry.summary.no');
+  if (typeof v === 'number') return MONEY_KEY.test(key) && !/count/i.test(key) ? formatMnt(v) : formatNumber(v);
+  return v;
+}
