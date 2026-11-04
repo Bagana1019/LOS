@@ -18,11 +18,11 @@ export class BlacklistChecker {
     const rows = await db.blacklist.findMany({
       where: { orgId, isActive: true, registerNoHash: { in: [...byHash.keys()] } },
       orderBy: [{ registeredAt: 'desc' }, { id: 'asc' }],
-      select: { registerNoHash: true, reasonCode: true, listType: true },
+      select: { registerNoHash: true, reasonCode: true, listType: true, severity: true },
     });
     const hits: BlacklistHit[] = [];
     for (const row of rows) {
-      for (const customerId of byHash.get(row.registerNoHash) ?? []) hits.push({ customerId, reasonCode: row.reasonCode, listType: row.listType });
+      for (const customerId of byHash.get(row.registerNoHash) ?? []) hits.push({ customerId, reasonCode: row.reasonCode, listType: row.listType, severity: row.severity === 'GREY' ? 'GREY' : 'BLACK' });
     }
     return hits;
   }

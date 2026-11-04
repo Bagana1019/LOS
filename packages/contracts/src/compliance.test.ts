@@ -379,7 +379,7 @@ describe('compliance events in the DomainEvent union', () => {
     },
     BlacklistEntryChanged: {
       ...base, type: 'BlacklistEntryChanged', entryId: 'bl-1', registerNoHash: 'a'.repeat(64), customerType: 'INDIVIDUAL',
-      name: 'Болд', listType: 'DELINQUENT', reasonCode: 'OVERDUE_90', isActive: true, changedAt: '2026-10-28T09:29:59.000Z',
+      name: 'Болд', listType: 'DELINQUENT', severity: 'BLACK', reasonCode: 'OVERDUE_90', isActive: true, changedAt: '2026-10-28T09:29:59.000Z',
     },
   } as const;
   const schemas = { AmlScreeningCompleted, AmlHitReviewed, BlacklistEntryChanged };

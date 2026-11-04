@@ -20,7 +20,7 @@ import { hashRegisterNo, normalizeRegisterNo } from '@los/database';
 import type { RequestContext } from './blacklist.context';
 import {
   BLACKLIST_REPOSITORY, DuplicateBlacklistEntryError, StaleBlacklistEntryError,
-  type BlacklistChangedEvent, type BlacklistRepository, type BlacklistRow,
+  type BlacklistAudit, type BlacklistChangedEvent, type BlacklistRepository, type BlacklistRow,
 } from './blacklist.repository';
 import { BlacklistCreateBody, BlacklistPatchBody, MAX_IMPORT_ROWS, type BlacklistListQuery } from './blacklist.schemas';
 import { BLACKLIST_CLOCK, BLACKLIST_IDS, PII_CIPHER, type Clock, type IdGenerator, type PiiCipher } from './blacklist.tokens';
@@ -39,7 +39,7 @@ const ROW_FAILED_MESSAGE = 'Row could not be saved (internal error)';
 /** Нэг импортын дээд мөр хэтэрсэн (413). Controller мөн CSV задлахдаа ашиглана. */
 export const importLimitError = () => new PayloadTooLargeException(`At most ${MAX_IMPORT_ROWS} rows per import`);
 /** PATCH-д "өөрчлөгдсөн үү" гэж харьцуулах талбарууд (шифртэй текстийг харьцуулахгүй). */
-const TRACKED = ['registerNoHash', 'customerType', 'name', 'listType', 'reasonCode', 'reasonText', 'isActive'] as const;
+const TRACKED = ['registerNoHash', 'customerType', 'name', 'listType', 'severity', 'reasonCode', 'reasonText', 'isActive'] as const;
 
 /** Импортын мөрийн алдаа: zod-ын "received ..." (регистр зэрэг хүсэлтийн утга)-гүй, код тус бүрт тогтмол мессеж (zod.pipe safeIssues). */
 const describeIssues = (e: ZodError) => safeIssues(e).map((i) => `${i.path.join('.') || 'row'}: ${i.message}`).join('; ');
@@ -65,6 +65,7 @@ export class BlacklistService {
     const { total, items } = await this.repo.list(ctx.orgId, {
       search: q.q ? { text: q.q, registerNoHash: hashRegisterNo(q.q) } : undefined,
       listType: q.listType,
+      severity: q.severity,
       isActive: q.isActive,
       limit: q.limit,
       offset: q.offset,
@@ -94,6 +95,7 @@ export class BlacklistService {
     if (patch.customerType !== undefined) next.customerType = patch.customerType;
     if (patch.name !== undefined) next.name = patch.name;
     if (patch.listType !== undefined) next.listType = patch.listType;
+    if (patch.severity !== undefined) next.severity = patch.severity;
     if (patch.reasonCode !== undefined) next.reasonCode = patch.reasonCode;
     if (patch.reasonText !== undefined) next.reasonText = patch.reasonText || null;
     if (patch.isActive !== undefined) next.isActive = patch.isActive;
@@ -152,15 +154,15 @@ export class BlacklistService {
       const row: BlacklistRow = {
         id: this.ids.uuid(), orgId: ctx.orgId, branchId: ctx.branchId,
         registerNoEncrypted: this.cipher.encrypt(normalizeRegisterNo(input.registerNo)), registerNoHash,
-        customerType: input.customerType, name: input.name, listType: input.listType, reasonCode: input.reasonCode, reasonText,
+        customerType: input.customerType, name: input.name, listType: input.listType, severity: input.severity, reasonCode: input.reasonCode, reasonText,
         registeredBy: ctx.userId, registeredAt: now, isActive: true,
         createdAt: now, updatedAt: now, createdBy: ctx.userId, updatedBy: ctx.userId,
       };
-      await this.persist(ctx, row, null, now);
+      await this.persist(ctx, row, null, now, this.audit(ctx, 'CREATE', null, row));
       return { outcome: 'created', row };
     }
     if (existing.isActive && conflictIfActive) throw new ConflictException(DUPLICATE_MESSAGE);
-    const next: BlacklistRow = { ...existing, customerType: input.customerType, name: input.name, reasonCode: input.reasonCode, reasonText, isActive: true };
+    const next: BlacklistRow = { ...existing, customerType: input.customerType, name: input.name, severity: input.severity, reasonCode: input.reasonCode, reasonText, isActive: true };
     if (TRACKED.every((k) => next[k] === existing[k])) return { outcome: 'skipped', row: existing };
     return { outcome: 'updated', row: await this.save(ctx, existing, next) };
   }
@@ -179,7 +181,8 @@ export class BlacklistService {
       updatedBy: ctx.userId,
       ...(reactivated && { registeredBy: ctx.userId, registeredAt: at, branchId: ctx.branchId }),
     };
-    await this.persist(ctx, row, prev.updatedAt, occurredAt);
+    const action = reactivated ? 'REACTIVATE' : prev.isActive && !next.isActive ? 'DEACTIVATE' : 'UPDATE';
+    await this.persist(ctx, row, prev.updatedAt, occurredAt, this.audit(ctx, action, prev, row));
     return row;
   }
 
@@ -189,14 +192,20 @@ export class BlacklistService {
     return now.getTime() >= min ? now : new Date(min);
   }
 
-  private async persist(ctx: RequestContext, row: BlacklistRow, expectedUpdatedAt: Date | null, occurredAt: Date): Promise<void> {
+  private async persist(ctx: RequestContext, row: BlacklistRow, expectedUpdatedAt: Date | null, occurredAt: Date, audit?: BlacklistAudit): Promise<void> {
     try {
-      await this.repo.saveWithEvent(row, this.event(ctx, row, occurredAt), expectedUpdatedAt);
+      await this.repo.saveWithEvent(row, this.event(ctx, row, occurredAt), expectedUpdatedAt, audit);
     } catch (e) {
       if (e instanceof DuplicateBlacklistEntryError) throw new ConflictException(DUPLICATE_MESSAGE);
       if (e instanceof StaleBlacklistEntryError) throw new ConflictException(STALE_MESSAGE);
       throw e;
     }
+  }
+
+  /** Аудитын агуулга: PII (регистр, hash, нэр) ОРОХГҮЙ; зөвхөн ангилал, шалтгаан, төлөв. */
+  private audit(ctx: RequestContext, action: BlacklistAudit['action'], before: BlacklistRow | null, after: BlacklistRow): BlacklistAudit {
+    const view = (r: BlacklistRow) => ({ listType: r.listType, severity: r.severity, reasonCode: r.reasonCode, hasReasonText: r.reasonText !== null, customerType: r.customerType, isActive: r.isActive });
+    return { action, actorId: ctx.userId, correlationId: ctx.correlationId, before: before && view(before), after: view(after) };
   }
 
   /** Plain регистр event-д орохгүй — зөвхөн HMAC hash (kyc projection). changedAt = мөрийн updatedAt (CAS-д ашигласан утга). */
@@ -205,7 +214,7 @@ export class BlacklistService {
       type: 'BlacklistEntryChanged', eventId: this.ids.uuid(), occurredAt: occurredAt.toISOString(), version: 1,
       orgId: row.orgId, actorId: ctx.userId, correlationId: ctx.correlationId,
       entryId: row.id, registerNoHash: row.registerNoHash, customerType: row.customerType, name: row.name,
-      listType: row.listType, reasonCode: row.reasonCode, isActive: row.isActive, changedAt: row.updatedAt.toISOString(),
+      listType: row.listType, severity: row.severity, reasonCode: row.reasonCode, isActive: row.isActive, changedAt: row.updatedAt.toISOString(),
     };
   }
 
@@ -219,7 +228,7 @@ export class BlacklistService {
   private toEntry(row: BlacklistRow): BlacklistEntry {
     return {
       id: row.id, orgId: row.orgId, registerNo: this.cipher.decrypt(row.registerNoEncrypted), customerType: row.customerType,
-      name: row.name, listType: row.listType, reasonCode: row.reasonCode, reasonText: row.reasonText,
+      name: row.name, listType: row.listType, severity: row.severity, reasonCode: row.reasonCode, reasonText: row.reasonText,
       isActive: row.isActive, registeredBy: row.registeredBy, registeredAt: row.registeredAt.toISOString(),
     };
   }

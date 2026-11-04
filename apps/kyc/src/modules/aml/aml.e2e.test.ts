@@ -267,7 +267,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
     const event = (over: Partial<BlacklistEntryChanged> = {}): BlacklistEntryChanged => ({
       type: 'BlacklistEntryChanged', eventId: '11111111-1111-4111-8111-111111111111', occurredAt: '2026-10-28T08:00:00.000Z', version: 1,
       orgId: 'org-1', actorId: 'admin-1', correlationId: 'c', entryId: 'bl-1', registerNoHash: hashRegisterNo(REGISTER), customerType: 'INDIVIDUAL',
-      name: 'Тест Хэрэглэгч', listType: 'DELINQUENT', reasonCode: 'OVERDUE_90', isActive: true, changedAt: '2026-10-28T08:00:00.000Z', ...over,
+      name: 'Тест Хэрэглэгч', listType: 'DELINQUENT', severity: 'BLACK', reasonCode: 'OVERDUE_90', isActive: true, changedAt: '2026-10-28T08:00:00.000Z', ...over,
     });
     const projection = () => app.get(BlacklistProjectionService);
 

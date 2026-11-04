@@ -78,12 +78,12 @@ export function resolveDataScope(roles: readonly string[]): DataScope {
 export interface MenuItem { id: string; labelKey: string; href: string; permission: Permission; children?: MenuItem[] }
 export const MENU: readonly MenuItem[] = [
   { id: 'customer', labelKey: 'nav.customer', href: '/customer', permission: 'customer:read' },
-  { id: 'application', labelKey: 'nav.application', href: '/los/loan-application', permission: 'application:read', children: [
-    { id: 'blacklist', labelKey: 'nav.blacklist', href: '/los/loan-application/blacklist', permission: 'blacklist:read' },
-  ] },
+  { id: 'application', labelKey: 'nav.application', href: '/los/loan-application', permission: 'application:read' },
   { id: 'loan', labelKey: 'nav.loan', href: '/los/loan/list', permission: 'application:read' },
   { id: 'maker-checker', labelKey: 'nav.maker_checker', href: '/los/maker-checker', permission: 'change-request:read' },
   { id: 'report', labelKey: 'nav.report', href: '/los/report', permission: 'report:read' },
+  // Хар жагсаалт — дэд цэс биш, дээд түвшний цэс; «Тохиргоо»-ны яг дээр.
+  { id: 'blacklist', labelKey: 'nav.blacklist', href: '/los/blacklist', permission: 'blacklist:read' },
   { id: 'settings', labelKey: 'nav.settings', href: '/settings', permission: 'settings:manage' },
 ];
 export function menuFor(roles: readonly string[]): MenuItem[] {

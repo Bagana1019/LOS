@@ -260,7 +260,7 @@ node scripts/local-setup.mjs test
 | Нэвтрэхэд `429` / «хэт олон оролдлого» | Нэвтрэлт IP тутамд минутад 10 — 1 минут хүлээ. 5 удаа буруу бол акаунт 15 минут түгжигдэнэ |
 | **Windows:** `db:generate` үед `EPERM: operation not permitted, rename … query_engine-windows.dll.node` | Prisma client-уудыг зэрэг үүсгэхэд нэг engine файл дээр зөрчилддөг (антивирус/зэрэгцээ процесс). `pnpm turbo run db:generate --concurrency=1` (нэг нэгээр) — скрипт үүнийг өөрөө ингэж ажиллуулдаг. Дахин гарвал `pnpm dev`/өөр терминал, VS Code-ийн TS server, антивирусыг түр хаагаад давт. **Анхаар:** generate унасан бол migration/seed хийгдээгүй байж болно — дээрх «Нэвтэрч чадсангүй» мөрийг үз |
 | Вэбийн хуудас анх нээхэд 10–20 сек хоосон/удаан | `next dev` хуудас бүрийг анхны хандалтад compile хийдэг — хэвийн |
-| `/customer` (404), `/los/loan-application/blacklist`, `/los/loan/list` (хоосон), `/settings` (админ биш бол «Эрх хүрэхгүй») | Эдгээр дэлгэц хараахан хийгдээгүй (§9) — алдаа биш. `/settings` нь M13-аар бэлэн (§6.1) |
+| `/customer` (404), `/los/loan/list` (хоосон), `/settings` (админ биш бол «Эрх хүрэхгүй») | Эдгээр дэлгэц хараахан хийгдээгүй (§9) — алдаа биш. `/settings` нь M13-аар бэлэн (§6.1) |
 | Дахин эхнээс нь эхлэх | `node scripts/local-setup.mjs reset` (өгөгдөл устна) → `node scripts/local-setup.mjs` |
 
 Лог: `pnpm dev` ажиллаж буй терминалд бүх сервисийн JSON лог (`@los/origination:dev: …`) гарна. Docker: `docker compose logs postgres`.

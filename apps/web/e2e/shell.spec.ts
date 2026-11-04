@@ -126,14 +126,17 @@ test.describe('дүрээр цэс (GET /api/auth/me)', () => {
 });
 
 test.describe('sidebar', () => {
-  test('эцэг цэс дээр дарахад дэд цэс нуугдахгүй; дэд хуудас руу шууд орсон ч сонгосон мөр харагдана', async ({ page }) => {
+  test('Хар жагсаалт нь дэд цэс биш, дээд түвшний цэс (Тохиргооны дээр); шууд орсон ч сонгосон мөр харагдана', async ({ page }) => {
     await mockGateway(page, { signedIn: true });
     await page.goto('/');
     await menuItem(page, 'Хүсэлт').click();
     await expect(page).toHaveURL('/los/loan-application');
     await expect(menuItem(page, 'Хар жагсаалт')).toBeVisible();
-    await page.goto('/los/loan-application/blacklist');
+    await page.goto('/los/blacklist');
     await expect(page.locator('.ant-menu-item-selected', { hasText: 'Хар жагсаалт' })).toBeVisible();
+    // хуучин хаяг шинэ хуудас руу чиглүүлнэ
+    await page.goto('/los/loan-application/blacklist');
+    await expect(page).toHaveURL('/los/blacklist');
   });
 
   test('мөрийн хоосон хэсэг дээр дарсан ч шилжинэ (зөвхөн текст биш)', async ({ page }) => {

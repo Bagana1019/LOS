@@ -706,7 +706,7 @@ describe('BlacklistController (HTTP)', () => {
     it('a CSV without a header row: 400 with only the count and the allowed column names', async () => {
       const res = await csvPost('УБ12345678,INDIVIDUAL,Бат Болд,DELINQUENT,LATE_PAYMENT\n').expect(400);
 
-      expect(res.body.message).toBe('5 unknown column(s) in the header row; allowed columns: registerNo, customerType, name, listType, reasonCode, reasonText');
+      expect(res.body.message).toBe('5 unknown column(s) in the header row; allowed columns: registerNo, customerType, name, listType, severity, reasonCode, reasonText');
       expectNoLeak(JSON.stringify(res.body));
       expect(repo.events).toHaveLength(0);
     });

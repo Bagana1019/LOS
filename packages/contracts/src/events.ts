@@ -28,7 +28,7 @@ export const AmlScreeningCompleted = base.extend({ type: z.literal('AmlScreening
 export const AmlHitReviewed = base.extend({ type: z.literal('AmlHitReviewed'), screeningId: z.string(), hitId: z.string(), customerId: z.string(), applicationId: z.string().nullable(), list: z.enum(ScreeningList), decision: z.enum(['CONFIRMED','FALSE_POSITIVE']), screeningStatus: z.enum(ScreeningStatus), blocking: z.boolean(), riskScore: z.number(), riskLevel: z.enum(AmlRiskLevel) });
 // origination → kyc: хар жагсаалтын projection. Регистр plain-ээр явахгүй — HMAC hash (64 жижиг hex; plain регистр schema-д няцна).
 // changedAt нь нэг entry-д хатуу өсөх ёстой: kyc зөвхөн илүү шинэ changedAt-тай event-ийг хэрэглэнэ.
-export const BlacklistEntryChanged = base.extend({ type: z.literal('BlacklistEntryChanged'), entryId: z.string(), registerNoHash: z.string().regex(/^[0-9a-f]{64}$/), customerType: z.enum(AmlSubjectType), name: z.string(), listType: z.string(), reasonCode: z.string(), isActive: z.boolean(), changedAt: z.string().datetime() });
+export const BlacklistEntryChanged = base.extend({ type: z.literal('BlacklistEntryChanged'), entryId: z.string(), registerNoHash: z.string().regex(/^[0-9a-f]{64}$/), customerType: z.enum(AmlSubjectType), name: z.string(), listType: z.string(), severity: z.enum(['BLACK', 'GREY']).default('BLACK'), reasonCode: z.string(), isActive: z.boolean(), changedAt: z.string().datetime() });
 export type AmlScreeningCompleted = z.infer<typeof AmlScreeningCompleted>;
 export type AmlHitReviewed = z.infer<typeof AmlHitReviewed>;
 export type BlacklistEntryChanged = z.infer<typeof BlacklistEntryChanged>;
