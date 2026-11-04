@@ -1,6 +1,7 @@
 'use client';
 import { Alert, Button, Card, Flex, Form, Input, InputNumber, Select, Skeleton, Tag, Typography, App as AntApp } from 'antd';
-import type { SaveLoanTermsRequest } from '@los/contracts';
+import { MONEY_MAX, MONEY_MAX_INTEGER_DIGITS, type SaveLoanTermsRequest } from '@los/contracts';
+import type { Rule } from 'antd/es/form';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
@@ -14,6 +15,33 @@ const clean = (v: FormValues): SaveLoanTermsRequest => {
   for (const [k, val] of Object.entries(v)) if (val !== undefined && val !== null && val !== '') out[k] = val;
   return out as SaveLoanTermsRequest;
 };
+
+// Оронгийн хязгаарлалт (DEMO, Q-101): мөнгө — зөвхөн тоо, бүхэл ≤ MONEY_MAX_INTEGER_DIGITS орон, бутархай ≤ 2.
+const moneyFormatter = (v: unknown) => {
+  if (v == null || v === '') return '';
+  const [int = '', frac] = String(v).split('.');
+  return `${int.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${frac !== undefined ? `.${frac}` : ''}`;
+};
+const moneyParser = (v?: string) => {
+  const raw = (v ?? '').replace(/[^\d.]/g, '');
+  const [int = '', ...rest] = raw.split('.');
+  const intPart = int.slice(0, MONEY_MAX_INTEGER_DIGITS);
+  return (rest.length ? `${intPart}.${rest.join('').slice(0, 2)}` : intPart) as unknown as number;
+};
+const digitCount = (n: number) => Math.floor(Math.abs(n)).toString().length;
+/** Дүнгийн шалгалт: оронгийн хязгаар, бутархай, 0-ээс их, бүтээгдэхүүний [min,max]. */
+const moneyRules = (label: string, opts: { positive?: boolean; min?: number; max?: number } = {}): Rule[] => [{
+  validator: (_r, v: number | null | undefined) => {
+    if (v == null) return Promise.resolve();
+    if (typeof v !== 'number' || !Number.isFinite(v)) return Promise.reject(new Error(t('terms.form.digitsOnly')));
+    if (digitCount(v) > MONEY_MAX_INTEGER_DIGITS || v > MONEY_MAX) return Promise.reject(new Error(t('terms.form.maxDigits', { field: label, max: MONEY_MAX_INTEGER_DIGITS })));
+    if (Math.abs(v * 100 - Math.round(v * 100)) > 1e-6) return Promise.reject(new Error(t('terms.form.decimals', { max: 2 })));
+    if (opts.positive && v <= 0) return Promise.reject(new Error(t('terms.form.positive', { field: label })));
+    if (opts.min != null && opts.max != null && (v < opts.min || v > opts.max)) return Promise.reject(new Error(t('terms.form.range', { field: label, min: formatMnt(opts.min), max: formatMnt(opts.max) })));
+    return Promise.resolve();
+  },
+}];
+const intRange = (label: string, min: number, max: number): Rule[] => [{ type: 'number', min, max, message: t('terms.form.range', { field: label, min, max }) }];
 
 /** Wizard-н 4-р алхам "Зээлийн мэдээлэл" (`/los/loan-application/:id/loan`): бүтээгдэхүүн, дүн, хугацаа, хүү, зориулалт. FR-5.1…5.4. */
 export function LoanTermsStep({ applicationId, onChanged }: Props) {
@@ -57,15 +85,15 @@ export function LoanTermsStep({ applicationId, onChanged }: Props) {
             <Select data-testid="terms-product" loading={products.isLoading} options={(products.data?.items ?? []).map((p) => ({ value: p.id, label: p.name }))} />
           </Form.Item>
           <Flex gap={16} wrap>
-            <Form.Item name="amount" label={t('terms.field.amount')} rules={required}><InputNumber data-testid="terms-amount" min={0} style={{ width: 200 }} /></Form.Item>
-            <Form.Item name="termMonths" label={t('terms.field.term')} rules={required}><InputNumber data-testid="terms-term" min={1} max={600} precision={0} style={{ width: 140 }} /></Form.Item>
-            <Form.Item name="interestRate" label={t('terms.field.rate')} extra={t('terms.field.rateHint')}><InputNumber min={0} max={100} step={0.01} style={{ width: 140 }} /></Form.Item>
+            <Form.Item name="amount" label={t('terms.field.amount')} rules={[...required, ...moneyRules(t('terms.field.amount'), { positive: true, min: limits?.minAmount, max: limits?.maxAmount })]}><InputNumber data-testid="terms-amount" min={0} max={MONEY_MAX} controls={false} inputMode="decimal" maxLength={MONEY_MAX_INTEGER_DIGITS + 4} formatter={moneyFormatter} parser={moneyParser} style={{ width: 200 }} /></Form.Item>
+            <Form.Item name="termMonths" label={t('terms.field.term')} rules={[...required, ...intRange(t('terms.field.term'), limits?.minTermMonths ?? 1, limits?.maxTermMonths ?? 600)]}><InputNumber data-testid="terms-term" min={1} max={600} precision={0} maxLength={3} inputMode="numeric" style={{ width: 140 }} /></Form.Item>
+            <Form.Item name="interestRate" label={t('terms.field.rate')} extra={t('terms.field.rateHint')} rules={limits ? [{ type: 'number', min: limits.minRate, max: limits.maxRate, message: t('terms.form.range', { field: t('terms.field.rate'), min: limits.minRate, max: limits.maxRate }) }] : []}><InputNumber min={0} max={100} step={0.01} maxLength={8} inputMode="decimal" style={{ width: 140 }} /></Form.Item>
             <Form.Item name="feeRate" label={t('terms.field.fee')} extra={t('terms.field.feeHint')}><InputNumber min={0} max={1} step={0.001} style={{ width: 140 }} /></Form.Item>
           </Flex>
           <Flex gap={16} wrap>
-            <Form.Item name="downPayment" label={t('terms.field.downPayment')}><InputNumber min={0} style={{ width: 180 }} /></Form.Item>
-            <Form.Item name="charges" label={t('terms.field.charges')}><InputNumber min={0} style={{ width: 180 }} /></Form.Item>
-            <Form.Item name="insurance" label={t('terms.field.insurance')}><InputNumber min={0} style={{ width: 180 }} /></Form.Item>
+            <Form.Item name="downPayment" label={t('terms.field.downPayment')} rules={moneyRules(t('terms.field.downPayment'))}><InputNumber min={0} max={MONEY_MAX} controls={false} inputMode="decimal" maxLength={MONEY_MAX_INTEGER_DIGITS + 4} formatter={moneyFormatter} parser={moneyParser} style={{ width: 180 }} /></Form.Item>
+            <Form.Item name="charges" label={t('terms.field.charges')} rules={moneyRules(t('terms.field.charges'))}><InputNumber min={0} max={MONEY_MAX} controls={false} inputMode="decimal" maxLength={MONEY_MAX_INTEGER_DIGITS + 4} formatter={moneyFormatter} parser={moneyParser} style={{ width: 180 }} /></Form.Item>
+            <Form.Item name="insurance" label={t('terms.field.insurance')} rules={moneyRules(t('terms.field.insurance'))}><InputNumber min={0} max={MONEY_MAX} controls={false} inputMode="decimal" maxLength={MONEY_MAX_INTEGER_DIGITS + 4} formatter={moneyFormatter} parser={moneyParser} style={{ width: 180 }} /></Form.Item>
           </Flex>
           <Form.Item name="purpose" label={t('terms.field.purpose')} rules={required}><Input data-testid="terms-purpose" maxLength={200} /></Form.Item>
           <Form.Item name="purposeDetail" label={t('terms.field.purposeDetail')}><Input.TextArea rows={2} maxLength={500} /></Form.Item>
