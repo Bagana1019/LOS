@@ -448,6 +448,12 @@ describe('createObjectStore(env)', () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  it('STORAGE_DRIVER=memory (non-production) ignores MINIO_ENDPOINT; production ignores the flag', () => {
+    expect(createObjectStore({ ...minioEnv, STORAGE_DRIVER: 'memory' }, { warn: () => undefined })).toBeInstanceOf(InMemoryObjectStore);
+    expect(() => createObjectStore({ NODE_ENV: 'production', STORAGE_DRIVER: 'memory', ...keyEnv })).toThrow(/MINIO_ENDPOINT/);
+    expect(createObjectStore({ ...minioEnv, ...keyEnv, NODE_ENV: 'production', STORAGE_DRIVER: 'memory' })).toBeInstanceOf(EncryptingObjectStore);
+  });
+
   it('wraps the store with file encryption when DATA_ENCRYPTION_KEY is present, and the wrapped store works', async () => {
     const store = createObjectStore(keyEnv, { warn: () => undefined });
     expect(store).toBeInstanceOf(EncryptingObjectStore);

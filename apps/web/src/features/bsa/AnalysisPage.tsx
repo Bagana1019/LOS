@@ -44,7 +44,7 @@ function Statements({ applicationId, analysisId, draft }: Props & { draft: boole
     <Flex vertical gap={16}>
       <Card title={t('bsa.upload.title')}>
         <Flex gap={12} align="center" wrap>
-          <Upload multiple showUploadList={false} disabled={!draft} beforeUpload={() => false} onChange={(info) => { if (info.fileList.length && info.file === info.fileList[info.fileList.length - 1]) upload.mutate(info.fileList.map((f) => f.originFileObj as File).filter(Boolean)); }}>
+          <Upload multiple showUploadList={false} fileList={[]} disabled={!draft} beforeUpload={(file, batch) => { if (file === batch[0]) upload.mutate(batch as File[]); return false; }}>
             <Button type="primary" loading={upload.isPending} disabled={!draft}>{t('bsa.action.upload')}</Button>
           </Upload>
           <Button onClick={() => recalc.mutate(undefined)} loading={recalc.isPending} disabled={!draft}>{t('bsa.action.recalculate')}</Button>
@@ -65,7 +65,7 @@ function Statements({ applicationId, analysisId, draft }: Props & { draft: boole
       </Card>
       <Card title={t('bsa.jobs.title')}>
         <Table rowKey="id" size="small" pagination={false} loading={jobs.isLoading} dataSource={jobs.data?.items ?? []}
-          columns={[{ title: '#', render: (_: unknown, __, i) => i + 1, width: 48 }, { title: t('bsa.col.status'), dataIndex: 'status', render: (v: string) => <Tag>{v}</Tag> }]} />
+          columns={[{ title: '#', render: (_: unknown, __, i) => i + 1, width: 48 }, { title: t('bsa.col.file'), dataIndex: 'fileName' }, { title: t('bsa.col.status'), dataIndex: 'status', render: (v: string) => <Tag color={v === 'FAILED' ? 'error' : undefined}>{v}</Tag> }, { title: t('bsa.col.error'), render: (_: unknown, j: { errors?: { message: string }[] }) => j.errors?.[0]?.message ?? '' }]} />
       </Card>
     </Flex>
   );

@@ -15,8 +15,16 @@ export interface BsaAnalysisBrief {
   id: string; status: 'DRAFT' | 'ANALYZED'; version: number; applicationId: string;
   summary: { dtiIncome: number; existingDebtServiceMonthly: number; dtiPercent: number | null; netCashFlowMonthly: number; pendingSuspiciousCount: number } | null;
 }
-export interface BsaJobBrief { id: string; fileName: string; status: string }
-export const fetchAnalysis = (id: string): Promise<BsaAnalysisBrief> => apiFetch(sc(id));
+export interface BsaJobBrief { id: string; fileName: string; status: string; errors?: { code: string; message: string }[] }
+/** scoring `GET /bsa/analyses/:id` хариу: `{ analysis: {...мета}, summary, ... }` (задгай биш) — UI-н хүлээдэг хавтгай хэлбэр рүү хөрвүүлнэ. */
+export interface ScoringAnalysisOverview {
+  analysis: { id: string; applicationId: string; status: 'DRAFT' | 'ANALYZED'; version: number };
+  summary: BsaAnalysisBrief['summary'];
+}
+export const toAnalysisBrief = (o: ScoringAnalysisOverview): BsaAnalysisBrief => ({
+  id: o.analysis.id, status: o.analysis.status, version: o.analysis.version, applicationId: o.analysis.applicationId, summary: o.summary ?? null,
+});
+export const fetchAnalysis = async (id: string): Promise<BsaAnalysisBrief> => toAnalysisBrief(await apiFetch<ScoringAnalysisOverview>(sc(id)));
 export const fetchJobs = (id: string): Promise<{ items: BsaJobBrief[] }> => apiFetch(`${sc(id)}/imports`);
 export const recalculate = (id: string): Promise<unknown> => apiFetch(`${sc(id)}/recalculate`, { method: 'POST', json: {} });
 export const fetchSuspicions = (id: string, q: { status?: ReviewStatus; flag?: SuspicionFlag; offset?: number; limit?: number }): Promise<BsaSuspicionListResponse> =>
