@@ -11,12 +11,9 @@ const orgId = SEED.org.id;
 const U = SEED.users;
 
 const consumerChecklist = [
-  { key: 'id_card', name: 'Иргэний үнэмлэхний хуулбар', required: true },
-  { key: 'salary_statement', name: 'Цалингийн тодорхойлолт', required: true },
   { key: 'application_form', name: 'Зээлийн хүсэлтийн маягт', required: true },
 ];
 const businessChecklist = [
-  { key: 'id_card', name: 'Иргэний үнэмлэхний хуулбар', required: true },
   { key: 'business_license', name: 'Бизнесийн гэрчилгээ', required: true },
   { key: 'application_form', name: 'Зээлийн хүсэлтийн маягт', required: true },
 ];
