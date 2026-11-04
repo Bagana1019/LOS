@@ -43,7 +43,8 @@ export function DecisionStep({ applicationId, onChanged }: Props) {
           <Descriptions.Item label={t('decide.method')}>{s.selectedMethod ?? '—'}</Descriptions.Item>
         </Descriptions>
         <Progress percent={d.progress.total ? Math.round((d.progress.completed / d.progress.total) * 100) : 0} size="small" format={() => `${d.progress.completed}/${d.progress.total}`} />
-        {d.progress.missing.length ? <Alert type="warning" showIcon style={{ marginTop: 8 }} message={t('decide.missing', { steps: d.progress.missing.map((k) => t(`application.step.${k}`)).join(', ') })} /> : null}
+        {d.progress.missing.length ? <Alert type="warning" showIcon style={{ marginTop: 8 }} message={t('decide.missing', { steps: d.progress.missing.map((k) => t(`application.step.${k}`)).join(', ') })}
+          description={Object.entries(d.progress.reasons).map(([k, rs]) => <div key={k}><strong>{t(`application.step.${k}`)}:</strong> {rs.join('; ')}</div>)} /> : null}
       </Card>
       {levels.length ? (
         <Card size="small" title={t('decide.flow')}>

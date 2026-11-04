@@ -10,6 +10,7 @@ import { ApplicationAccessService } from '../../shared/application-access.servic
 import { DomainEvents } from '../../shared/domain-events';
 import { OrgSettings } from '../../shared/org-settings';
 import { ApplicationStateMachine } from '../application/application-state-machine';
+import { CollateralGateService } from '../collateral/collateral-gate.service';
 import { missingRequiredSteps } from '../application/application.rules';
 import { customerDisplayName, customerRegisterNoMasked } from '../borrower/customer-directory';
 import { NotificationService } from '../notification/notification.service';
@@ -38,6 +39,7 @@ export class ApprovalService {
     private readonly notifications: NotificationService,
     private readonly contractNumbers: ContractNumberService,
     private readonly clock: Clock,
+    private readonly collateralGate: CollateralGateService,
   ) {}
 
   // ── эхлүүлэх: SUBMITTED → IN_APPROVAL (илгээсэн tx дотор дуудагдана) ─────────────────────────────
@@ -157,6 +159,9 @@ export class ApprovalService {
     const now = this.clock.now();
     const required = await this.settings.get(ctx.orgId, 'br7.required_steps');
     const missing = missingRequiredSteps(app.steps, required);
+    // Барьцааны алхам дутуу бол G0-ийн яг шалтгааныг харуулна (зөвхөн «Алхам дутуу» гэсэн мессеж хангалтгүй).
+    const reasons: Record<string, string[]> = {};
+    if (missing.includes('collateral')) reasons.collateral = (await this.collateralGate.evaluate(this.prisma, ctx.orgId, base.id)).gate.issues.map((i) => i.message);
     const all = await this.prisma.approvalRequest.findMany({ where: { applicationId }, include: { votes: { orderBy: { decidedAt: 'asc' } } }, orderBy: [{ version: 'asc' }, { levelNo: 'asc' }] });
     const reqs = all.filter((r) => r.version === app.version);
     const pool = await this.levelPool(this.prisma, app);
@@ -184,7 +189,7 @@ export class ApprovalService {
         amount: num(app.amount), termMonths: app.termMonths, interestRate: num(app.interestRate), monthlyPayment: num(app.schedules[0]?.rows[0]?.total ?? null),
         collateralCount: app.collaterals.length, selectedMethod: app.selectedCalcMethod,
       },
-      progress: { completed: required.length - missing.length, total: required.length, missing: missing as StepKey[] },
+      progress: { completed: required.length - missing.length, total: required.length, missing: missing as StepKey[], reasons },
       canSubmit: (app.status === 'DRAFT' || app.status === 'RETURNED') && missing.length === 0 && app.productId != null && app.amount != null, // G1 (FR-10.1)
       approval: { currentLevel: active?.levelNo ?? null, totalLevels: reqs.length, levels },
       versions: versionNos.map((version) => {

@@ -9,6 +9,7 @@ import { customerDisplayName } from '../borrower/customer-directory';
 import { num, isoDate } from './collateral-data';
 import { evaluateCollateralGate, type GateEvaluation, type GateProduct } from './collateral-gate';
 import { bestRole } from './collateral-ownership';
+import { planCollateralStepUpdate } from './collateral-steps';
 import { findCommittedPledges, findOtherPledges, groupByCollateral } from './collateral-pledge';
 import { toCollateralView, toGateCollateral, type CollateralRow } from './collateral-view';
 import { computeCollateralWarnings } from './collateral-warnings';
@@ -83,6 +84,20 @@ export class CollateralGateService {
       app, rows, product, gateProduct, evaluation, views, now,
       response: { items: rows.map((r) => views.get(r.id) as CollateralView), summary: evaluation.summary, gate: evaluation.gate, warnings },
     };
+  }
+
+  /**
+   * 5-р алхмыг (`collateral`) G0-ийн ШИНЭ төлөвтэй тулгана. Барьцааны бус өөрчлөлт (зээлийн дүн/бүтээгдэхүүн — LTV, checklist) G0-ийг
+   * өөрчилдөг тул мутаци бүрийг хүлээлгүй, нөхцөл хадгалах / илгээх үед дуудна. Хуучирсан `score`-д хүрэхгүй. Өөрчлөгдсөн бол true.
+   */
+  async syncStep(tx: Tx, userId: string | null, app: LoanApplication): Promise<boolean> {
+    const snap = await this.snapshot(tx, app);
+    const steps = await tx.loanApplicationStep.findMany({ where: { applicationId: app.id }, select: { id: true, stepKey: true, status: true, staleReason: true } });
+    const updates = planCollateralStepUpdate(steps, { gateComplete: snap.evaluation.gate.complete, scoreAffected: false }, this.clock.now());
+    for (const u of updates) {
+      await tx.loanApplicationStep.updateMany({ where: { id: u.id, status: { not: 'LOCKED' } }, data: { status: u.status, staleReason: u.staleReason, ...(u.completedAt !== undefined ? { completedAt: u.completedAt } : {}), updatedBy: userId } });
+    }
+    return updates.length > 0;
   }
 
   /** Модуль 10 (G1 илгээх) энэ функцийг дуудаж G0-г дахин шалгана. Хүсэлт олдохгүй бол Error. */

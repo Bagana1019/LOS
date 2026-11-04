@@ -10,6 +10,7 @@ import { ApplicationAccessService } from '../../shared/application-access.servic
 import { ApplicationStateMachine } from '../application/application-state-machine';
 import { isEditable } from '../application/application.rules';
 import { BsaService } from '../bsa/bsa.service';
+import { CollateralGateService } from '../collateral/collateral-gate.service';
 import { ScoreService } from '../score/score.service';
 import { checkLimits, INSTALLMENT_STEP, LOAN_STEP, planTermsSteps, termsChanged, type TermsCore } from './loan-terms.rules';
 import { PricingService } from './pricing/pricing.service';
@@ -37,6 +38,7 @@ export class LoanTermsService {
     private readonly pricing: PricingService,
     private readonly score: ScoreService,
     private readonly bsa: BsaService,
+    private readonly collateralGate: CollateralGateService,
   ) {}
 
   /** FR-5.1 · идэвхтэй бүтээгдэхүүн + хязгаар (сонгоход UI автоматаар бөглөнө). */
@@ -83,7 +85,7 @@ export class LoanTermsService {
       if (!isEditable(locked.status)) throw new ConflictException({ code: 'APPLICATION_NOT_EDITABLE', message: 'Хүсэлтийн төлөв өөрчлөгдсөн байна', details: { status: locked.status } });
       const next: TermsCore = { productId: product.id, currency: product.currency, amount: input.amount, termMonths: input.termMonths, interestRate, feeRate };
       const isChanged = termsChanged(coreOf(locked), next);
-      await tx.loanApplication.update({
+      const saved = await tx.loanApplication.update({
         where: { id: applicationId },
         data: {
           productId: product.id, currency: product.currency, amount: dec(input.amount), termMonths: input.termMonths, interestRate: dec(interestRate), feeRate: dec(feeRate),
@@ -97,6 +99,8 @@ export class LoanTermsService {
       for (const p of planTermsSteps(steps, isChanged, now)) {
         await tx.loanApplicationStep.update({ where: { id: p.id }, data: { status: p.status, staleReason: p.staleReason, ...(p.completedAt ? { completedAt: p.completedAt } : {}), updatedBy: ctx.userId } });
       }
+      // G0 (LTV, checklist) нь зээлийн дүн/бүтээгдэхүүнээс хамаарна → 5-р алхмыг шинэ нөхцөлтэй тулгана (FR-6.4)
+      await this.collateralGate.syncStep(tx, ctx.userId, saved);
       // FR-7.3: нөхцөл өөрчлөгдсөн бол ЭТХ хуучирсан (алхам нь COMPLETED биш байсан ч мөр өөрөө).
       if (isChanged) await tx.repaymentSchedule.updateMany({ where: { applicationId, isStale: false }, data: { isStale: true, updatedBy: ctx.userId } });
       await recordAudit(tx, {
