@@ -1,4 +1,5 @@
 'use client';
+import { BrandMark } from '../../theme/brand';
 import { Alert, App } from 'antd';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -44,7 +45,7 @@ export function MerchantShell({ children }: { children: ReactNode }) {
     <div className="mp-shell">
       <aside className="mp-side">
         <Link className="mp-brand" href="/merchant" aria-label={t('merchant.brand')}>
-          <span className="mp-brand-mark" aria-hidden="true">R</span>
+          <span className="mp-brand-mark" aria-hidden="true"><BrandMark size={26} variant="reversed" /></span>
           <span className="mp-brand-text">{t('merchant.brand')}<small>{t('merchant.brand.sub')}</small></span>
         </Link>
         <nav aria-label={t('merchant.nav.label')} className="mp-nav">
@@ -59,7 +60,7 @@ export function MerchantShell({ children }: { children: ReactNode }) {
 
       <header className="mp-head">
         <div className="mp-head-id">
-          <span className="mp-head-brand" aria-hidden="true">R</span>
+          <span className="mp-head-brand" aria-hidden="true"><BrandMark size={22} /></span>
           <div className="mp-head-text">
             <strong className="mp-head-name">{profile ? profile.merchant.name : t('merchant.brand')}</strong>
             {profile ? <span className="mp-head-store"><Icon name="store" size={14} />{storeLabel}</span> : null}

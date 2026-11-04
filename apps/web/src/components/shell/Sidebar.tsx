@@ -8,7 +8,7 @@ import { Layout, Menu, theme, type MenuProps } from 'antd';
 import type { MenuItem } from '@los/contracts';
 import { t } from '@los/ui';
 import { activeHref } from '../../lib/access';
-import { brand, BrandLogo } from '../../theme/brand';
+import { BrandLockup, BrandMark } from '../../theme/brand';
 import { menuIcon } from './menu-icons';
 
 type Item = Required<MenuProps>['items'][number];
@@ -62,8 +62,7 @@ export function Sidebar({ menu, collapsed, onCollapse, mobile = false }: Props) 
       aria-label={t('shell.nav')}
     >
       <Link href="/" onClick={() => { if (mobile) onCollapse(true); }} style={{ display: 'flex', alignItems: 'center', gap: 10, height: 56, padding: '0 16px', color: token.colorTextLightSolid, fontWeight: 600, fontSize: 16, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-        <BrandLogo size={32} />
-        <span className="los-brand-name">{brand.name}</span>
+        {collapsed && !mobile ? <BrandMark size={28} variant="reversed" /> : <BrandLockup height={44} onDark />}
       </Link>
       <Menu theme="dark" mode="inline" items={items} onClick={({ key, domEvent }) => go(key, domEvent)} selectedKeys={selected ? [selected] : []} openKeys={collapsed ? undefined : parents} />
     </Layout.Sider>

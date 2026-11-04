@@ -14,7 +14,7 @@ test.describe('нэвтрэлт', () => {
     await mockGateway(page);
     await page.goto('/los/report?x=1');
     await expect(page).toHaveURL(/\/login\?next=%2Flos%2Freport%3Fx%3D1$/);
-    await expect(page.getByRole('heading', { name: 'LOS Radix' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Lignum LOS' })).toBeVisible();
     await signIn(page);
     await expect(page).toHaveURL('/los/report?x=1');
     await expect(menuItem(page, 'Тайлан')).toBeVisible();

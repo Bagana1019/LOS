@@ -1,7 +1,8 @@
 import type { ThemeConfig } from 'antd';
+import { brand } from '../../theme/brand';
 // Сүр багатай, мэргэжлийн сэдэв. Өнгөнүүд merchant.css-ийн --mp-* хувьсагчтай нэг утгатай байх ёстой.
 
-export const MP_COLORS = { primary: '#0b63ce', navy: '#0f1f3d', bg: '#f4f6fa', border: '#e3e8ef', text: '#1a2433', muted: '#5b6778', success: '#0f7a55', warning: '#a96400', danger: '#c0342b', series2: '#0f7a55' } as const;
+export const MP_COLORS = { primary: brand.colors.forestMuted, navy: brand.colors.forest, bg: brand.colors.surface0, border: brand.colors.border, text: brand.colors.ink, muted: brand.colors.inkMuted, success: brand.status.success.fg, warning: brand.status.warning.fg, danger: brand.status.danger.fg, series2: brand.colors.mint } as const;
 
 export const merchantTheme: ThemeConfig = {
   token: {
@@ -13,16 +14,16 @@ export const merchantTheme: ThemeConfig = {
     colorTextSecondary: MP_COLORS.muted,
     colorBgLayout: MP_COLORS.bg,
     colorBorderSecondary: MP_COLORS.border,
-    borderRadius: 8,
-    borderRadiusLG: 12,
+    borderRadius: brand.radius.control,
+    borderRadiusLG: brand.radius.card,
     controlHeight: 40,
     controlHeightLG: 52,
     fontSize: 14,
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "DejaVu Sans", sans-serif',
+    fontFamily: brand.fonts.body,
   },
   components: {
-    Table: { headerBg: '#f7f9fc', headerColor: MP_COLORS.muted, rowHoverBg: '#f2f6fc' },
+    Table: { headerBg: brand.colors.surface0, headerColor: brand.colors.forestMuted, rowHoverBg: '#f1f8f5' },
     Card: { headerFontSize: 15 },
-    Button: { fontWeight: 600 },
+    Button: { fontWeight: 600, primaryColor: '#ffffff' },
   },
 };
