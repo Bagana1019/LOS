@@ -33,9 +33,6 @@ h1, h2, h3, h4, h5, .ant-typography h1, .ant-typography h2, .ant-typography h3, 
   outline: 2px solid var(--brand-mint, currentColor);
   outline-offset: 2px;
 }
-.ant-layout-sider-collapsed .los-brand-name {
-  display: none;
-}
 @media (max-width: 575px) {
   .los-user-name,
   .los-kbd-hint {
@@ -60,4 +57,21 @@ h1, h2, h3, h4, h5, .ant-typography h1, .ant-typography h2, .ant-typography h3, 
 /* Брэнд: идэвхтэй цэсний мөр минт дэвсгэр + #042F22 текст; задарсан эцэг цэс (submenu) ойн ногоон дээр цагаан хэвээр */
 .ant-menu-dark .ant-menu-submenu-selected > .ant-menu-submenu-title {
   color: #fff;
+}
+
+.los-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 479px) {
+  .los-header-brand {
+    display: none;
+  }
 }

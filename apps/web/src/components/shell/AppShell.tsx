@@ -10,6 +10,7 @@ import { t } from '@los/ui';
 import { canAccess, hasOwnShell, isPublicPath, isStandalonePath, safeNext } from '../../lib/access';
 import { useAuth } from '../../lib/auth/auth-context';
 import { NotificationBellContainer } from '../../features/notifications/NotificationBellContainer';
+import { BrandLockup } from '../../theme/brand';
 import { HeaderSearch } from './HeaderSearch';
 import { Sidebar } from './Sidebar';
 import { UserMenu } from './UserMenu';
@@ -36,6 +37,7 @@ function Frame({ me, children }: { me: MeResponse; children: ReactNode }) {
             aria-expanded={!collapsed}
             onClick={() => setCollapsed((c) => !c)}
           />
+          {mobile && collapsed ? <span className="los-header-brand"><BrandLockup height={30} /></span> : null}
           <HeaderSearch me={me} />
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
             <NotificationBellContainer />

@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useId, type CSSProperties } from 'react';
 import type { ThemeConfig } from 'antd';
 
 /**
@@ -107,46 +107,51 @@ const MARK_COLORS: Record<MarkVariant, [string, string]> = {
   mono: [brand.colors.forest, brand.colors.forest],
 };
 
+/** Брэндийн жинхэнэ SVG файлууд (`public/brand/`, брэндбүүк v1.0). Wordmark нь path болсон тул фонт шаардахгүй. Солих бол зөвхөн энд. */
+export const brandAssets = {
+  lockup: '/brand/lignum-lockup.svg', // цайвар дэвсгэр, viewBox 590×180
+  lockupReversed: '/brand/lignum-lockup-reversed.svg', // ойн ногоон дэвсгэр
+  stacked: '/brand/lignum-stacked.svg', // нэвтрэх, том гарчиг, viewBox 420×300
+} as const;
+const LOCKUP_RATIO = 590 / 180;
+const STACKED_RATIO = 420 / 300;
+
 /**
- * Тэмдэг: хоёр нэхэгдсэн цагираг (∞). Брэндбүүкийн §04-ийн геометрийг SVG-ээр сэргээсэн (шууд SVG эх файл PDF-д байхгүй):
- * цагираг r=26, зураас 13, төвүүд (36,40), (68,40); дээд огтлолцол дээр ойн ногоон, доод дээр минт дээгүүр.
- * Жинхэнэ `lignum-mark.svg` ирвэл ЗӨВХӨН энэ компонентийг солино.
+ * Тэмдэг (нарийссан sidebar, жижиг зай): хоёр нэхэгдсэн цагираг. `lignum-lockup.svg`-ийн тэмдгийн яг ижил геометр (mask-тай).
+ * Хамгаалалтын талбай ⅓-ийг тооцсон viewBox.
  */
 export function BrandMark({ size = 32, variant = 'color', title }: { size?: number; variant?: MarkVariant; title?: string }) {
   const [a, b] = MARK_COLORS[variant];
-  const id = `lg-clip-${variant}`;
+  const uid = useId().replace(/:/g, '');
   return (
     <svg width={size * (104 / 80)} height={size} viewBox="0 0 104 80" role={title ? 'img' : undefined} aria-hidden={title ? undefined : true} aria-label={title} focusable="false" style={{ flex: 'none', display: 'block' }}>
-      <defs><clipPath id={id}><rect x="44" y="0" width="16" height="32" /></clipPath></defs>
-      <g fill="none" strokeWidth="13">
-        <circle cx="36" cy="40" r="26" stroke={a} />
-        <circle cx="68" cy="40" r="26" stroke={b} />
-        <circle cx="36" cy="40" r="26" stroke={a} clipPath={`url(#${id})`} />
-      </g>
+      <defs>
+        <mask id={`${uid}r`} maskUnits="userSpaceOnUse" x="0" y="0" width="104" height="80">
+          <rect width="104" height="80" fill="#fff" />
+          <path d="M10 40 A26 26 0 0 1 62 40" fill="none" stroke="#000" strokeWidth="21" />
+        </mask>
+        <mask id={`${uid}l`} maskUnits="userSpaceOnUse" x="0" y="0" width="104" height="80">
+          <rect width="104" height="80" fill="#fff" />
+          <path d="M42 40 A26 26 0 0 0 94 40" fill="none" stroke="#000" strokeWidth="21" />
+        </mask>
+      </defs>
+      <circle cx="36" cy="40" r="26" fill="none" stroke={a} strokeWidth="13" mask={`url(#${uid}l)`} />
+      <circle cx="68" cy="40" r="26" fill="none" stroke={b} strokeWidth="13" mask={`url(#${uid}r)`} />
     </svg>
   );
 }
 
-/** Хуучин нэр хэвээр — тэмдэг (sidebar, нэвтрэх). */
+/** Хуучин нэр хэвээр — тэмдэг. */
 export function BrandLogo({ size = 32, variant = 'color' }: { size?: number; variant?: MarkVariant }) {
   return <BrandMark size={size} variant={variant} />;
 }
 
-/**
- * Хэвтээ лого: тэмдэг + "Lignum" (Manrope 800, −0.03em) + доор "LOS" (+0.36em, "Lignum"-ы зүүн захаас).
- * Wordmark-ийг брэндбүүк path болгосон; энд фонтоор бичсэн ТҮР хувилбар. `onDark` — ойн ногоон дэвсгэр дээр.
- * `textClassName` — нарийссан sidebar дээр текстийг нуух ангид.
- */
-export function BrandLockup({ size = 32, onDark = false, textClassName, hideText = false }: { size?: number; onDark?: boolean; textClassName?: string; hideText?: boolean }) {
-  return (
-    <span aria-label={brand.name} role="img" style={{ display: 'inline-flex', alignItems: 'center', gap: Math.round(size * 0.3), lineHeight: 1 }}>
-      <BrandMark size={size} variant={onDark ? 'reversed' : 'color'} />
-      {!hideText && (
-        <span className={textClassName} aria-hidden style={{ display: 'inline-flex', flexDirection: 'column', gap: Math.round(size * 0.06) }}>
-          <span style={{ fontFamily: brand.fonts.display, fontWeight: 800, letterSpacing: '-0.03em', fontSize: Math.round(size * 0.78), color: onDark ? '#fff' : brand.colors.forest }}>{brand.wordmark}</span>
-          <span style={{ fontFamily: brand.fonts.display, fontWeight: 700, letterSpacing: '0.36em', fontSize: Math.round(size * 0.3), color: onDark ? brand.colors.mint : brand.colors.forestMuted }}>{brand.sub}</span>
-        </span>
-      )}
-    </span>
-  );
+/** Хэвтээ лого (жинхэнэ SVG). `height` — px; `onDark` — ойн ногоон дэвсгэр дээр reversed хувилбар. Брэндбүүк: хамгийн бага өргөн 120px. */
+export function BrandLockup({ height = 40, onDark = false, className }: { height?: number; onDark?: boolean; className?: string }) {
+  return <img src={onDark ? brandAssets.lockupReversed : brandAssets.lockup} alt={brand.name} width={Math.round(height * LOCKUP_RATIO)} height={height} className={className} style={{ display: 'block', flex: 'none' }} />;
+}
+
+/** Босоо (stacked) лого — нэвтрэх хуудас гэх мэт. */
+export function BrandStacked({ width = 200, className }: { width?: number; className?: string }) {
+  return <img src={brandAssets.stacked} alt={brand.name} width={width} height={Math.round(width / STACKED_RATIO)} className={className} style={{ display: 'block', margin: '0 auto', maxWidth: '100%', height: 'auto' }} />;
 }

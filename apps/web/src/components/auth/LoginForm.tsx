@@ -7,7 +7,7 @@ import type { LoginRequest } from '@los/contracts';
 import { t } from '@los/ui';
 import { useAuth } from '../../lib/auth/auth-context';
 import { loginErrorKey } from '../../lib/auth/login-error';
-import { BrandLockup, brand } from '../../theme/brand';
+import { BrandStacked, brand } from '../../theme/brand';
 
 /** Амжилттай нэвтэрсний дараах шилжилтийг AppShell хийнэ (`next` параметрийг шалгаад). */
 export function LoginForm() {
@@ -29,9 +29,9 @@ export function LoginForm() {
   return (
     <main style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 16 }}>
       <Card style={{ width: '100%', maxWidth: 400 }} styles={{ body: { padding: 32 } }}>
-        <div style={{ marginBottom: 24 }}>
-          <BrandLockup size={44} />
-          <Typography.Title level={4} style={{ margin: '16px 0 0' }}>{brand.name}</Typography.Title>
+        <div style={{ marginBottom: 24, textAlign: 'center' }}>
+          <BrandStacked width={180} />
+          <Typography.Title level={4} style={{ margin: '8px 0 0' }} className="los-visually-hidden">{brand.name}</Typography.Title>
           <Typography.Text type="secondary">{t('auth.login.subtitle')}</Typography.Text>
         </div>
         {reason === 'expired' && !error && <Alert type="info" showIcon message={t('auth.session.expired')} style={{ marginBottom: 16 }} />}
