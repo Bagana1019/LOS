@@ -40,6 +40,7 @@ CLAUDE.md §6.5: PII-г foundation-ийн `encryptedField`-ийн түлхүүр
 | `MINIO_PORT` | Үгүй | — | Модуль 0-ийн `.env.example`-ийн `MINIO_ENDPOINT=<host>` + `MINIO_PORT=9000` хэлбэр. Зөвхөн порт байхгүй `host` хэлбэрт хэрэглэнэ (`host:port`, URL-д нөлөөлөхгүй) |
 | `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` | Endpoint-тэй бол тийм | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | docker-compose-ийн root хэрэглэгчийг fallback болгоно |
 | `MINIO_USE_SSL` | Үгүй | URL-ийн scheme, эс бөгөөс `false` | `true/false/1/0`. URL-ийн scheme-тэй зөрвөл алдаа |
+| `STORAGE_DRIVER` | Үгүй | — | `memory` бол (production-оос бусад үед) `MINIO_ENDPOINT`-ийг үл тоож in-memory хадгална — локал dev, dms-тэй ижил |
 | `MINIO_REGION` | Үгүй | — | Bucket үүсгэх бүс |
 | `BSA_BUCKET` | Үгүй | `bsa-statements` | S3 нэршлийн дүрэм (жижиг үсэг, тоо, `-`, `.`; 3–63). Анхны хэрэглээнд автоматаар үүснэ |
 | `BSA_OBJECT_MAX_BYTES` | Үгүй | 67108864 (64 MiB) | Нэг объектын дээд хэмжээ (upload-ын бодит хязгаар нь `BSA_MAX_UPLOAD_BYTES`) |
