@@ -16,7 +16,7 @@ export class BlacklistChecker {
     // Нэг харилцагч хэд хэдэн дүртэй байж болно — харилцагч тутамд нэг л удаа тулгана.
     for (const c of new Map(customers.map((x) => [x.id, x])).values()) byHash.set(c.registerNoHash, [...(byHash.get(c.registerNoHash) ?? []), c.id]);
     const rows = await db.blacklist.findMany({
-      where: { orgId, isActive: true, registerNoHash: { in: [...byHash.keys()] } },
+      where: { orgId, isActive: true, registerNoHash: { in: [...byHash.keys()] }, OR: [{ validUntil: null }, { validUntil: { gt: new Date() } }] },
       orderBy: [{ registeredAt: 'desc' }, { id: 'asc' }],
       select: { registerNoHash: true, reasonCode: true, listType: true, severity: true },
     });

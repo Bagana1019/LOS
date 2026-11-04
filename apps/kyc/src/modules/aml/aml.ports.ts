@@ -54,6 +54,7 @@ export interface BlacklistProjection {
   customerType: AmlSubject['subjectType'];
   name: string;
   listType: string;
+  severity: 'BLACK' | 'GREY';
   reasonCode: string;
   isActive: boolean;
   changedAt: Date;

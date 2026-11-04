@@ -2,7 +2,7 @@ import { ConflictException, Logger, NotFoundException, PayloadTooLargeException 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BlacklistEntry, BlacklistImportResult, DomainEvent } from '@los/contracts';
 import { hashRegisterNo } from '@los/database';
-import { adminCtx, entryInput, FixedClock, fakeCipher, gateReads, REGISTER, SequentialIds } from './test-support';
+import { adminCtx, entryInput, FixedClock, fakeCipher, gateReads, makeService, REGISTER, SequentialIds } from './test-support';
 import { BlacklistCreateBody, BlacklistListQuery, BlacklistPatchBody, MAX_IMPORT_ROWS } from './blacklist.schemas';
 import { BlacklistService, type ImportItem } from './blacklist.service';
 import { DuplicateBlacklistEntryError, type BlacklistRepository } from './blacklist.repository';
@@ -17,7 +17,7 @@ describe('BlacklistService', () => {
   let repo: InMemoryBlacklistRepository;
   let clock: FixedClock;
   let service: BlacklistService;
-  const make = (r: BlacklistRepository = repo) => new BlacklistService(r, fakeCipher, clock, new SequentialIds());
+  const make = (r: BlacklistRepository = repo) => makeService(r, clock, new SequentialIds());
 
   beforeEach(() => {
     repo = new InMemoryBlacklistRepository();
@@ -80,7 +80,7 @@ describe('BlacklistService', () => {
 
     it('re-activates an inactive entry with the new data instead of failing, keeping its id and creator', async () => {
       const first = await service.create(adminCtx({ userId: 'creator' }), input());
-      await service.deactivate(adminCtx(), first.id);
+      await service.deactivate(adminCtx(), first.id, 'test reason');
       clock.advance(HOUR);
 
       const again = await service.create(adminCtx({ userId: 'user-2', branchId: 'branch-2' }), input({ name: 'Бат Болдын', reasonCode: 'FRAUD_SUSPECT', reasonText: undefined }));
@@ -158,7 +158,7 @@ describe('BlacklistService', () => {
       const a = await service.create(adminCtx(), input());
       const b = await service.create(adminCtx(), input({ registerNo: 'АА87654321' }));
       const c = await service.create(adminCtx(), input({ listType: 'FRAUD' }));
-      await service.deactivate(adminCtx(), c.id);
+      await service.deactivate(adminCtx(), c.id, 'test reason');
 
       await expect(service.update(adminCtx(), b.id, patch({ registerNo: REGISTER }))).rejects.toBeInstanceOf(ConflictException);
       await expect(service.update(adminCtx(), a.id, patch({ listType: 'FRAUD' }))).rejects.toBeInstanceOf(ConflictException);
@@ -167,7 +167,7 @@ describe('BlacklistService', () => {
 
     it('re-registers on inactive -> active and deactivates on active -> inactive', async () => {
       const { id } = await service.create(adminCtx({ userId: 'creator' }), input());
-      expect((await service.update(adminCtx(), id, patch({ isActive: false }))).isActive).toBe(false);
+      expect((await service.update(adminCtx(), id, patch({ isActive: false, deactivationReason: 'test reason' }))).isActive).toBe(false);
       clock.advance(HOUR);
       const back = await service.update(adminCtx({ userId: 'user-2' }), id, patch({ isActive: true }));
 
@@ -185,7 +185,7 @@ describe('BlacklistService', () => {
   describe('deactivate', () => {
     it('sets isActive=false (never deletes) and emits an event', async () => {
       const { id } = await service.create(adminCtx(), input());
-      const entry = await service.deactivate(adminCtx({ userId: 'user-2' }), id);
+      const entry = await service.deactivate(adminCtx({ userId: 'user-2' }), id, 'test reason');
 
       expect(entry.isActive).toBe(false);
       expect(await repo.findById('org-1', id)).toMatchObject({ isActive: false, updatedBy: 'user-2' });
@@ -194,14 +194,14 @@ describe('BlacklistService', () => {
 
     it('is idempotent: a second call returns the entry and emits nothing', async () => {
       const { id } = await service.create(adminCtx(), input());
-      await service.deactivate(adminCtx(), id);
-      const again = await service.deactivate(adminCtx(), id);
+      await service.deactivate(adminCtx(), id, 'test reason');
+      const again = await service.deactivate(adminCtx(), id, 'test reason');
       expect(again.isActive).toBe(false);
       expect(repo.events).toHaveLength(2);
     });
 
     it('404s for an unknown id', async () => {
-      await expect(service.deactivate(adminCtx(), 'missing')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.deactivate(adminCtx(), 'missing', 'test reason')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -212,7 +212,7 @@ describe('BlacklistService', () => {
     const hash = hashRegisterNo(REGISTER);
     const expectedEvent = (entryId: string, over: Record<string, unknown>, ms: number, occurredMs = ms) => ({
       type: 'BlacklistEntryChanged', eventId: expect.any(String), version: 1, orgId: 'org-1', actorId: 'user-1', correlationId: 'corr-1',
-      entryId, registerNoHash: hash, customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', severity: 'BLACK', reasonCode: 'LATE_PAYMENT', isActive: true,
+      entryId, registerNoHash: hash, customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', severity: 'GREY', reasonCode: 'LATE_PAYMENT', isActive: true,
       occurredAt: iso(occurredMs), changedAt: iso(ms), ...over,
     });
     const strictlyIncreasing = () => {
@@ -227,7 +227,7 @@ describe('BlacklistService', () => {
         ['customerType only', () => service.update(adminCtx(), id, patch({ customerType: 'LEGAL_ENTITY' })), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY' }],
         ['reasonCode only', () => service.update(adminCtx(), id, patch({ reasonCode: 'FRAUD_SUSPECT' })), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT' }],
         ['listType only', () => service.update(adminCtx(), id, patch({ listType: 'FRAUD' })), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD' }],
-        ['deactivate', () => service.deactivate(adminCtx(), id), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD', isActive: false }],
+        ['deactivate', () => service.deactivate(adminCtx(), id, 'test reason'), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD', isActive: false }],
         ['reactivate', () => service.update(adminCtx(), id, patch({ isActive: true })), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD', isActive: true }],
       ];
       expect(repo.events).toHaveLength(1);
@@ -267,7 +267,7 @@ describe('BlacklistService', () => {
     it('emits a re-activating import with the new data and a fresh changedAt', async () => {
       const { id } = await service.create(adminCtx(), input());
       clock.advance(HOUR);
-      await service.deactivate(adminCtx(), id);
+      await service.deactivate(adminCtx(), id, 'test reason');
       clock.advance(HOUR);
       await service.importRows(adminCtx({ userId: 'user-2' }), [{ row: 1, data: entryInput({ name: 'Дахин' }) }]);
       expect(repo.events.at(-1)).toEqual(expectedEvent(id, { name: 'Дахин', actorId: 'user-2', isActive: true }, 2 * HOUR));
@@ -278,7 +278,7 @@ describe('BlacklistService', () => {
       const { id } = await service.create(adminCtx(), input());
       await service.update(adminCtx(), id, patch({ name: 'A' }));
       await service.update(adminCtx(), id, patch({ name: 'B' }));
-      await service.deactivate(adminCtx(), id);
+      await service.deactivate(adminCtx(), id, 'test reason');
 
       expect(repo.events.map((e) => e.changedAt)).toEqual([iso(0), iso(1), iso(2), iso(3)]);
       expect(repo.events.map((e) => e.occurredAt)).toEqual([iso(0), iso(0), iso(0), iso(0)]);
@@ -314,7 +314,7 @@ describe('BlacklistService', () => {
 
     it('lets exactly one of two overlapping PATCHes win and answers 409 to the other; the event stream matches the row', async () => {
       const { id } = await service.create(adminCtx(), input());
-      await service.deactivate(adminCtx(), id);
+      await service.deactivate(adminCtx(), id, 'test reason');
       clock.advance(HOUR);
 
       const results = await race(make(gateReads(repo, 2)), id);
@@ -336,7 +336,7 @@ describe('BlacklistService', () => {
 
     it('applies both changes after the loser retries, with strictly increasing changedAt', async () => {
       const { id } = await service.create(adminCtx(), input());
-      await service.deactivate(adminCtx(), id);
+      await service.deactivate(adminCtx(), id, 'test reason');
       clock.advance(HOUR);
 
       const results = await race(make(gateReads(repo, 2)), id);
@@ -355,7 +355,7 @@ describe('BlacklistService', () => {
     it('lets exactly one of a racing deactivate and rename win, and the last event equals the stored row', async () => {
       const { id } = await service.create(adminCtx(), input());
       const gated = make(gateReads(repo, 2));
-      const results = await Promise.allSettled([gated.deactivate(adminCtx(), id), gated.update(adminCtx(), id, patch({ name: 'Renamed' }))]);
+      const results = await Promise.allSettled([gated.deactivate(adminCtx(), id, 'test reason'), gated.update(adminCtx(), id, patch({ name: 'Renamed' }))]);
 
       expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected']);
       expect(repo.events).toHaveLength(2);
@@ -371,7 +371,7 @@ describe('BlacklistService', () => {
       await service.create(adminCtx(), input({ registerNo: 'УБ22222222', name: 'Сарангэрэл', listType: 'FRAUD' }));
       clock.advance(HOUR);
       const c = await service.create(adminCtx(), input({ registerNo: 'УБ33333333', name: 'Болдбаатар' }));
-      await service.deactivate(adminCtx(), c.id);
+      await service.deactivate(adminCtx(), c.id, 'test reason');
       await service.create(adminCtx({ orgId: 'org-2' }), input({ registerNo: 'УБ44444444', name: 'Бат Other org' }));
     });
 
@@ -425,7 +425,7 @@ describe('BlacklistService', () => {
     it('creates, updates (incl. re-activating) and skips identical active rows, one event per change', async () => {
       const existing = await service.create(adminCtx(), input({ registerNo: 'УБ11111111' }));
       const inactive = await service.create(adminCtx(), input({ registerNo: 'УБ22222222' }));
-      await service.deactivate(adminCtx(), inactive.id);
+      await service.deactivate(adminCtx(), inactive.id, 'test reason');
       const before = repo.events.length;
 
       const result = await service.importRows(adminCtx(), rows(

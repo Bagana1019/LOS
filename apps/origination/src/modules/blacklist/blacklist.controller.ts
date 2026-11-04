@@ -1,6 +1,6 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
-import { customerTypeOfRegister, normalizeRegisterNo, type BlacklistWarning } from '@los/contracts';
+import { BlacklistDeactivateBody, customerTypeOfRegister, normalizeRegisterNo, type BlacklistWarning } from '@los/contracts';
 import { Permissions, ZodValidationPipe } from '@los/nest-common';
 import { BlacklistAccessGuard, Ctx, Roles, WRITE_ROLES, type RequestContext } from './blacklist.context';
 import { BlacklistCreateBody, BlacklistImportJsonBody, BlacklistListQuery, BlacklistPatchBody, MAX_IMPORT_ROWS } from './blacklist.schemas';
@@ -61,11 +61,12 @@ export class BlacklistController {
     return this.blacklist.update(ctx, id, body);
   }
 
-  /** Устгахгүй — идэвхгүй болгоно (идэмпотент). */
-  @Delete(':id')
+  /** Q-133: устгахгүй — идэвхгүй болгоно (идэмпотент), шалтгаан заавал. */
+  @Post(':id/deactivate')
+  @HttpCode(200)
   @Roles(...WRITE_ROLES)
-  deactivate(@Param('id', PathParam) id: string, @Ctx() ctx: RequestContext) {
-    return this.blacklist.deactivate(ctx, id);
+  deactivate(@Param('id', PathParam) id: string, @Body(new ZodPipe(BlacklistDeactivateBody)) body: BlacklistDeactivateBody, @Ctx() ctx: RequestContext) {
+    return this.blacklist.deactivate(ctx, id, body.reason);
   }
 
   private toItems(body: unknown): ImportItem[] {

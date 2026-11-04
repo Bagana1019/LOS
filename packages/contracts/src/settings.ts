@@ -18,6 +18,7 @@ export const SETTING_REGISTRY = {
   'br10.disburse_not_exceed_approved': def(z.boolean(), true, 'BR-10 · олгох дүн ≤ батлагдсан дүн'),
   'br12.system_officer_label': def(z.string(), 'Систем', 'BR-12 · системээс үүссэн хүсэлтийн ЗЭЗ-ийн нэр'),
   // ── Ерөнхий ──
+  'blacklist.grey_valid_months': def(z.number().int().min(1).max(120), 12, 'Q-131 · Саарал бүртгэл хэдэн сарын дараа автоматаар идэвхгүй болох'),
   'inquiry.stale_days': def(z.number().int().positive(), 30, 'FR-3.5 · лавлагаа хуучрах хоног'),
   'draft.auto_archive_days': def(z.number().int().positive(), 30, 'FR-1.6 · ноорог автоматаар архивлах хоног'),
   'stress.rate_delta': def(z.number(), 0.05, 'FR-8.5 · stress test — хүү өсөх (+5 п.п.)'),

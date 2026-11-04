@@ -23,7 +23,7 @@ const fatf: FatfSnapshot = {
   ],
 };
 const listed = (over: Partial<BlacklistProjection> = {}): BlacklistProjection => ({
-  id: 'bl-1', orgId: 'org-1', registerNoHash: 'h', customerType: 'INDIVIDUAL', name: 'Тест Хэрэглэгч', listType: 'DELINQUENT',
+  id: 'bl-1', orgId: 'org-1', registerNoHash: 'h', customerType: 'INDIVIDUAL', name: 'Тест Хэрэглэгч', listType: 'DELINQUENT', severity: 'BLACK',
   reasonCode: 'OVERDUE_90', isActive: true, changedAt: new Date('2026-10-01T00:00:00Z'), ...over,
 });
 const input = (over: Partial<EngineInput> = {}): EngineInput => ({
@@ -235,7 +235,7 @@ describe('internal blacklist', () => {
   it('is warning-only by default (BR-9)', () => {
     const [h] = runScreening(input({ blacklist: [listed()] }));
     expect(h).toMatchObject({ list: 'INTERNAL_BLACKLIST', matchType: 'REGISTER_EXACT', score: 1, severity: 'WARNING', entryRef: 'bl-1', entryName: 'Тест Хэрэглэгч', listVersion: 'live' });
-    expect(h.details).toEqual({ listType: 'DELINQUENT', reasonCode: 'OVERDUE_90', customerType: 'INDIVIDUAL' });
+    expect(h.details).toEqual({ listType: 'DELINQUENT', severity: 'BLACK', reasonCode: 'OVERDUE_90', customerType: 'INDIVIDUAL' });
   });
   it('can be made blocking by policy', () => {
     expect(runScreening(input({ policy: policy({ blockOnInternalBlacklist: true }), blacklist: [listed()] }))[0].severity).toBe('BLOCKING');
@@ -524,5 +524,12 @@ describe('performance (DoS)', () => {
     // нэрийг in-place өөрчилбөл кэш хуучирсан утга өгөхгүй
     snapshot.entries[0].names[0].value = 'Completely Different Name';
     expect(runScreening(input({ un: snapshot })).map((h) => h.entryRef)).toEqual([]);
+  });
+});
+
+describe('internal blacklist severity (Q-135)', () => {
+  it('carries the BLACK/GREY severity into the hit details', () => {
+    const [grey] = runScreening(input({ blacklist: [listed({ severity: 'GREY' })] }));
+    expect(grey!.details).toMatchObject({ severity: 'GREY' });
   });
 });

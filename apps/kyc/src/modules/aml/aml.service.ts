@@ -54,12 +54,15 @@ export function toResult(s: StoredScreening): AmlScreeningResult {
 export function riskInputOf(subject: Pick<AmlSubject, 'isPep' | 'isRelatedParty'>, hits: Pick<AmlHit, 'list' | 'status' | 'details'>[]): AmlRiskInput {
   const live = hits.filter((h) => h.status !== 'FALSE_POSITIVE');
   const un = live.filter((h) => h.list === 'UN_SC');
+  const internal = live.filter((h) => h.list === 'INTERNAL_BLACKLIST');
   const fatf = live.filter((h) => h.list === 'FATF').map((h) => h.details['category']);
   return {
     isPep: subject.isPep,
     isRelatedParty: subject.isRelatedParty,
     fatfCategory: fatf.includes('CALL_FOR_ACTION') ? 'CALL_FOR_ACTION' : fatf.includes('INCREASED_MONITORING') ? 'INCREASED_MONITORING' : null,
-    internalBlacklistHit: live.some((h) => h.list === 'INTERNAL_BLACKLIST'),
+    internalBlacklistHit: internal.length > 0,
+    // Q-135: Хар нэг ч байвал Хар жин; зөвхөн Саарал бол Саарал жин
+    internalBlacklistSeverity: internal.some((h) => h.details['severity'] !== 'GREY') ? 'BLACK' : 'GREY',
     sanctions: un.some((h) => h.status === 'CONFIRMED') ? 'CONFIRMED' : un.length > 0 ? 'POSSIBLE' : 'NONE',
   };
 }

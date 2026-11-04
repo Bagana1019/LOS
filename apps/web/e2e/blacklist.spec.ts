@@ -5,7 +5,7 @@ import { guardConsole, MockApi } from './mock-api';
 
 const entry = (over: Record<string, unknown> = {}) => ({
   id: '55555555-5555-4555-8555-555555555551', orgId: 'org', registerNo: 'УБ12345678', customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', severity: 'BLACK',
-  reasonCode: 'OVERDUE_90', reasonText: 'Шүүхийн шийдвэр №12', isActive: true, registeredBy: 'u1', registeredAt: '2026-11-03T00:00:00.000Z', ...over,
+  reasonCode: 'OVERDUE_90', reasonText: 'Шүүхийн шийдвэр №12', source: 'COURT', validUntil: null, deactivationReason: null, pendingSeverity: null, isActive: true, registeredBy: 'u1', registeredAt: '2026-11-03T00:00:00.000Z', ...over,
 });
 
 test('цэс: Хар жагсаалт нь Тохиргооны яг дээр, дээд түвшинд; ADMIN нэмж, идэвхгүй болгоно', async ({ page }) => {
@@ -15,7 +15,7 @@ test('цэс: Хар жагсаалт нь Тохиргооны яг дээр, �
   const rows = [entry(), entry({ id: '55555555-5555-4555-8555-555555555552', registerNo: 'УБ99999999', name: 'Саарал Сараа', severity: 'GREY', reasonCode: 'SUSPICION', listType: 'WATCH' })];
   api.get('/blacklist', { json: { total: rows.length, items: rows } });
   api.post('/blacklist', ({ body }) => ({ status: 201, json: entry({ ...(body as object), id: '55555555-5555-4555-8555-555555555553' }) }));
-  api.on('DELETE', '/blacklist/:id', ({ params }) => ({ json: entry({ id: params.id, isActive: false }) }));
+  api.on('POST', '/blacklist/:id/deactivate', ({ params }) => ({ json: entry({ id: params.id, isActive: false }) }));
   api.get('/audit-logs', { json: { items: [{ id: 'a1', entity: 'blacklist', entityId: rows[0]!.id, action: 'CREATE', actorId: 'u1', at: '2026-11-03T01:00:00.000Z', applicationId: null, correlationId: null, beforeJson: null, afterJson: {} }], total: 1, page: 1, pageSize: 50 } });
 
   await page.goto('/');
@@ -42,8 +42,9 @@ test('цэс: Хар жагсаалт нь Тохиргооны яг дээр, �
   await expect.poll(() => api.lastCall('POST', '/blacklist')?.body).toMatchObject({ registerNo: 'УБ11112222', severity: 'GREY', reasonCode: 'SUSPICION', customerType: 'INDIVIDUAL' });
 
   await page.getByRole('button', { name: 'Идэвхгүй болгох' }).first().click();
+  await page.getByTestId('deactivation-reason').fill('Төлбөр барагдсан');
   await page.getByRole('button', { name: 'Идэвхгүй болгох' }).last().click();
-  await expect.poll(() => api.callsTo('DELETE', '/blacklist/:id').length).toBe(1);
+  await expect.poll(() => api.callsTo('POST', '/blacklist/:id/deactivate').length).toBe(1);
 
   await page.getByRole('button', { name: 'Түүх' }).first().click();
   await expect(page.getByText('Нэмсэн')).toBeVisible();

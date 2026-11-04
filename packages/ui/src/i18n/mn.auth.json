@@ -16,6 +16,7 @@
   "auth.session.expired": "Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү.",
   "auth.role.OFFICER": "Зээлийн эдийн засагч",
   "auth.role.BRANCH_MANAGER": "Салбарын захирал",
+  "auth.role.COMPLIANCE": "Комплаенс",
   "auth.role.APPROVER": "Батлагч",
   "auth.role.ADMIN": "Админ",
   "auth.scope.NONE": "Хандах эрхгүй",

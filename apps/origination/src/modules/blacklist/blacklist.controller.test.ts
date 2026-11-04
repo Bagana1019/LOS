@@ -12,9 +12,10 @@ import { BlacklistLookupService } from './blacklist-lookup.service';
 import { BlacklistModule } from './blacklist.module';
 import { BLACKLIST_PRISMA } from './blacklist.prisma';
 import { BLACKLIST_REPOSITORY } from './blacklist.repository';
-import { BLACKLIST_CLOCK, BLACKLIST_IDS, PII_CIPHER } from './blacklist.tokens';
+import { BLACKLIST_CLOCK, BLACKLIST_IDS, BLACKLIST_SETTINGS, PII_CIPHER } from './blacklist.tokens';
+import { MakerCheckerModule } from '../maker-checker/maker-checker.module';
 import { InMemoryBlacklistRepository } from './in-memory-blacklist.repository';
-import { entryInput, FixedClock, fakeCipher, REGISTER, SequentialIds } from './test-support';
+import { entryInput, FakeMakerCheckerModule, FixedClock, fakeCipher, fixedSettings, REGISTER, SequentialIds } from './test-support';
 
 const as = (roles: string, extra: Record<string, string> = {}) => ({ 'X-User-Id': 'user-1', 'X-Roles': roles, 'X-Org-Id': 'org-1', ...extra });
 const ADMIN = as('ADMIN');
@@ -107,6 +108,8 @@ describe('BlacklistController (HTTP)', () => {
     repo = new InMemoryBlacklistRepository();
     lookup = { warningsForRegisterNo: vi.fn(async () => []) };
     const moduleRef = await Test.createTestingModule({ imports: [BlacklistModule] })
+      .overrideModule(MakerCheckerModule).useModule(FakeMakerCheckerModule)
+      .overrideProvider(BLACKLIST_SETTINGS).useValue(fixedSettings())
       .overrideProvider(BLACKLIST_PRISMA).useValue({})
       .overrideProvider(BLACKLIST_REPOSITORY).useValue(repo)
       .overrideProvider(PII_CIPHER).useValue(fakeCipher)
@@ -150,7 +153,7 @@ describe('BlacklistController (HTTP)', () => {
       const { body } = await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(201);
       await api().post('/api/blacklist').set(as(roles)).send(entryInput({ registerNo: 'АА87654321' })).expect(403);
       await api().patch(`/api/blacklist/${body.id}`).set(as(roles)).send({ name: 'x' }).expect(403);
-      await api().delete(`/api/blacklist/${body.id}`).set(as(roles)).expect(403);
+      await api().post(`/api/blacklist/${body.id}/deactivate`).send({ reason: 'test reason' }).set(as(roles)).expect(403);
       await api().post('/api/blacklist/import').set(as(roles)).send({ rows: [] }).expect(403);
       await api().post('/api/blacklist/import').set(as(roles, { 'Content-Type': 'text/csv' })).send(`${CSV_HEADER}\n`).expect(403);
     });
@@ -183,7 +186,7 @@ describe('BlacklistController (HTTP)', () => {
       const first = await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(201);
       await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(409);
 
-      await api().delete(`/api/blacklist/${first.body.id}`).set(ADMIN).expect(200);
+      await api().post(`/api/blacklist/${first.body.id}/deactivate`).send({ reason: 'test reason' }).set(ADMIN).expect(200);
       const again = await api().post('/api/blacklist').set(ADMIN).send(entryInput({ name: 'Шинэ' })).expect(201);
       expect(again.body).toMatchObject({ id: first.body.id, isActive: true, name: 'Шинэ' });
     });
@@ -256,7 +259,7 @@ describe('BlacklistController (HTTP)', () => {
     it('supports q (name and register), listType, isActive, limit and offset', async () => {
       await api().post('/api/blacklist').set(ADMIN).send(entryInput({ registerNo: 'УБ11111111', name: 'Бат Болд' })).expect(201);
       const fraud = await api().post('/api/blacklist').set(ADMIN).send(entryInput({ registerNo: 'УБ22222222', name: 'Сараа', listType: 'FRAUD' })).expect(201);
-      await api().delete(`/api/blacklist/${fraud.body.id}`).set(ADMIN).expect(200);
+      await api().post(`/api/blacklist/${fraud.body.id}/deactivate`).send({ reason: 'test reason' }).set(ADMIN).expect(200);
 
       const byName = await api().get('/api/blacklist').query({ q: 'болд' }).set(ADMIN).expect(200);
       expect(byName.body.items.map((i: { registerNo: string }) => i.registerNo)).toEqual(['УБ11111111']);
@@ -293,7 +296,7 @@ describe('BlacklistController (HTTP)', () => {
       const a = await api().post('/api/blacklist').set(ADMIN).send(entryInput({ registerNo: 'УБ11111111' })).expect(201);
       await api().post('/api/blacklist').set(ADMIN).send(entryInput({ registerNo: 'УБ22222222' })).expect(201);
 
-      const ok = await api().patch(`/api/blacklist/${a.body.id}`).set(ADMIN).send({ name: 'Засагдсан', isActive: false }).expect(200);
+      const ok = await api().patch(`/api/blacklist/${a.body.id}`).set(ADMIN).send({ name: 'Засагдсан', isActive: false, deactivationReason: 'test reason' }).expect(200);
       expect(ok.body).toMatchObject({ name: 'Засагдсан', isActive: false, registerNo: 'УБ11111111', listType: 'DELINQUENT' });
       await api().patch(`/api/blacklist/${a.body.id}`).set(ADMIN).send({ registerNo: 'УБ22222222' }).expect(409);
       await api().patch(`/api/blacklist/${a.body.id}`).set(ADMIN).send({ customerType: 'ROBOT' }).expect(400);
@@ -322,14 +325,14 @@ describe('BlacklistController (HTTP)', () => {
       await api().patch(`/api/blacklist/${body.id}`).set(ADMIN).send({ reasonText: 5 }).expect(400);
     });
 
-    it('deactivates on DELETE (never removes) and is idempotent', async () => {
+    it('deactivates on POST :id/deactivate (never removes) and is idempotent', async () => {
       const { body } = await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(201);
 
-      expect((await api().delete(`/api/blacklist/${body.id}`).set(ADMIN).expect(200)).body.isActive).toBe(false);
-      expect((await api().delete(`/api/blacklist/${body.id}`).set(ADMIN).expect(200)).body.isActive).toBe(false);
+      expect((await api().post(`/api/blacklist/${body.id}/deactivate`).send({ reason: 'test reason' }).set(ADMIN).expect(200)).body.isActive).toBe(false);
+      expect((await api().post(`/api/blacklist/${body.id}/deactivate`).send({ reason: 'test reason' }).set(ADMIN).expect(200)).body.isActive).toBe(false);
       expect((await api().get(`/api/blacklist/${body.id}`).set(ADMIN).expect(200)).body.isActive).toBe(false);
       expect(repo.events.map((e) => e.isActive)).toEqual([true, false]);
-      await api().delete('/api/blacklist/nope').set(ADMIN).expect(404);
+      await api().post('/api/blacklist/nope/deactivate').send({ reason: 'test reason' }).set(ADMIN).expect(404);
     });
   });
 
@@ -413,7 +416,7 @@ describe('BlacklistController (HTTP)', () => {
       await api().get('/api/blacklist/%00').set(ADMIN).expect(400);
       await api().get(`/api/blacklist/${body.id}%00`).set(ADMIN).expect(400);
       await api().patch('/api/blacklist/%00').set(ADMIN).send({ name: 'x' }).expect(400);
-      await api().delete('/api/blacklist/%00').set(ADMIN).expect(400);
+      await api().post('/api/blacklist/%00/deactivate').send({ reason: 'test reason' }).set(ADMIN).expect(400);
       expect((await api().get('/api/blacklist/missing').set(ADMIN)).status).toBe(404);
     });
 

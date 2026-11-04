@@ -39,7 +39,7 @@ export const NotificationType = ['APPROVAL_REQUESTED','RETURNED','APPROVED','DIS
 export type NotificationType = typeof NotificationType[number];
 export const RiskBand = ['GREEN','YELLOW','RED'] as const;
 export type RiskBand = typeof RiskBand[number];
-export const UserRole = ['OFFICER','BRANCH_MANAGER','APPROVER','ADMIN'] as const;
+export const UserRole = ['OFFICER','BRANCH_MANAGER','APPROVER','ADMIN','COMPLIANCE'] as const;
 export type UserRole = typeof UserRole[number];
 
 // ── docs/03-д баганы тайлбар хэлбэрээр байгаа (`A | B | C`) утгууд — Prisma-д String, энд цорын ганц эх сурвалж ──

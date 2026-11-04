@@ -1,12 +1,16 @@
 import { type MiddlewareConsumer, Module, type NestModule, RequestMethod } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { decryptedField, encryptedField } from '@los/database';
+import { MakerCheckerModule } from '../maker-checker/maker-checker.module';
+import { BlacklistEscalationHandler } from './blacklist-escalation.handler';
+import { BlacklistExpirySweeper } from './blacklist-expiry.sweeper';
+import { PrismaBlacklistSettings } from './blacklist-settings';
 import { BlacklistController } from './blacklist.controller';
 import { BlacklistLookupService } from './blacklist-lookup.service';
 import { blacklistPrismaProvider } from './blacklist.prisma';
 import { BLACKLIST_REPOSITORY } from './blacklist.repository';
 import { BlacklistService } from './blacklist.service';
-import { BLACKLIST_CLOCK, BLACKLIST_IDS, PII_CIPHER, type Clock, type IdGenerator, type PiiCipher } from './blacklist.tokens';
+import { BLACKLIST_CLOCK, BLACKLIST_IDS, BLACKLIST_SETTINGS, PII_CIPHER, type Clock, type IdGenerator, type PiiCipher } from './blacklist.tokens';
 import { csvBodyMiddleware } from './csv-body.middleware';
 import { PrismaBlacklistRepository } from './prisma-blacklist.repository';
 
@@ -18,10 +22,14 @@ const ids: IdGenerator = { uuid: randomUUID };
 
 /** Дотоод хар жагсаалт (FR-13.1, BR-9). Эзэмшигч origination; kyc нь BlacklistEntryChanged event-ээр projection хөтлөнө. Хайлтыг (`BlacklistLookupService`) CustomerModule ашиглана. */
 @Module({
+  imports: [MakerCheckerModule],
   controllers: [BlacklistController],
   providers: [
     BlacklistService,
     BlacklistLookupService,
+    BlacklistEscalationHandler,
+    BlacklistExpirySweeper,
+    { provide: BLACKLIST_SETTINGS, useClass: PrismaBlacklistSettings },
     blacklistPrismaProvider,
     { provide: BLACKLIST_REPOSITORY, useClass: PrismaBlacklistRepository },
     { provide: PII_CIPHER, useValue: cipher },

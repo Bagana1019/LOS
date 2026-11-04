@@ -107,7 +107,7 @@ function derivingReview(s: StoredScreening, h: AmlHit, status: HitReviewCommand[
 
 function projection(over: Partial<BlacklistProjection> = {}): BlacklistProjection {
   return {
-    id: nextId(), orgId: ORG, registerNoHash: 'hash-1', customerType: 'INDIVIDUAL', name: 'Debtor One', listType: 'DELINQUENT',
+    id: nextId(), orgId: ORG, registerNoHash: 'hash-1', customerType: 'INDIVIDUAL', name: 'Debtor One', listType: 'DELINQUENT', severity: 'BLACK',
     reasonCode: 'OVERDUE_90', isActive: true, changedAt: T('2026-03-01T00:00:00.000Z'), ...over,
   };
 }

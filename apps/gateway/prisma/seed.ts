@@ -16,7 +16,7 @@ async function main() {
   for (const b of Object.values(SEED.branches)) {
     await prisma.branch.upsert({ where: { orgId_code: { orgId: SEED.org.id, code: b.code } }, create: { ...b, orgId: SEED.org.id }, update: {} });
   }
-  for (const [code, name] of [['OFFICER', 'Зээлийн эдийн засагч'], ['BRANCH_MANAGER', 'Салбарын захирал'], ['APPROVER', 'Батлагч'], ['ADMIN', 'Админ']] as const) {
+  for (const [code, name] of [['OFFICER', 'Зээлийн эдийн засагч'], ['BRANCH_MANAGER', 'Салбарын захирал'], ['APPROVER', 'Батлагч'], ['ADMIN', 'Админ'], ['COMPLIANCE', 'Комплаенс']] as const) {
     await prisma.role.upsert({ where: { code }, create: { code, name }, update: {} });
   }
   const passwordHash = await hashPassword(password);

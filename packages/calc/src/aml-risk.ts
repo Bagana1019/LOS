@@ -3,7 +3,8 @@
 // Төрлүүд нь @los/contracts-ийн AmlPolicy['risk']-тэй бүтцээрээ таарна (calc нь contracts-ийн runtime-д найдахгүй).
 export interface AmlRiskWeights {
   pep: number; relatedParty: number; fatfIncreasedMonitoring: number; fatfCallForAction: number;
-  internalBlacklist: number; sanctionsPossible: number; sanctionsConfirmed: number;
+  /** Q-135: дотоод жагсаалтын жин — `internalBlacklist` = Хар (BLACK), `internalBlacklistGrey` = Саарал (GREY). */
+  internalBlacklist: number; internalBlacklistGrey: number; sanctionsPossible: number; sanctionsConfirmed: number;
 }
 export interface AmlRiskPolicy { weights: AmlRiskWeights; mediumFrom: number; highFrom: number }
 export interface AmlRiskInput {
@@ -11,6 +12,8 @@ export interface AmlRiskInput {
   isRelatedParty: boolean;
   fatfCategory: 'CALL_FOR_ACTION' | 'INCREASED_MONITORING' | null;
   internalBlacklistHit: boolean;
+  /** Идэвхтэй тохирлуудын хамгийн ноцтой түвшин; заагаагүй бол Хар гэж үзнэ (өмнөх үйлдэл). */
+  internalBlacklistSeverity?: 'BLACK' | 'GREY';
   /** POSSIBLE ба CONFIRMED нэгэн зэрэг үл тохиолдоно: CONFIRMED давамгайлна. */
   sanctions: 'NONE' | 'POSSIBLE' | 'CONFIRMED';
 }
@@ -35,7 +38,7 @@ export function amlRisk(input: AmlRiskInput, policy: AmlRiskPolicy): AmlRiskResu
   add(input.isRelatedParty, 'RELATED_PARTY', w.relatedParty);
   add(input.fatfCategory === 'INCREASED_MONITORING', 'FATF_INCREASED_MONITORING', w.fatfIncreasedMonitoring);
   add(input.fatfCategory === 'CALL_FOR_ACTION', 'FATF_CALL_FOR_ACTION', w.fatfCallForAction);
-  add(input.internalBlacklistHit, 'INTERNAL_BLACKLIST', w.internalBlacklist);
+  add(input.internalBlacklistHit, 'INTERNAL_BLACKLIST', input.internalBlacklistSeverity === 'GREY' ? w.internalBlacklistGrey : w.internalBlacklist);
   add(input.sanctions === 'POSSIBLE', 'SANCTIONS_POSSIBLE', w.sanctionsPossible);
   add(input.sanctions === 'CONFIRMED', 'SANCTIONS_CONFIRMED', w.sanctionsConfirmed);
 

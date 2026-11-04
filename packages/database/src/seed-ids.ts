@@ -11,6 +11,7 @@ export const SEED = {
     manager: { id: '00000000-0000-4000-8000-000000000203', username: 'manager', fullName: 'Салбарын захирал', roles: ['BRANCH_MANAGER'] as const, branch: 'head' as const },
     approver: { id: '00000000-0000-4000-8000-000000000204', username: 'approver', fullName: 'Батлагч', roles: ['APPROVER'] as const, branch: 'head' as const },
     admin: { id: '00000000-0000-4000-8000-000000000205', username: 'admin', fullName: 'Админ', roles: ['ADMIN'] as const, branch: 'head' as const },
+    compliance: { id: '00000000-0000-4000-8000-000000000206', username: 'compliance', fullName: 'Комплаенс', roles: ['COMPLIANCE'] as const, branch: 'head' as const },
   },
   products: {
     consumer: '00000000-0000-4000-8000-000000000301',

@@ -15,4 +15,4 @@ function useInvalidating<V, R>(fn: (v: V) => Promise<R>) {
 }
 export const useCreateBlacklist = () => useInvalidating((b: BlacklistEntryInput) => api.createBlacklistEntry(b));
 export const useUpdateBlacklist = () => useInvalidating((v: { id: string; body: BlacklistEntryUpdate }) => api.updateBlacklistEntry(v.id, v.body));
-export const useDeactivateBlacklist = () => useInvalidating((id: string) => api.deactivateBlacklistEntry(id));
+export const useDeactivateBlacklist = () => useInvalidating((v: { id: string; reason: string }) => api.deactivateBlacklistEntry(v.id, v.reason));
