@@ -37,7 +37,7 @@ Claude Code-д **нэг удаад нэг модуль** өгнө. Даалга�
 **AC**: unit: market 30,000,000 × haircut 0.7 = 21,000,000; LTV 50M/21M > 70% → алхам бүрдэхгүй; өмчлөгч өөр регистр → "Барьцаалагч бүртгэнэ үү" алдаа; checklist дутуу → PENDING; ижил registry_no-той хөрөнгө өөр идэвхтэй хүсэлтэд → 409.
 
 ## Модуль 7 — ЭТХ (FR-7)
-**Хийх**: `packages/calc/src/schedule.ts` — ANNUITY, EQUAL_PRINCIPAL, QUARTERLY, BULLET, grace_months, 30/360 эсвэл actual/365 (setting); UI параметр + хүснэгт + Excel; is_stale.
+**Хийх**: `packages/calc/src/schedule.ts` — ANNUITY, EQUAL_PRINCIPAL, QUARTERLY, BULLET, grace_months, actual/365 (анхдагч, Q-031) эсвэл 30/360 (setting); UI параметр + хүснэгт + Excel; is_stale.
 **AC**: 30,000,000₮, 23.99%, 36 сар annuity → сарын төлбөр ≈ 1,176,828₮ (±1₮); нийт үлдэгдэл сүүлийн мөрөнд 0; Excel 36 мөр.
 
 ## Модуль 8 — Тооцоолол + Sosco Score (FR-8, BR-1…BR-5)

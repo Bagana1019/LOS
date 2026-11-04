@@ -80,7 +80,7 @@ export function buildSchedule(p: ScheduleParams): ScheduleRow[] {
   const first = parseYmd(p.firstPaymentDate, 'firstPaymentDate');
   if (epochDay(first) <= epochDay(start)) throw new ScheduleError('FIRST_PAYMENT_BEFORE_START', 'Эхний төлбөрийн огноо олголтын огнооноос хойш байх ёстой');
 
-  const dayCount = p.dayCount ?? '30/360';
+  const dayCount = p.dayCount ?? 'ACT/365';
   const grace = p.graceMonths ?? 0;
   const principal = money(p.principal);
   const rate = new Decimal(p.annualRate).div(100);

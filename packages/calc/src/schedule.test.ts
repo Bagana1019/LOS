@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { annuityPayment, buildSchedule, summarizeSchedule, ScheduleError, type ScheduleParams } from './schedule';
 
-const base: ScheduleParams = { principal: 30_000_000, annualRate: 23.99, termMonths: 36, type: 'ANNUITY', startDate: '2026-01-01', firstPaymentDate: '2026-02-01' };
+const base: ScheduleParams = { principal: 30_000_000, annualRate: 23.99, termMonths: 36, type: 'ANNUITY', startDate: '2026-01-01', firstPaymentDate: '2026-02-01', dayCount: '30/360' };
 const pay = (p: Partial<ScheduleParams>) => buildSchedule({ ...base, ...p }).filter((r) => r.seq > 0);
 const code = (p: Partial<ScheduleParams>) => { try { buildSchedule({ ...base, ...p }); } catch (e) { return (e as ScheduleError).code; } return null; };
 
@@ -79,6 +79,11 @@ describe('buildSchedule · бусад төрөл', () => {
 });
 
 describe('хоног тооцох арга', () => {
+  it('анхдагч суурь = ACT/365 (Q-031)', () => {
+    const { dayCount: _omit, ...noDayCount } = base;
+    const r = buildSchedule({ ...noDayCount, principal: 1_000_000, annualRate: 36.5, termMonths: 2 }).filter((x) => x.seq > 0);
+    expect(r[0]).toMatchObject({ days: 31, interest: 31_000 });
+  });
   it('ACT/365: хоног = бодит, хүү = үлдэгдэл × хүү × хоног/365', () => {
     const r = pay({ dayCount: 'ACT/365', principal: 1_000_000, annualRate: 36.5, termMonths: 2, startDate: '2026-01-01', firstPaymentDate: '2026-02-01' });
     expect(r[0]).toMatchObject({ days: 31, interest: 31_000 });

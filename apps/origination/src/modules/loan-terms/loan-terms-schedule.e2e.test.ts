@@ -107,7 +107,7 @@ describe.skipIf(!hasTestDb)('loan terms (FR-5) + repayment schedule (FR-7) API',
       expect(editable).toBe(true);
       expect(schedule?.isStale).toBe(false);
       expect(schedule?.summary.installments).toBe(36);
-      expect(schedule?.params).toMatchObject({ principal: 30_000_000, annualRate: 23.99, termMonths: 36, dayCount: '30/360', endDate: '2029-01-01' });
+      expect(schedule?.params).toMatchObject({ principal: 30_000_000, annualRate: 23.99, termMonths: 36, dayCount: 'ACT/365', endDate: '2029-01-01' });
       expect(Math.abs(schedule!.rows[1]!.total - 1_176_828)).toBeLessThanOrEqual(1);
       expect(schedule!.rows[36]!.balance).toBe(0);
       expect(schedule!.rows[0]).toMatchObject({ seq: 0, disbursement: 30_000_000 });
