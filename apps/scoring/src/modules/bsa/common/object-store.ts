@@ -373,7 +373,9 @@ export function resetObjectStoreWarningsForTests(): void {
  */
 export function createObjectStore(env: EnvLike = process.env, options: CreateObjectStoreOptions = {}): ObjectStore {
   const production = isProduction(env);
-  const endpoint = envString(env, 'MINIO_ENDPOINT');
+  // Локал dev: `.env` дахь STORAGE_DRIVER=memory (dms-тэй ижил) үед MinIO байхгүй ч хуулга хадгална. Production-д үл тооно.
+  const forceMemory = !production && envString(env, 'STORAGE_DRIVER') === 'memory';
+  const endpoint = forceMemory ? undefined : envString(env, 'MINIO_ENDPOINT');
   if (endpoint === undefined && production) {
     throw new EnvConfigError('MINIO_ENDPOINT', 'is required when NODE_ENV=production (the in-memory store loses uploaded statements)');
   }

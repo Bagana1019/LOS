@@ -7,6 +7,8 @@
   "bsa.col.borrower": "Оролцогч",
   "bsa.col.role": "Үүрэг",
   "bsa.col.status": "Төлөв",
+  "bsa.col.file": "Файл",
+  "bsa.col.error": "Алдаа",
   "bsa.col.version": "Хувилбар",
   "bsa.col.dti": "ӨОХ %",
   "bsa.col.pending": "Хүлээгдэж буй дохио",

@@ -15,7 +15,7 @@ export interface BsaAnalysisBrief {
   id: string; status: 'DRAFT' | 'ANALYZED'; version: number; applicationId: string;
   summary: { dtiIncome: number; existingDebtServiceMonthly: number; dtiPercent: number | null; netCashFlowMonthly: number; pendingSuspiciousCount: number } | null;
 }
-export interface BsaJobBrief { id: string; fileName: string; status: string }
+export interface BsaJobBrief { id: string; fileName: string; status: string; errors?: { code: string; message: string }[] }
 /** scoring `GET /bsa/analyses/:id` хариу: `{ analysis: {...мета}, summary, ... }` (задгай биш) — UI-н хүлээдэг хавтгай хэлбэр рүү хөрвүүлнэ. */
 export interface ScoringAnalysisOverview {
   analysis: { id: string; applicationId: string; status: 'DRAFT' | 'ANALYZED'; version: number };
