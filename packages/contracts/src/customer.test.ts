@@ -103,8 +103,4 @@ describe('contact home address (4-level) and XYP civil id / clan name', () => {
     const bad = CustomerContactInput.safeParse({ relation: 'SPOUSE', firstName: 'Сараа', phone: '88112233', homeAddress: { province: 'Улаанбаатар' } });
     expect(bad.success).toBe(false);
   });
-  it('XypCitizen defaults missing clanName / civilId to null', () => {
-    const r = XypCitizen.parse({ registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', lastName: null, firstName: 'А', gender: null, birthDate: null, maritalStatus: null, familySize: null, activitySector: null, address: null, fetchedAt: '2026-01-01T00:00:00.000Z' });
-    expect(r).toMatchObject({ clanName: null, civilId: null });
-  });
 });

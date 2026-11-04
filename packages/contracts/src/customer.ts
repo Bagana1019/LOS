@@ -146,8 +146,8 @@ export const XypCitizenRequest = z.object({ registerNo: z.string().trim().min(1)
 export const XypCitizen = z.object({
   registerNo: z.string(), customerType: z.enum(CustomerType),
   lastName: z.string().nullable(), firstName: z.string(),
-  /** Ургийн овог, иргэний бүртгэлийн дугаар (ХУР) — хуучин fixture-д байхгүй бол null. */
-  clanName: z.string().nullish().transform((v) => v ?? null), civilId: z.string().nullish().transform((v) => v ?? null),
+  /** Ургийн овог, иргэний бүртгэлийн дугаар (ХУР); байхгүй бол null. */
+  clanName: z.string().nullable(), civilId: z.string().nullable(),
   gender: z.enum(Gender).nullable(), birthDate: z.string().nullable(),
   maritalStatus: z.enum(MaritalStatus).nullable(), familySize: z.number().int().nullable(),
   activitySector: z.string().nullable(), address: CustomerAddress.nullable(),
