@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import {
   CollateralListResponse, CollateralCandidatesResponse, ValuationHistoryResponse,
 } from '@los/contracts';
+import { CollateralGateService } from '../src/modules/collateral/collateral-gate.service';
 import { hasTestDb, resetDb, createCustomer, createBorrower, createApplication, ORG } from '../src/test-utils/factories';
 import {
   actors, apartmentDescription, apartmentProperty, bootCollateralKit, collateralApi, REGISTER, seedScenario, stepOf, url, vehicleDescription, type CollateralKit,
@@ -190,6 +191,22 @@ describe.skipIf(!hasTestDb)('collateral API (DB)', () => {
       expect(partial.gate.issues[0]!.details).toEqual({ missing: ['traffic_registry_extract'] });
       expect(partial.collateral.checklist.find((x) => x.key === 'traffic_registry_extract')).toMatchObject({ satisfied: false, documents: [] });
       expect((await stepOf(prisma(), s.app.id, 'collateral')).status).toBe('PENDING');
+    });
+
+    it('зээлийн дүн өөрчлөгдөхөд (барьцааны бус өөрчлөлт) 5-р алхам G0-ийн шинэ төлөвтэй тулгагдана (syncStep)', async () => {
+      const s = await seedScenario(prisma(), { amount: 10_000_000 });
+      expect((await completeVehicle(s)).gate.complete).toBe(true);
+      expect((await stepOf(prisma(), s.app.id, 'collateral')).status).toBe('COMPLETED');
+      const sync = () => prisma().$transaction(async (tx) => k.t.app.get(CollateralGateService).syncStep(tx, null, await tx.loanApplication.findUniqueOrThrow({ where: { id: s.app.id } })));
+      expect(await sync()).toBe(false); // өөрчлөлтгүй — идемпотент
+      // зээлийн дүн LTV-ээс хэтэрсэн: барьцаа өөрөө өөрчлөгдөөгүй ч G0 дутуу болно -> алхам PENDING (хуучин код COMPLETED хэвээр үлдээнэ)
+      await prisma().loanApplication.update({ where: { id: s.app.id }, data: { amount: 900_000_000 } });
+      expect(await sync()).toBe(true);
+      expect((await stepOf(prisma(), s.app.id, 'collateral')).status).toBe('PENDING');
+      // дүнг буцаахад: барьцааны хуудас «бүрдсэн» гэж харуулдаг ч хадгалсан алхам PENDING үлддэг байсан алдаа
+      await prisma().loanApplication.update({ where: { id: s.app.id }, data: { amount: 10_000_000 } });
+      expect(await sync()).toBe(true);
+      expect((await stepOf(prisma(), s.app.id, 'collateral')).status).toBe('COMPLETED');
     });
 
     it('AC5: ижил registry_no-той хөрөнгө өөр идэвхтэй хүсэлтэд -> 409', async () => {

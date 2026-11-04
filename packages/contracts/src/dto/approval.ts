@@ -35,7 +35,9 @@ export const DecisionView = z.object({
     amount: z.number().nullable(), termMonths: z.number().int().nullable(), interestRate: z.number().nullable(), monthlyPayment: z.number().nullable(),
     collateralCount: z.number().int(), selectedMethod: z.string().nullable(),
   }),
-  progress: z.object({ completed: z.number().int(), total: z.number().int(), missing: z.array(z.enum(StepKey)) }),
+  progress: z.object({ completed: z.number().int(), total: z.number().int(), missing: z.array(z.enum(StepKey)),
+    /** Дутуу алхам бүрийн яг шалтгаан (одоогоор зөвхөн `collateral`: G0 issue-ийн мессеж). */
+    reasons: z.record(z.string(), z.array(z.string())).default({}) }),
   canSubmit: z.boolean(),
   approval: z.object({ currentLevel: z.number().int().nullable(), totalLevels: z.number().int(), levels: z.array(ApprovalTimelineLevel) }),
   /** FR-10.4: хувилбарын түүх. */
