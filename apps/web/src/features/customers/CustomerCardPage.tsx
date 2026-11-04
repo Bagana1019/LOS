@@ -57,6 +57,8 @@ export function CustomerCardPage() {
 
       <Card size="small" title={t('customer.group.personal')} style={{ marginTop: 16 }}>
         <Descriptions size="small" column={{ xs: 1, md: 2 }}>
+          {c.customerType === 'INDIVIDUAL' ? <Descriptions.Item label={t('customer.field.clanName')}>{c.clanName ?? dash}</Descriptions.Item> : null}
+          {c.customerType === 'INDIVIDUAL' ? <Descriptions.Item label={t('customer.field.civilId')}>{c.civilId ?? dash}</Descriptions.Item> : null}
           <Descriptions.Item label={t('customer.field.gender')}>{c.gender ? t(`customer.gender.${c.gender}`) : dash}</Descriptions.Item>
           <Descriptions.Item label={t('customer.field.birthDate')}>{c.birthDate ?? dash}</Descriptions.Item>
           <Descriptions.Item label={t('customer.field.phone')}>{c.phone ?? dash}</Descriptions.Item>
@@ -91,7 +93,7 @@ export function CustomerCardPage() {
       {c.contacts.length ? (
         <Card size="small" title={t('customer.group.contacts')} style={{ marginTop: 16 }}>
           {c.contacts.map((k) => (
-            <div key={k.id}>{t(`customer.relation.${k.relation}`)}: {[k.lastName, k.firstName].filter(Boolean).join(' ')} · {k.phone}</div>
+            <div key={k.id}>{t(`customer.relation.${k.relation}`)}: {[k.lastName, k.firstName].filter(Boolean).join(' ')} · {k.phone}{k.homeAddress ? ` · ${addr(k.homeAddress)}` : ''}</div>
           ))}
         </Card>
       ) : null}

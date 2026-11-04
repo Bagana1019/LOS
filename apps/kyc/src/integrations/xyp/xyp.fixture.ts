@@ -10,6 +10,7 @@ const PATRONYMICS = ['Болд', 'Дорж', 'Ганбат', 'Батсайхан
 const MALE = ['Бат-Эрдэнэ', 'Ганбаатар', 'Тэмүүлэн', 'Мөнхбат', 'Амарсанаа', 'Билгүүн'];
 const FEMALE = ['Сарнай', 'Оюунчимэг', 'Номин', 'Энхжин', 'Цэцэгмаа', 'Мөнхзул'];
 const COMPANIES = ['Тэнгэр', 'Алтан говь', 'Хөх тэнгэр', 'Монгол шуудан', 'Эрдэнэ трейд', 'Номин констракшн'];
+const CLANS = ['Боржигин', 'Хиад', 'Хотгойд', 'Тайчуд', 'Урианхай', 'Сүлд', 'Цагаан', 'Баргас'];
 const SECTORS = ['Худалдаа', 'Барилга', 'Хөдөө аж ахуй', 'Тээвэр', 'Үйлчилгээ', 'Үйлдвэрлэл'];
 const ADDRESSES: CustomerAddress[] = [
   { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'Хан-Уул хотхон, 12-р байр, 45 тоот' },
@@ -59,13 +60,13 @@ export function xypFixture(registerNo: string): XypCitizen | null | undefined {
 
   if (type === 'LEGAL_ENTITY') {
     return {
-      registerNo, customerType: type, lastName: null, firstName: `${pick(COMPANIES, seed)} ХХК`, gender: null, birthDate: null,
+      registerNo, customerType: type, lastName: null, clanName: null, civilId: null, firstName: `${pick(COMPANIES, seed)} ХХК`, gender: null, birthDate: null,
       maritalStatus: null, familySize: null, activitySector: pick(SECTORS, seed >>> 5), address, fetchedAt: XYP_FIXTURE_FETCHED_AT,
     };
   }
   const { birthDate, gender } = birthOf(registerNo, seed);
   return {
-    registerNo, customerType: type, lastName: pick(PATRONYMICS, seed >>> 7), firstName: pick(gender === 'MALE' ? MALE : FEMALE, seed >>> 11),
-    gender, birthDate, maritalStatus: pick(MARITAL, seed >>> 13), familySize: 1 + ((seed >>> 17) % 6), activitySector: null, address, fetchedAt: XYP_FIXTURE_FETCHED_AT,
+    registerNo, customerType: type, lastName: pick(PATRONYMICS, seed >>> 7), clanName: pick(CLANS, seed >>> 9), civilId: String(1000000000 + (seed % 9000000000)), firstName: pick(gender === 'MALE' ? MALE : FEMALE, seed >>> 11),
+    gender, birthDate, maritalStatus: pick(MARITAL, seed >>> 13), familySize: 1 + ((seed >>> 17) % 6), activitySector: pick(SECTORS, seed >>> 5), address, fetchedAt: XYP_FIXTURE_FETCHED_AT,
   };
 }

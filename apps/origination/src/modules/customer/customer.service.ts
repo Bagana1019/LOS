@@ -183,7 +183,7 @@ export class CustomerService {
   private columns(i: CustomerInput) {
     const residence = i.residenceSameAsOfficial ? i.officialAddress : i.residenceAddress;
     return {
-      lastName: i.lastName ?? null, firstName: i.firstName, gender: i.gender ?? null, birthDate: i.birthDate ? new Date(`${i.birthDate}T00:00:00Z`) : null,
+      lastName: i.lastName ?? null, clanName: i.clanName ?? null, civilId: i.civilId ?? null, firstName: i.firstName, gender: i.gender ?? null, birthDate: i.birthDate ? new Date(`${i.birthDate}T00:00:00Z`) : null,
       phone: i.phone ?? null, email: i.email ?? null, photoFileId: i.photoFileId ?? null, familySize: i.familySize ?? null, activitySector: i.activitySector ?? null,
       maritalStatus: i.maritalStatus ?? null, segment: i.segment ?? null, education: i.education ?? null, isRelatedParty: i.isRelatedParty, isPep: i.isPep,
       officialAddressJson: i.officialAddress ?? Prisma.DbNull, residenceAddressJson: residence ?? Prisma.DbNull, employmentJson: i.employment ?? Prisma.DbNull,
@@ -193,7 +193,7 @@ export class CustomerService {
   private contactRows(ctx: RequestContext, i: CustomerInput) {
     return i.contacts.map((c) => ({
       orgId: ctx.orgId, relation: c.relation, registerNoEncrypted: c.registerNo ? encryptedField(c.registerNo) : null, lastName: c.lastName ?? null, firstName: c.firstName,
-      phone: c.phone, employment: c.employment ?? null, homeAddress: c.homeAddress ?? null, createdBy: ctx.userId, updatedBy: ctx.userId,
+      phone: c.phone, employment: c.employment ?? null, homeAddressJson: c.homeAddress ?? Prisma.DbNull, createdBy: ctx.userId, updatedBy: ctx.userId,
     }));
   }
 }

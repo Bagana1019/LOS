@@ -29,7 +29,7 @@ const fakeXyp = {
     xypCalls.push(registerNo);
     if (registerNo.endsWith('00000000')) throw new DomainError('XYP_NOT_FOUND', 'ХУР-д олдсонгүй', 404);
     return {
-      registerNo, customerType: 'INDIVIDUAL', lastName: 'Цэрэн', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'DIVORCED', familySize: 3,
+      registerNo, customerType: 'INDIVIDUAL', lastName: 'Цэрэн', clanName: 'Хиад', civilId: '1234567890', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'DIVORCED', familySize: 3,
       activitySector: null, address: ADDRESS, fetchedAt: '2026-01-01T00:00:00.000Z',
     };
   },
@@ -172,9 +172,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       expect(res.body.prefilledFields.length).toBeGreaterThanOrEqual(10);
       expect(res.body).toMatchObject({
         registerNo: REGISTER, customerType: 'INDIVIDUAL', fetchedAt: '2026-01-01T00:00:00.000Z', existing: null, warnings: [],
-        prefill: { lastName: 'Цэрэн', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'DIVORCED', familySize: 3, officialAddress: ADDRESS },
+        prefill: { lastName: 'Цэрэн', clanName: 'Хиад', civilId: '1234567890', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'DIVORCED', familySize: 3, officialAddress: ADDRESS },
       });
-      expect([...res.body.missing].sort()).toEqual(['activitySector', 'education', 'email', 'employment', 'phone', 'photoFileId', 'residenceAddress', 'segment']);
+      expect([...res.body.missing].sort()).toEqual(['activitySector', 'education', 'email', 'employment', 'phone', 'photoFileId', 'residenceAddress']);
       expect(await db.customer.count()).toBe(0); // хадгалахгүй
     });
 
@@ -313,6 +313,14 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       const cleared = await http().put(`/api/customers/${company.id}`).set(as('officerA')).send({ lastName: '', education: '' });
       expect(cleared.status).toBe(200);
       expect(cleared.body).toMatchObject({ lastName: null, education: null, phone: '77001122' });
+    });
+
+    it('stores the emergency contact home address as 4 levels and returns it', async () => {
+      const res = await create(full({ registerNo: 'УБ91010212', contacts: [{ relation: 'SPOUSE', firstName: 'Сараа', phone: '88112233', homeAddress: ADDRESS }] }));
+      expect(res.status).toBe(201);
+      expect(res.body.contacts[0].homeAddress).toEqual(ADDRESS);
+      const bad = await create(full({ registerNo: 'УБ91010213', contacts: [{ relation: 'SPOUSE', firstName: 'Сараа', phone: '88112233', homeAddress: { province: 'Улаанбаатар' } }] }));
+      expect(bad.status).toBe(400);
     });
 
     it('concurrent edits of one customer are serialized: no lost update, no duplicated contacts', async () => {

@@ -4,19 +4,23 @@ import type { CreateCustomerRequest, CustomerInputRaw, XypCitizen } from '@los/c
 export function citizenPrefill(c: XypCitizen): Partial<CustomerInputRaw> {
   const p: Partial<CustomerInputRaw> = { customerType: c.customerType, registerNo: c.registerNo, firstName: c.firstName };
   if (c.lastName) p.lastName = c.lastName;
+  if (c.clanName) p.clanName = c.clanName;
+  if (c.civilId) p.civilId = c.civilId;
   if (c.gender) p.gender = c.gender;
   if (c.birthDate) p.birthDate = c.birthDate;
   if (c.maritalStatus) p.maritalStatus = c.maritalStatus;
   if (c.familySize) p.familySize = c.familySize;
   if (c.activitySector) p.activitySector = c.activitySector;
   if (c.address) p.officialAddress = c.address;
+  // DEMO: ХУР сегмент өгдөггүй — харилцагчийн төрлөөс санал болгоно (ЗЭЗ UI дээр өөрчилж болно)
+  p.segment = c.customerType === 'INDIVIDUAL' ? 'Жижиглэн' : 'ЖДҮ';
   return p;
 }
 
 /** ХУР-аас ирсэн утга ЭРХТЭЙ — ЗЭЗ-ийн гараар бичсэн нэр, төрсөн огноог дарна (бүртгэлийн үнэн зөв байдал). */
-const AUTHORITATIVE = ['customerType', 'registerNo', 'lastName', 'firstName', 'gender', 'birthDate', 'officialAddress'] as const;
+const AUTHORITATIVE = ['customerType', 'registerNo', 'lastName', 'firstName', 'clanName', 'civilId', 'gender', 'birthDate', 'officialAddress'] as const;
 /** ХУР хоцрох боломжтой (гэрлэлт, ам бүл) тул ЗЭЗ бөглөсөн бол түүнийг хадгалж, зөвхөн хоосныг нөхнө. */
-const FILL_ONLY = ['maritalStatus', 'familySize', 'activitySector'] as const;
+const FILL_ONLY = ['maritalStatus', 'familySize', 'activitySector', 'segment'] as const;
 
 /** `source=XYP` үед: хүсэлтийн талбар + ХУР. Бусад талбар (утас, имэйл, зураг, хөдөлмөр, холбоо барих) ЗЭЗ-ээс. */
 export function mergeXyp(req: Omit<CreateCustomerRequest, 'source'>, c: XypCitizen): Partial<CustomerInputRaw> {
