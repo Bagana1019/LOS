@@ -9,7 +9,7 @@ import {
 
 // Зөвхөн энэ repository-н ашигладаг delegate-ийн хэлбэр: unit typecheck нь generate хийсэн client шаардахгүй.
 // Бодит PrismaClient (.prisma/client-origination) үүнд бүтцээрээ таарна — blacklist.prisma.ts-д шалгагдана.
-type BlacklistRecord = Omit<BlacklistRow, 'customerType' | 'severity'> & { customerType: string; severity: string };
+type BlacklistRecord = Omit<BlacklistRow, 'customerType' | 'severity' | 'source' | 'pendingSeverity'> & { customerType: string; severity: string; source: string; pendingSeverity: string | null };
 interface BlacklistDelegate {
   findFirst(args: { where: object; orderBy?: object[] }): Promise<BlacklistRecord | null>;
   findMany(args: { where: object; orderBy: object[]; skip: number; take: number }): Promise<BlacklistRecord[]>;
@@ -22,7 +22,7 @@ interface AuditDelegate { create(args: { data: { orgId: string; entity: string; 
 interface Tx { blacklist: BlacklistDelegate; outbox: OutboxDelegate; auditLog: AuditDelegate }
 export interface BlacklistPrismaClient extends Tx { $transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> }
 
-const toRow = (r: BlacklistRecord): BlacklistRow => ({ ...r, customerType: r.customerType as AmlSubjectType, severity: r.severity === 'GREY' ? 'GREY' : 'BLACK' });
+const toRow = (r: BlacklistRecord): BlacklistRow => ({ ...r, customerType: r.customerType as AmlSubjectType, severity: r.severity === 'GREY' ? 'GREY' : 'BLACK', source: r.source as BlacklistRow['source'], pendingSeverity: r.pendingSeverity === 'GREY' ? 'GREY' : r.pendingSeverity === 'BLACK' ? 'BLACK' : null });
 /** Зөвхөн blacklist-ийн unique зөрчил: outbox-ийн PK давхардал (eventId) нь код алдаа тул Duplicate болгож далдлахгүй. */
 const isBlacklistUniqueViolation = (e: unknown) => {
   const err = e as { code?: unknown; meta?: { modelName?: unknown } } | null;
@@ -55,6 +55,11 @@ export class PrismaBlacklistRepository implements BlacklistRepository {
   async findById(orgId: string, id: string) {
     const r = await this.prisma.blacklist.findFirst({ where: { id, orgId } });
     return r && toRow(r);
+  }
+
+  async findExpired(now: Date, limit: number) {
+    const rows = await this.prisma.blacklist.findMany({ where: { isActive: true, validUntil: { lte: now } }, orderBy: [{ validUntil: 'asc' }, { id: 'asc' }], skip: 0, take: limit });
+    return rows.map(toRow);
   }
 
   async findByKey(orgId: string, registerNoHash: string, listType: string) {

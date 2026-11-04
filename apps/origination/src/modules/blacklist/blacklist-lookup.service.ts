@@ -18,7 +18,7 @@ export class BlacklistLookupService {
   }
 
   async warningsForHash(orgId: string, registerNoHash: string): Promise<BlacklistWarning[]> {
-    const rows = await this.db.blacklist.findMany({ where: { orgId, registerNoHash, isActive: true }, orderBy: [{ registeredAt: 'desc' }, { id: 'asc' }] });
+    const rows = await this.db.blacklist.findMany({ where: { orgId, registerNoHash, isActive: true, OR: [{ validUntil: null }, { validUntil: { gt: new Date() } }] }, orderBy: [{ registeredAt: 'desc' }, { id: 'asc' }] });
     return rows.map((r) => ({
       code: 'BLACKLISTED' as const, severity: 'WARNING' as const,
       listType: r.listType, listSeverity: r.severity === 'GREY' ? 'GREY' as const : 'BLACK' as const, reasonCode: r.reasonCode, reasonText: r.reasonText, registeredAt: r.registeredAt.toISOString(),
@@ -28,7 +28,7 @@ export class BlacklistLookupService {
   /** Жагсаалтын хуудас: аль хэш хар жагсаалтад байгааг нэг query-ээр. */
   async blacklistedHashes(orgId: string, hashes: string[]): Promise<Set<string>> {
     if (!hashes.length) return new Set();
-    const rows = await this.db.blacklist.findMany({ where: { orgId, isActive: true, registerNoHash: { in: hashes } }, select: { registerNoHash: true } });
+    const rows = await this.db.blacklist.findMany({ where: { orgId, isActive: true, registerNoHash: { in: hashes }, OR: [{ validUntil: null }, { validUntil: { gt: new Date() } }] }, select: { registerNoHash: true } });
     return new Set(rows.map((r) => r.registerNoHash));
   }
 }

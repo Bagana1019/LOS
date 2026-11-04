@@ -180,7 +180,7 @@ function matchBlacklist(policy: AmlPolicy, rows: BlacklistProjection[]): HitCand
       entryRef: r.id,
       entryName: r.name,
       matchedValue: null,
-      details: { listType: r.listType, reasonCode: r.reasonCode, customerType: r.customerType },
+      details: { listType: r.listType, severity: r.severity, reasonCode: r.reasonCode, customerType: r.customerType },
       listVersion: 'live',
     }))
     .sort((a, b) => a.entryRef.localeCompare(b.entryRef));

@@ -20,5 +20,6 @@ export function maskRegister(r: string): string {
   return `${r.slice(0, 2)}${'•'.repeat(r.length - 6)}${r.slice(-4)}`;
 }
 
-const AUDIT_ACTIONS = ['CREATE', 'UPDATE', 'DEACTIVATE', 'REACTIVATE'];
+export const SOURCES = ['COURT', 'CIB', 'INTERNAL', 'OTHER_NBFI'] as const;
+const AUDIT_ACTIONS = ['CREATE', 'UPDATE', 'DEACTIVATE', 'REACTIVATE', 'ESCALATE_REQUESTED', 'ESCALATE_APPLIED'];
 export const auditActionLabel = (a: string): string => (AUDIT_ACTIONS.includes(a) ? t(`blacklist.audit.${a}`) : a);

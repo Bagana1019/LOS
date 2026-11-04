@@ -10,3 +10,7 @@ export const BLACKLIST_IDS = Symbol('BLACKLIST_IDS');
 export interface PiiCipher { encrypt(plain: string): string; decrypt(cipher: string): string }
 export interface Clock { now(): Date }
 export interface IdGenerator { uuid(): string }
+
+/** Q-131: Саарал бүртгэлийн хугацаа (сар) — `setting` `blacklist.grey_valid_months` (BR/тохиргоог hardcode хийхгүй, CLAUDE.md §6.2). */
+export const BLACKLIST_SETTINGS = Symbol('BLACKLIST_SETTINGS');
+export interface BlacklistSettings { greyValidMonths(orgId: string): Promise<number> }

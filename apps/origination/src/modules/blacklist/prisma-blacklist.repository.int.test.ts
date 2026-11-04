@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hashRegisterNo } from '@los/database';
-import { adminCtx, entryInput, FixedClock, fakeCipher, gateReads } from './test-support';
+import { adminCtx, entryInput, FixedClock, fakeCipher, gateReads, makeService } from './test-support';
 import { ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import type { BlacklistPrismaClient } from './prisma-blacklist.repository';
 import { DuplicateBlacklistEntryError, StaleBlacklistEntryError, type BlacklistChangedEvent, type BlacklistRow } from './blacklist.repository';
 import { BlacklistCreateBody, BlacklistListQuery, BlacklistPatchBody } from './blacklist.schemas';
-import { BlacklistService } from './blacklist.service';
 import { PrismaBlacklistRepository } from './prisma-blacklist.repository';
 
 // Бодит Postgres (TEST_DATABASE_URL, migrate хийгдсэн — test/global-setup.ts) шаардана. Тест бүр өөрийн orgId-тай тул хүснэгт цэвэрлэхгүй.
@@ -33,7 +32,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
   const key = (registerNo: string) => hashRegisterNo(registerNo);
   const makeRow = (over: Partial<BlacklistRow> = {}): BlacklistRow => ({
     id: randomUUID(), orgId, branchId: 'branch-1', registerNoEncrypted: fakeCipher.encrypt('УБ12345678'), registerNoHash: key('УБ12345678'),
-    customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', severity: 'BLACK', reasonCode: 'LATE_PAYMENT', reasonText: 'text',
+    customerType: 'INDIVIDUAL', name: 'Бат Болд', listType: 'DELINQUENT', severity: 'BLACK', source: 'INTERNAL', validUntil: null, deactivationReason: null, pendingSeverity: null, reasonCode: 'LATE_PAYMENT', reasonText: 'text',
     registeredBy: 'user-1', registeredAt: new Date('2026-10-28T09:00:00.123Z'), isActive: true,
     createdAt: new Date('2026-10-28T09:00:00.123Z'), updatedAt: new Date('2026-10-28T09:00:00.123Z'), createdBy: 'user-1', updatedBy: 'user-1', ...over,
   });
@@ -284,11 +283,11 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
 
   describe('BlacklistService on Postgres', () => {
     it('imports with upsert semantics and writes one outbox event per created/updated row, none for skipped', async () => {
-      const service = new BlacklistService(repo, fakeCipher, clock, ids);
+      const service = makeService(repo, clock, ids);
       const ctx = adminCtx({ orgId });
       const first = await service.create(ctx, BlacklistCreateBody.parse(entryInput({ registerNo: 'УБ11111111' })));
       const second = await service.create(ctx, BlacklistCreateBody.parse(entryInput({ registerNo: 'УБ22222222' })));
-      await service.deactivate(ctx, second.id);
+      await service.deactivate(ctx, second.id, 'test reason');
       const eventsBefore = await prisma.outbox.count({ where: { payload: { path: ['orgId'], equals: orgId } } });
 
       const result = await service.importRows(ctx, [
@@ -306,7 +305,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
     });
 
     it('lists through the hash for a register query and keeps the stored register encrypted', async () => {
-      const service = new BlacklistService(repo, fakeCipher, clock, ids);
+      const service = makeService(repo, clock, ids);
       const ctx = adminCtx({ orgId });
       await service.create(ctx, BlacklistCreateBody.parse(entryInput({ registerNo: 'УБ11111111', name: 'Бат' })));
       await service.create(ctx, BlacklistCreateBody.parse(entryInput({ registerNo: 'УБ22222222', name: 'Дорж' })));
@@ -324,10 +323,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
         return rows.map((r) => r.payload as unknown as BlacklistChangedEvent).sort((a, b) => Date.parse(a.changedAt) - Date.parse(b.changedAt));
       };
       const setup = async (i: number) => {
-        const writer = new BlacklistService(repo, fakeCipher, new FixedClock(), ids);
+        const writer = makeService(repo, new FixedClock(), ids);
         const ctx = adminCtx({ orgId });
         const entry = await writer.create(ctx, BlacklistCreateBody.parse(entryInput({ registerNo: `УБ9000000${i}` })));
-        await writer.deactivate(ctx, entry.id);
+        await writer.deactivate(ctx, entry.id, 'test reason');
         return { ctx, id: entry.id, writer };
       };
       const toggle = BlacklistPatchBody.parse({ isActive: true });
@@ -336,7 +335,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
       it('lets exactly one of PATCH {isActive:true} and PATCH {reasonCode} win and answers 409 to the other (both read the same version)', async () => {
         for (let i = 0; i < 8; i++) {
           const { ctx, id } = await setup(i);
-          const gated = new BlacklistService(gateReads(repo, 2), fakeCipher, new FixedClock(), ids);
+          const gated = makeService(gateReads(repo, 2), new FixedClock(), ids);
 
           const results = await Promise.allSettled([gated.update(ctx, id, toggle), gated.update(ctx, id, correct)]);
 
@@ -359,7 +358,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
 
       it('applies both changes once the loser retries', async () => {
         const { ctx, id, writer } = await setup(20);
-        const gated = new BlacklistService(gateReads(repo, 2), fakeCipher, new FixedClock(), ids);
+        const gated = makeService(gateReads(repo, 2), new FixedClock(), ids);
         const results = await Promise.allSettled([gated.update(ctx, id, toggle), gated.update(ctx, id, correct)]);
         await writer.update(ctx, id, results[0].status === 'rejected' ? toggle : correct);
 

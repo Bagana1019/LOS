@@ -54,6 +54,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   // Батлагч: Батлах/Буцаах, олголт зөвшөөрөх; нөхцөл засах эрхгүй (FR-10.3).
   APPROVER: ['customer:read', 'application:read', 'approval:vote', 'disbursement:approve', 'blacklist:read', 'report:read', 'change-request:read'],
   ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage', 'change-request:read', 'erp-sync:manage'],
+  // Комплаенс (Q-128): хар/саарал жагсаалт бүртгэх, 4 нүдээр батлах, аудит харах. Зээл батлахгүй, тохиргоо өөрчлөхгүй.
+  COMPLIANCE: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'audit:read', 'change-request:read'],
 };
 
 export function permissionsFor(roles: readonly string[]): Permission[] {
@@ -67,7 +69,7 @@ export const hasPermission = (roles: readonly string[], p: Permission) => permis
 export const DataScope = ['NONE', 'OWN', 'BRANCH', 'ALL'] as const;
 export type DataScope = typeof DataScope[number];
 const SCOPE_RANK: Record<DataScope, number> = { NONE: 0, OWN: 1, BRANCH: 2, ALL: 3 };
-const ROLE_SCOPE: Record<UserRole, DataScope> = { OFFICER: 'OWN', BRANCH_MANAGER: 'BRANCH', APPROVER: 'ALL', ADMIN: 'ALL' };
+const ROLE_SCOPE: Record<UserRole, DataScope> = { OFFICER: 'OWN', BRANCH_MANAGER: 'BRANCH', APPROVER: 'ALL', ADMIN: 'ALL', COMPLIANCE: 'ALL' };
 export function resolveDataScope(roles: readonly string[]): DataScope {
   let best: DataScope = 'NONE';
   for (const r of roles) { const s = ROLE_SCOPE[r as UserRole]; if (s && SCOPE_RANK[s] > SCOPE_RANK[best]) best = s; }

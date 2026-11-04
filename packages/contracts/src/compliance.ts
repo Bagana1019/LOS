@@ -31,7 +31,9 @@ export const AmlRiskWeights = z.object({
   relatedParty: z.number().min(0).default(10),
   fatfIncreasedMonitoring: z.number().min(0).default(15),
   fatfCallForAction: z.number().min(0).default(40),
-  internalBlacklist: z.number().min(0).default(20),
+  /** Q-135: Хар = 30, Саарал = 15 (DEMO-оос эзэмшигчийн хариулт). */
+  internalBlacklist: z.number().min(0).default(30),
+  internalBlacklistGrey: z.number().min(0).default(15),
   sanctionsPossible: z.number().min(0).default(60),
   sanctionsConfirmed: z.number().min(0).default(100),
 });
@@ -221,12 +223,20 @@ const code = z.string().trim().min(1).max(32).regex(/^[A-Z0-9_]+$/);
  */
 export const BlacklistSeverity = ['BLACK', 'GREY'] as const;
 export type BlacklistSeverity = typeof BlacklistSeverity[number];
+/** Q-134: бүртгэлийн эх сурвалж. COURT = шүүх, CIB = ЗМС, INTERNAL = дотоод, OTHER_NBFI = өөр ББСБ. */
+export const BlacklistSource = ['COURT', 'CIB', 'INTERNAL', 'OTHER_NBFI'] as const;
+export type BlacklistSource = typeof BlacklistSource[number];
+/** Q-131: Саарал бүртгэлийн хугацаа (сар) — `setting` `blacklist.grey_valid_months`-ийн анхдагч. */
+export const DEFAULT_GREY_VALID_MONTHS = 12;
 export const BlacklistEntryInput = z.object({
   registerNo: z.string().trim().min(1).max(32),
   customerType: z.enum(AmlSubjectType),
   name: z.string().trim().min(1).max(200),
   listType: code.default('DELINQUENT'),
   severity: z.enum(BlacklistSeverity).default('BLACK'),
+  source: z.enum(BlacklistSource).default('INTERNAL'),
+  /** Хугацаа дуусах огноо. Заагаагүй бол Саарал = бүртгэсэн + 12 сар (setting), Хар = хугацаагүй. */
+  validUntil: z.string().datetime().nullable().optional(),
   reasonCode: code,
   reasonText: z.string().trim().max(2000).optional(),
 });
@@ -235,11 +245,20 @@ export type BlacklistEntryInput = z.infer<typeof BlacklistEntryInput>;
 export const BlacklistEntryUpdate = BlacklistEntryInput.partial().extend({
   reasonText: z.string().trim().max(2000).nullable().optional(),
   isActive: z.boolean().optional(),
+  /** Q-133: идэвхгүй болгоход (`isActive: false`) заавал. */
+  deactivationReason: z.string().trim().min(3).max(500).nullable().optional(),
 });
+/** Q-133: `POST /blacklist/:id/deactivate` */
+export const BlacklistDeactivateBody = z.object({ reason: z.string().trim().min(3, 'reason is required').max(500) });
+export type BlacklistDeactivateBody = z.infer<typeof BlacklistDeactivateBody>;
 export type BlacklistEntryUpdate = z.infer<typeof BlacklistEntryUpdate>;
 export const BlacklistEntry = BlacklistEntryInput.extend({
   id: z.string(),
   orgId: z.string(),
+  validUntil: z.string().datetime().nullable(),
+  deactivationReason: z.string().nullable(),
+  /** Q-132: Хар болгох хүсэлт 4 нүдээр батлагдахыг хүлээж буй (Хар болохоор хүлээгдэж буй түвшин). */
+  pendingSeverity: z.enum(BlacklistSeverity).nullable(),
   reasonText: z.string().nullable(),
   isActive: z.boolean(),
   registeredBy: z.string(),

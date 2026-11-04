@@ -30,6 +30,7 @@ export class BlacklistProjectionService implements OnModuleInit {
         customerType: e.customerType,
         name: e.name,
         listType: e.listType,
+        severity: e.severity,
         reasonCode: e.reasonCode,
         isActive: e.isActive,
         changedAt: new Date(e.changedAt),

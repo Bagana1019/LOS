@@ -59,7 +59,7 @@ describe('route access (UX guard; gateway and services enforce for real)', () =>
     expect(canAccess('/whatever', [])).toBe(true);
   });
   it('every role can open every page its own menu lists', () => {
-    for (const role of ['OFFICER', 'BRANCH_MANAGER', 'APPROVER', 'ADMIN'] as const) {
+    for (const role of ['OFFICER', 'BRANCH_MANAGER', 'APPROVER', 'ADMIN', 'COMPLIANCE'] as const) {
       const perms = permissionsFor([role]);
       for (const item of flattenMenu(menuFor([role]))) expect(canAccess(item.href, perms), `${role} ${item.href}`).toBe(true);
     }

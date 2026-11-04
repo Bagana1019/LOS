@@ -113,7 +113,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('kyc · POST /api/xyp/assets and
     const roles = Object.keys(ROLE_PERMISSIONS) as UserRole[];
 
     it('every role that holds customer:read may call both endpoints; the others get 403 (the table, not an assumption)', async () => {
-      expect(roles.filter((r) => ROLE_PERMISSIONS[r].includes('customer:read')).sort()).toEqual(['ADMIN', 'APPROVER', 'BRANCH_MANAGER', 'OFFICER']);
+      expect(roles.filter((r) => ROLE_PERMISSIONS[r].includes('customer:read')).sort()).toEqual(['ADMIN', 'APPROVER', 'BRANCH_MANAGER', 'COMPLIANCE', 'OFFICER']);
       for (const role of roles) {
         const allowed = ROLE_PERMISSIONS[role].includes('customer:read');
         for (const [path, body] of [['/api/xyp/assets', { registerNo: 'УБ90010112' }], ['/api/xyp/property', { propertyId: 'MOCK-УБ90010112-1' }]] as const) {

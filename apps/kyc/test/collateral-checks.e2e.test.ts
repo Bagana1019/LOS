@@ -81,7 +81,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('kyc · POST /api/collateral-che
   describe('permissions (customer:read)', () => {
     it('every role that holds customer:read may call it; the others get 403 (the table, not an assumption)', async () => {
       const roles = Object.keys(ROLE_PERMISSIONS) as UserRole[];
-      expect(roles.filter((r) => ROLE_PERMISSIONS[r].includes('customer:read')).sort()).toEqual(['ADMIN', 'APPROVER', 'BRANCH_MANAGER', 'OFFICER']);
+      expect(roles.filter((r) => ROLE_PERMISSIONS[r].includes('customer:read')).sort()).toEqual(['ADMIN', 'APPROVER', 'BRANCH_MANAGER', 'COMPLIANCE', 'OFFICER']);
       for (const role of roles) {
         const res = await send(app, headersFor(role), { assetType: 'VEHICLE', identifier: 'УЕН5246' });
         expect([role, res.status]).toEqual([role, ROLE_PERMISSIONS[role].includes('customer:read') ? 200 : 403]);

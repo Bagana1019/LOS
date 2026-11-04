@@ -191,6 +191,7 @@ model BlacklistProjection {
   customerType   String   @map("customer_type")
   name           String
   listType       String   @map("list_type")
+  severity       String   @default("BLACK")
   reasonCode     String   @map("reason_code")
   isActive       Boolean  @map("is_active")
   changedAt      DateTime @map("changed_at")

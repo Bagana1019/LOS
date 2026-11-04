@@ -16,7 +16,7 @@ export interface RequestContext {
 }
 
 /** FR-13.1: бичих, импортлох эрх — `blacklist:manage` (packages/contracts/src/auth.ts) зөвхөн ADMIN-д; gateway-н route-policy-той нийцнэ. Унших — нэвтэрсэн дурын дүр. */
-export const WRITE_ROLES: UserRole[] = ['ADMIN'];
+export const WRITE_ROLES: UserRole[] = ['ADMIN', 'COMPLIANCE']; // Q-128
 
 type Headers = Record<string, string | string[] | undefined>;
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)?.trim() || undefined;

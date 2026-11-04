@@ -19,7 +19,7 @@ describe('AmlPolicy', () => {
       risk: {
         weights: {
           pep: 25, relatedParty: 10, fatfIncreasedMonitoring: 15, fatfCallForAction: 40,
-          internalBlacklist: 20, sanctionsPossible: 60, sanctionsConfirmed: 100,
+          internalBlacklist: 30, internalBlacklistGrey: 15, sanctionsPossible: 60, sanctionsConfirmed: 100,
         },
         mediumFrom: 30,
         highFrom: 60,

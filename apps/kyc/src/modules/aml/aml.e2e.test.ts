@@ -275,7 +275,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       expect(await projection().handle(event())).toBe('APPLIED');
       expect(await projection().handle(event())).toBe('DUPLICATE');
       const res = await screen(screenBody()).expect(201);
-      expect(res.body).toMatchObject({ status: 'WARNING', blocking: false, riskScore: 20, riskLevel: 'LOW' });
+      expect(res.body).toMatchObject({ status: 'WARNING', blocking: false, riskScore: 30, riskLevel: 'MEDIUM' });
       expect(res.body.hits[0]).toMatchObject({ list: 'INTERNAL_BLACKLIST', matchType: 'REGISTER_EXACT', severity: 'WARNING', entryRef: 'bl-1', details: { listType: 'DELINQUENT', reasonCode: 'OVERDUE_90' } });
 
       // Хуучин (эрт) өөрчлөлт орж ирэхэд STALE; дараа нь идэвхгүй болгосон event хар жагсаалтаас гаргана.

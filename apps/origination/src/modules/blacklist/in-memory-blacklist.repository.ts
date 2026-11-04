@@ -27,6 +27,11 @@ export class InMemoryBlacklistRepository implements BlacklistRepository {
     return row && row.orgId === orgId ? { ...row } : null;
   }
 
+  async findExpired(now: Date, limit: number) {
+    return [...this.rows.values()].filter((r) => r.isActive && r.validUntil !== null && r.validUntil.getTime() <= now.getTime())
+      .sort((a, b) => a.validUntil!.getTime() - b.validUntil!.getTime() || a.id.localeCompare(b.id)).slice(0, limit).map((r) => ({ ...r }));
+  }
+
   async findByKey(orgId: string, registerNoHash: string, listType: string) {
     // PrismaBlacklistRepository-тай ижил: идэвхтэй мөр түрүүлж, дараа нь хамгийн сүүлд өөрчлөгдсөн, дараа нь id.
     const row = [...this.rows.values()]

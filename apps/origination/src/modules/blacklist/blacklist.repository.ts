@@ -1,4 +1,4 @@
-import type { AmlSubjectType, BlacklistSeverity, DomainEvent } from '@los/contracts';
+import type { AmlSubjectType, BlacklistSeverity, BlacklistSource, DomainEvent } from '@los/contracts';
 
 export const BLACKLIST_REPOSITORY = Symbol('BLACKLIST_REPOSITORY');
 
@@ -13,6 +13,13 @@ export interface BlacklistRow {
   name: string;
   listType: string;
   severity: BlacklistSeverity;
+  source: BlacklistSource;
+  /** Q-131: хугацаа дуусах огноо; null = хугацаагүй */
+  validUntil: Date | null;
+  /** Q-133 */
+  deactivationReason: string | null;
+  /** Q-132: Хар болох хүсэлт 4 нүдээр хүлээгдэж буй */
+  pendingSeverity: BlacklistSeverity | null;
   reasonCode: string;
   reasonText: string | null;
   registeredBy: string;
@@ -28,7 +35,7 @@ export type BlacklistChangedEvent = Extract<DomainEvent, { type: 'BlacklistEntry
 
 /** FR-13.5: аудитын мөр (origination.audit_log). Регистр/hash/нэр ОРОХГҮЙ — зөвхөн entryId ба ангиллын талбарууд (CLAUDE.md §6.5). */
 export interface BlacklistAudit {
-  action: 'CREATE' | 'UPDATE' | 'DEACTIVATE' | 'REACTIVATE';
+  action: 'CREATE' | 'UPDATE' | 'DEACTIVATE' | 'REACTIVATE' | 'ESCALATE_REQUESTED' | 'ESCALATE_APPLIED';
   actorId: string;
   correlationId: string;
   before: Record<string, unknown> | null;
@@ -66,6 +73,8 @@ export interface BlacklistRepository {
   list(orgId: string, filter: BlacklistListFilter): Promise<{ total: number; items: BlacklistRow[] }>;
   findById(orgId: string, id: string): Promise<BlacklistRow | null>;
   findByKey(orgId: string, registerNoHash: string, listType: string): Promise<BlacklistRow | null>;
+  /** Q-131: идэвхтэй боловч хугацаа нь дууссан бүртгэлүүд (бүх байгууллага; sweeper). */
+  findExpired(now: Date, limit: number): Promise<BlacklistRow[]>;
   /**
    * Мөрийг үүсгэх/шинэчлэх БА outbox event-ийг НЭГ транзакцид бичнэ (CLAUDE.md §3.2.4).
    * Event бичигдэхгүй бол мөр ч бичигдэхгүй. Unique давхардал → DuplicateBlacklistEntryError.

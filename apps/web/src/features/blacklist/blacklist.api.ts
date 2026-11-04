@@ -10,6 +10,7 @@ export type BlacklistPage = z.infer<typeof Page>;
 export const fetchBlacklist = (p: BlacklistListParams) => originationFetch<BlacklistPage>(`/blacklist${qs({ ...p })}`, { schema: Page });
 export const createBlacklistEntry = (body: BlacklistEntryInput) => originationFetch<BlacklistEntry>('/blacklist', { method: 'POST', body, schema: BlacklistEntry });
 export const updateBlacklistEntry = (id: string, body: BlacklistEntryUpdate) => originationFetch<BlacklistEntry>(`/blacklist/${encodeURIComponent(id)}`, { method: 'PATCH', body, schema: BlacklistEntry });
-export const deactivateBlacklistEntry = (id: string) => originationFetch<BlacklistEntry>(`/blacklist/${encodeURIComponent(id)}`, { method: 'DELETE', schema: BlacklistEntry });
+/** Q-133: шалтгаан заавал. */
+export const deactivateBlacklistEntry = (id: string, reason: string) => originationFetch<BlacklistEntry>(`/blacklist/${encodeURIComponent(id)}/deactivate`, { method: 'POST', body: { reason }, schema: BlacklistEntry });
 /** FR-13.5: нэг бичлэгийн өөрчлөлтийн түүх (origination audit_log; `audit:read` — ADMIN). */
 export const fetchBlacklistHistory = (id: string) => originationFetch<AuditLogPage>(`/audit-logs${qs({ entity: 'blacklist', entityId: id, pageSize: 50 })}`, { schema: AuditLogPage });

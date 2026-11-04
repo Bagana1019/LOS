@@ -760,6 +760,10 @@ model Blacklist {
   name                String
   listType            String   @map("list_type")
   severity            String   @default("BLACK") // BLACK | GREY (migration 20261104200000_blacklist_severity)
+  source              String   @default("INTERNAL") // COURT | CIB | INTERNAL | OTHER_NBFI (Q-134)
+  validUntil          DateTime? @map("valid_until") // Q-131: Саарал = +12 сар; null = хугацаагүй
+  deactivationReason  String?  @map("deactivation_reason") // Q-133
+  pendingSeverity     String?  @map("pending_severity") // Q-132: Хар болох хүсэлт 4 нүдээр хүлээгдэж буй
   reasonCode          String   @map("reason_code")
   reasonText          String?  @map("reason_text")
   registeredBy        String?  @map("registered_by")
@@ -774,6 +778,7 @@ model Blacklist {
   @@unique([orgId, registerNoHash, listType])
   @@index([orgId, registerNoHash])
   @@index([orgId, isActive])
+  @@index([isActive, validUntil])
   @@map("blacklist")
   @@schema("origination")
 }

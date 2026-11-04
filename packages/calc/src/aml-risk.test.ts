@@ -6,7 +6,7 @@ import { amlRisk, type AmlRiskInput, type AmlRiskPolicy } from './aml-risk';
 const DEFAULT_RISK: AmlPolicy['risk'] = {
   weights: {
     pep: 25, relatedParty: 10, fatfIncreasedMonitoring: 15, fatfCallForAction: 40,
-    internalBlacklist: 20, sanctionsPossible: 60, sanctionsConfirmed: 100,
+    internalBlacklist: 30, internalBlacklistGrey: 15, sanctionsPossible: 60, sanctionsConfirmed: 100,
   },
   mediumFrom: 30,
   highFrom: 60,
@@ -28,10 +28,11 @@ describe('amlRisk scoring (defaults: medium 30, high 60)', () => {
     ['PEP + related party', { isPep: true, isRelatedParty: true }, 35, 'MEDIUM', ['PEP', 'RELATED_PARTY']],
     ['FATF increased monitoring', { fatfCategory: 'INCREASED_MONITORING' }, 15, 'LOW', ['FATF_INCREASED_MONITORING']],
     ['FATF call for action', { fatfCategory: 'CALL_FOR_ACTION' }, 40, 'MEDIUM', ['FATF_CALL_FOR_ACTION']],
-    ['internal blacklist', { internalBlacklistHit: true }, 20, 'LOW', ['INTERNAL_BLACKLIST']],
+    ['internal blacklist (BLACK, default)', { internalBlacklistHit: true }, 30, 'MEDIUM', ['INTERNAL_BLACKLIST']],
+    ['internal blacklist (GREY)', { internalBlacklistHit: true, internalBlacklistSeverity: 'GREY' }, 15, 'LOW', ['INTERNAL_BLACKLIST']],
     ['sanctions possible', { sanctions: 'POSSIBLE' }, 60, 'HIGH', ['SANCTIONS_POSSIBLE']],
     ['sanctions confirmed', { sanctions: 'CONFIRMED' }, 100, 'HIGH', ['SANCTIONS_CONFIRMED']],
-    ['call for action + blacklist', { fatfCategory: 'CALL_FOR_ACTION', internalBlacklistHit: true }, 60, 'HIGH', ['FATF_CALL_FOR_ACTION', 'INTERNAL_BLACKLIST']],
+    ['call for action + blacklist (BLACK)', { fatfCategory: 'CALL_FOR_ACTION', internalBlacklistHit: true }, 70, 'HIGH', ['FATF_CALL_FOR_ACTION', 'INTERNAL_BLACKLIST']],
   ] as const)('%s -> %d %s', (_name, over, score, level, codes) => {
     const r = run(over);
     expect(r.score).toBe(score);
@@ -47,7 +48,7 @@ describe('amlRisk scoring (defaults: medium 30, high 60)', () => {
       { code: 'PEP', weight: 25 },
       { code: 'RELATED_PARTY', weight: 10 },
       { code: 'FATF_CALL_FOR_ACTION', weight: 40 },
-      { code: 'INTERNAL_BLACKLIST', weight: 20 },
+      { code: 'INTERNAL_BLACKLIST', weight: 30 },
       { code: 'SANCTIONS_CONFIRMED', weight: 100 },
     ]);
   });
