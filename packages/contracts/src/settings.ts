@@ -22,7 +22,7 @@ export const SETTING_REGISTRY = {
   'draft.auto_archive_days': def(z.number().int().positive(), 30, 'FR-1.6 · ноорог автоматаар архивлах хоног'),
   'stress.rate_delta': def(z.number(), 0.05, 'FR-8.5 · stress test — хүү өсөх (+5 п.п.)'),
   'stress.income_delta': def(z.number(), -0.2, 'FR-8.5 · stress test — орлого буурах (−20%)'),
-  'schedule.day_count': def(z.enum(['30/360', 'ACT/365']), '30/360', 'FR-7 · хоногийн тооцооны суурь'),
+  'schedule.day_count': def(z.enum(['30/360', 'ACT/365']), 'ACT/365', 'FR-7 · хоногийн тооцооны суурь'),
   'contract.branch_codes': def(z.record(z.string(), z.string().regex(/^[A-Za-z0-9]{1,12}$/)), {}, 'BR-11 · гэрээний дугаарын {BRANCH} код (салбарын id → код; admin тохируулна)'),
   'approval.default_sla_hours': def(z.number().int().positive(), 24, 'FR-10.2 · батлах түвшний SLA (цаг)'),
   // ── BSA (docs/02 §4, §5) ──
