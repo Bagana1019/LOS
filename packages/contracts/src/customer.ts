@@ -50,7 +50,9 @@ export const CustomerContactInput = z.object({
   relation: z.enum(CustomerContactRelation),
   registerNo: z.string().trim().transform(normalizeRegisterNo).refine((v) => !v || INDIVIDUAL_REGISTER.test(v), 'Регистр УБ12345678 хэлбэртэй').optional(),
   lastName: optText(100), firstName: text(100), phone: Phone,
-  employment: optText(200), homeAddress: optText(300),
+  employment: optText(200),
+  /** Гэрийн хаяг: оршин суугаа хаягтай ижил 4 түвшин (UI «Оршин суугаа хаягтай ижил» сонголтоор хуулна). */
+  homeAddress: CustomerAddress.optional(),
 });
 export type CustomerContactInput = z.infer<typeof CustomerContactInput>;
 
@@ -58,6 +60,8 @@ const CustomerFieldsShape = z.object({
   customerType: z.enum(CustomerType),
   registerNo: z.string().trim().min(1, REQUIRED).transform(normalizeRegisterNo),
   lastName: optText(100), // овог
+  clanName: optText(100), // ургийн овог (ХУР)
+  civilId: optText(30), // иргэний бүртгэлийн дугаар (ХУР)
   firstName: text(100), // нэр; байгууллагад — нэр
   gender: z.enum(Gender).optional(),
   birthDate: IsoDate.optional(),
@@ -123,7 +127,7 @@ export interface CustomerPage { items: CustomerSummary[]; total: number; page: n
 export interface CustomerContactView extends Omit<CustomerContactInput, 'registerNo'> { id: string; registerNo: string | null }
 export interface CustomerApplicationRef { id: string; appNo: string; status: string; role: string; amount: string | null; currency: string; contractNo: string | null; createdAt: string }
 export interface CustomerView {
-  id: string; customerType: CustomerType; registerNo: string; lastName: string | null; firstName: string;
+  id: string; customerType: CustomerType; registerNo: string; lastName: string | null; clanName: string | null; civilId: string | null; firstName: string;
   gender: Gender | null; birthDate: string | null; phone: string | null; email: string | null; photoFileId: string | null;
   familySize: number | null; activitySector: string | null; maritalStatus: MaritalStatus | null; segment: string | null; education: string | null;
   isRelatedParty: boolean; isPep: boolean; amlRiskScore: number | null;
@@ -142,6 +146,8 @@ export const XypCitizenRequest = z.object({ registerNo: z.string().trim().min(1)
 export const XypCitizen = z.object({
   registerNo: z.string(), customerType: z.enum(CustomerType),
   lastName: z.string().nullable(), firstName: z.string(),
+  /** Ургийн овог, иргэний бүртгэлийн дугаар (ХУР); байхгүй бол null. */
+  clanName: z.string().nullable(), civilId: z.string().nullable(),
   gender: z.enum(Gender).nullable(), birthDate: z.string().nullable(),
   maritalStatus: z.enum(MaritalStatus).nullable(), familySize: z.number().int().nullable(),
   activitySector: z.string().nullable(), address: CustomerAddress.nullable(),

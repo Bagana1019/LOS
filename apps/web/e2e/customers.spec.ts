@@ -65,3 +65,36 @@ test('шинэ харилцагч: регистр → ХУР → дутууг б
   expect(sent).toMatchObject({ registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', source: 'XYP', phone: '99112233', photoFileId: '33333333-3333-4333-8333-333333333333' });
   await expect(page.getByText('Харилцагчийн карт').or(page.getByText('Өмнөх зээлийн түүх'))).toBeVisible();
 });
+
+test('ХУР-аас татахад ургийн овог, иргэний бүртгэлийн дугаар гарна; холбоо барих хүний гэрийн хаяг 4 түвшинтэй', async ({ page }) => {
+  const api = new MockApi('OFFICER');
+  await api.install(page);
+  api.on('POST', '/customers/xyp-fetch', {
+    json: {
+      registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', fetchedAt: '2026-11-03T00:00:00.000Z', existing: null, warnings: [],
+      prefill: { lastName: 'Болд', clanName: 'Боржигин', civilId: '1234567890', firstName: 'Бат', gender: 'MALE', birthDate: '1990-01-01', officialAddress: addr, activitySector: 'Худалдаа', segment: 'Жижиглэн' },
+      prefilledFields: ['lastName', 'clanName', 'civilId', 'firstName', 'activitySector', 'segment'], missing: ['phone'],
+    },
+  });
+  await page.goto('/customer/new');
+  await page.getByTestId('customer-register').fill('уб90010112');
+  await page.getByTestId('customer-check').click();
+  await expect(page.locator('#clanName')).toHaveValue('Боржигин');
+  await expect(page.locator('#civilId')).toHaveValue('1234567890');
+  await expect(page.locator('#activitySector')).toHaveValue('Худалдаа');
+  await expect(page.locator('#segment')).toHaveValue('Жижиглэн');
+
+  // Хөдөлмөр эрхлэлт: бүх талбарын input нэг мөрийн дотор ижил түвшинд (шошго нугалагдсан ч доош шилжихгүй)
+  const y = async (id: string) => (await page.locator(id).boundingBox())!.y;
+  expect(await y('#employment_address')).toBe(await y('#employment_phone'));
+  expect(await y('#employment_organization')).toBe(await y('#employment_position'));
+
+  // Холбоо барих хүн: гэрийн хаяг 4 түвшин + «Оршин суугаа хаягтай ижил»
+  await page.getByLabel('Оршин суугаа хаяг нь албан ёсны хаягтай ижил').check();
+  await page.getByRole('button', { name: 'Холбоо барих хүн нэмэх' }).click();
+  await page.getByLabel('Оршин суугаа хаягтай ижил').check();
+  await expect(page.locator('#contacts_0_homeAddress_province')).toHaveValue('Улаанбаатар');
+  await expect(page.locator('#contacts_0_homeAddress_province')).toBeDisabled();
+  await expect(page.locator('#contacts_0_homeAddress_detail')).toHaveValue('Байр 1');
+  if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT, fullPage: true });
+});

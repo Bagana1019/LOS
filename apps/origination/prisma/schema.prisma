@@ -193,6 +193,8 @@ model Customer {
   registerNoEncrypted  String    @map("register_no_encrypted") // @los/database encryptedField (NFR-5)
   customerType         String    @map("customer_type") // CustomerType
   lastName             String?   @map("last_name")
+  clanName             String?   @map("clan_name") // ургийн овог (ХУР)
+  civilId              String?   @map("civil_id") // иргэний бүртгэлийн дугаар (ХУР)
   firstName            String    @map("first_name")
   gender               String?
   birthDate            DateTime? @map("birth_date") @db.Date
@@ -239,7 +241,8 @@ model CustomerContact {
   firstName           String   @map("first_name")
   phone               String?
   employment          String?
-  homeAddress         String?  @map("home_address")
+  homeAddress         String?  @map("home_address") // хуучин текст — зөвхөн уншихгүй, homeAddressJson-оор солигдсон
+  homeAddressJson     Json?    @map("home_address_json")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
   createdBy           String?  @map("created_by")

@@ -15,7 +15,7 @@ const parseJson = <T>(schema: { safeParse(v: unknown): { success: true; data: T 
 export function toContactView(c: CustomerContact): CustomerContactView {
   return {
     id: c.id, relation: c.relation as CustomerContactView['relation'], registerNo: c.registerNoEncrypted ? decryptedField(c.registerNoEncrypted) : null,
-    lastName: c.lastName ?? undefined, firstName: c.firstName, phone: c.phone ?? '', employment: c.employment ?? undefined, homeAddress: c.homeAddress ?? undefined,
+    lastName: c.lastName ?? undefined, firstName: c.firstName, phone: c.phone ?? '', employment: c.employment ?? undefined, homeAddress: parseJson(CustomerAddress, c.homeAddressJson) ?? undefined,
   };
 }
 
@@ -30,7 +30,7 @@ export function toView(c: Customer & { contacts: CustomerContact[] }, warnings: 
   const official = parseJson(CustomerAddress, c.officialAddressJson);
   const residence = parseJson(CustomerAddress, c.residenceAddressJson);
   return {
-    id: c.id, customerType: c.customerType as CustomerView['customerType'], registerNo: customerRegisterNo(c), lastName: c.lastName, firstName: c.firstName,
+    id: c.id, customerType: c.customerType as CustomerView['customerType'], registerNo: customerRegisterNo(c), lastName: c.lastName, clanName: c.clanName, civilId: c.civilId, firstName: c.firstName,
     gender: c.gender as Gender | null, birthDate: isoDate(c.birthDate), phone: c.phone, email: c.email, photoFileId: c.photoFileId,
     familySize: c.familySize, activitySector: c.activitySector, maritalStatus: c.maritalStatus as MaritalStatus | null, segment: c.segment, education: c.education,
     isRelatedParty: c.isRelatedParty, isPep: c.isPep, amlRiskScore: c.amlRiskScore,
@@ -46,7 +46,7 @@ export function toView(c: Customer & { contacts: CustomerContact[] }, warnings: 
 export function toRawInput(v: CustomerView): CustomerInputRaw {
   const n = <T>(x: T | null): T | undefined => x ?? undefined;
   return {
-    customerType: v.customerType, registerNo: v.registerNo, lastName: n(v.lastName), firstName: v.firstName, gender: n(v.gender), birthDate: n(v.birthDate),
+    customerType: v.customerType, registerNo: v.registerNo, lastName: n(v.lastName), clanName: n(v.clanName), civilId: n(v.civilId), firstName: v.firstName, gender: n(v.gender), birthDate: n(v.birthDate),
     phone: n(v.phone), email: n(v.email), photoFileId: n(v.photoFileId), familySize: n(v.familySize), activitySector: n(v.activitySector),
     maritalStatus: n(v.maritalStatus), segment: n(v.segment), education: n(v.education), isRelatedParty: v.isRelatedParty, isPep: v.isPep,
     officialAddress: n(v.officialAddress), residenceAddress: n(v.residenceAddress), residenceSameAsOfficial: v.residenceSameAsOfficial, employment: n(v.employment),

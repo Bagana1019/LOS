@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateCustomerRequest, CustomerInput, UpdateCustomerRequest, XypCitizen, customerTypeOfRegister, isValidRegisterNo, normalizePhone, normalizeRegisterNo } from './customer';
+import { CreateCustomerRequest, CustomerContactInput, CustomerInput, UpdateCustomerRequest, XypCitizen, customerTypeOfRegister, isValidRegisterNo, normalizePhone, normalizeRegisterNo } from './customer';
 
 const address = { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'Хан-Уул хотхон 12-45' };
 export const validIndividual = {
@@ -92,5 +92,15 @@ describe('request schemas', () => {
 describe('XypCitizen', () => {
   it('requires every key (nullable, not optional) so a partial upstream reply is caught at the boundary', () => {
     expect(XypCitizen.safeParse({ registerNo: 'УБ90010112', firstName: 'Бат' }).success).toBe(false);
+  });
+});
+
+describe('contact home address (4-level) and XYP civil id / clan name', () => {
+  const addr = { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'Хан-Уул хотхон' };
+  it('accepts a structured home address and rejects a partial one', () => {
+    const ok = CustomerContactInput.safeParse({ relation: 'SPOUSE', firstName: 'Сараа', phone: '88112233', homeAddress: addr });
+    expect(ok.success).toBe(true);
+    const bad = CustomerContactInput.safeParse({ relation: 'SPOUSE', firstName: 'Сараа', phone: '88112233', homeAddress: { province: 'Улаанбаатар' } });
+    expect(bad.success).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ import { KycXypLookup } from './xyp-lookup';
 const ctx = { userId: SEED.users.officerA.id, roles: ['OFFICER'], branchId: SEED.branches.head.id, orgId: SEED.org.id, customerId: null, correlationId: 'corr-1' };
 const citizen = {
   registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', lastName: 'Болд', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'MARRIED', familySize: 3,
-  activitySector: null, address: { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'x' }, fetchedAt: '2026-01-01T00:00:00.000Z',
+  clanName: null, civilId: null, activitySector: null, address: { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'x' }, fetchedAt: '2026-01-01T00:00:00.000Z',
 };
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 const lookup = (fetchFn: typeof fetch) => new KycXypLookup(new InternalHttpClient({ fetchFn, env: {} }));
