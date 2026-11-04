@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 104 80" width="104" height="80">
+<defs>
+  <mask id="cutRight" maskUnits="userSpaceOnUse" x="0" y="0" width="104" height="80">
+    <rect width="104" height="80" fill="#fff"/>
+    <path d="M10 40 A26 26 0 0 1 62 40" fill="none" stroke="#000" stroke-width="21"/>
+  </mask>
+  <mask id="cutLeft" maskUnits="userSpaceOnUse" x="0" y="0" width="104" height="80">
+    <rect width="104" height="80" fill="#fff"/>
+    <path d="M42 40 A26 26 0 0 0 94 40" fill="none" stroke="#000" stroke-width="21"/>
+  </mask>
+</defs>
+
+<g transform="translate(0 0) scale(1.0)">
+  <circle cx="36" cy="40" r="26" fill="none" stroke="#0A3A2A" stroke-width="13" mask="url(#cutLeft)"/>
+  <circle cx="68" cy="40" r="26" fill="none" stroke="#10B981" stroke-width="13" mask="url(#cutRight)"/>
+</g>
+</svg>
