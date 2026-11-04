@@ -6,7 +6,10 @@ import { StepStatus } from '../enums';
 
 const noNul = (s: string) => !s.includes('\u0000');
 const text = (max: number) => z.string().trim().min(1).max(max).refine(noNul, 'NUL тэмдэгт зөвшөөрөгдөхгүй');
-const money = z.number().finite().nonnegative().max(1e13).refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, '2 оронтой тоо байх ёстой');
+/** Мөнгөн дүнгийн оронгийн хязгаар (DEMO, Q-101): бүхэл хэсэг ≤ 10 орон (9,999,999,999.99), бутархай ≤ 2 орон. */
+export const MONEY_MAX_INTEGER_DIGITS = 10;
+export const MONEY_MAX = 10 ** MONEY_MAX_INTEGER_DIGITS - 0.01;
+const money = z.number().finite().nonnegative().max(MONEY_MAX, `Дүн ${MONEY_MAX_INTEGER_DIGITS} оронгоос ихгүй байх ёстой`).refine((v) => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6, '2 оронтой тоо байх ёстой');
 const rate4 = (max: number) => z.number().finite().min(0).max(max).refine((v) => Math.abs(v * 1e4 - Math.round(v * 1e4)) < 1e-6, '4 оронтой тоо байх ёстой');
 
 /** FR-5.2 · ЗМС зориулалтын ангилал. DEMO кодууд (Q-101) — бодит ЗМС-ийн жагсаалтыг ББСБ баталгаажуулна (docs/DECISIONS.md). */
