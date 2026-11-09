@@ -17,7 +17,7 @@
 | `DELETE /blacklist/:id` | зөвхөн ADMIN | Устгахгүй, `isActive=false` болгоно (идэмпотент), 200 |
 | `POST /blacklist/import` | зөвхөн ADMIN | `BlacklistImportResult`, 200; `text/csv` (≤ 5 MB) эсвэл JSON `{ rows: [...] }`; дээд 5000 мөр (хэтэрвэл 413). "CSV импорт" хэсгийг үз |
 
-**Бичих эрх.** `WRITE_ROLES = ['ADMIN']` — `@los/contracts` `ROLE_PERMISSIONS`-ийн `blacklist:manage` зөвхөн ADMIN-д байгаа ба gateway-н `route-policy.ts` (`/api/origination/blacklist`, `writeOnly`) мөн `blacklist:manage` шаарддаг тул хоёр давхарга нийцнэ. `BRANCH_MANAGER`, `OFFICER`, `APPROVER` бичиж чадахгүй (403). Модуль `@Permissions` биш дүрийн нэрээр (`@Roles`) шалгадаг.
+**Бичих эрх.** `WRITE_ROLES = ['ADMIN', 'COMPLIANCE', 'BRANCH_MANAGER']` (Q-128, Q-081) — `@los/contracts` `ROLE_PERMISSIONS`-ийн `blacklist:manage` эдгээр гурван дүрд байгаа ба gateway-н `route-policy.ts` (`/api/origination/blacklist`, `writeOnly`) мөн `blacklist:manage` шаарддаг тул хоёр давхарга нийцнэ. `OFFICER`, `APPROVER` бичиж чадахгүй (403). Модуль `@Permissions` биш дүрийн нэрээр (`@Roles`) шалгадаг.
 
 Бүх оролт `@los/contracts`-ийн zod схемээр шалгагдана. Модуль `ZodPipe` алдааг 400 `{ statusCode: 400, message: 'Validation failed', issues: [{ code, path, message, … }] }` (stack-гүй, хүлээн авсан утгагүй) гэж үүсгэдэг. **Бүтэн аппад** глобал `AllExceptionsFilter` бүх алдааг `{ code, message, details?, correlationId }` болгодог бөгөөд `issues`-ийг дамжуулдаггүй — клиент зөвхөн `{ code: 'BAD_REQUEST', message: 'Validation failed', correlationId }` авна; `issues` нь модулийг filter-гүйгээр суулгасан тестэд (`blacklist.controller.test.ts`) л харагдана (`docs/05` §10).
 

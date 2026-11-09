@@ -49,8 +49,8 @@ export type Permission = typeof Permission[number];
 export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   // ЗЭЗ: хүсэлт үүсгэх/бүрдүүлэх/илгээх, олголтын хүсэлт, BSA-ийн сэжигтэй гүйлгээ. Харах хүрээ: зөвхөн өөрийн хүсэлт.
   OFFICER: ['customer:read', 'customer:write', 'application:read', 'application:write', 'application:submit', 'disbursement:request', 'bsa:review', 'blacklist:read', 'report:read', 'change-request:read'],
-  // Салбарын захирал: салбарын хүсэлтийг харж, бага дүнгийн түвшинд батлана.
-  BRANCH_MANAGER: ['customer:read', 'application:read', 'approval:vote', 'blacklist:read', 'report:read', 'change-request:read'],
+  // Салбарын захирал: салбарын хүсэлтийг харж, бага дүнгийн түвшинд батлана. Q-081: хар жагсаалтад бичих/импортлох (blacklist:manage); Black оруулахад 4 нүд хэвээр.
+  BRANCH_MANAGER: ['customer:read', 'application:read', 'approval:vote', 'blacklist:read', 'blacklist:manage', 'report:read', 'change-request:read'],
   // Батлагч: Батлах/Буцаах, олголт зөвшөөрөх; нөхцөл засах эрхгүй (FR-10.3).
   APPROVER: ['customer:read', 'application:read', 'approval:vote', 'disbursement:approve', 'blacklist:read', 'report:read', 'change-request:read'],
   ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage', 'change-request:read', 'erp-sync:manage'],
