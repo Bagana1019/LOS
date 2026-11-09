@@ -199,7 +199,7 @@ describe('ID_CARD: регистрийн дугаар ↔ төрсөн огноо
     expect(r.fields.birthDate).toMatchObject({ value: '1985-06-15', raw: null });
     expect(r.fields.birthDate.note).toMatch(/регистр/);
     expect(r.fields.birthDate.confidence).toBeLessThan(r.fields.registerNo.confidence);
-    expect(r.fields.gender).toMatchObject({ value: 'M', raw: null });
+    expect(r.fields.gender.value).toBeNull(); // Q-074: хүйсийг регистрээс гаргахгүй
     expect(r.warnings).toEqual([]);
   });
 
@@ -209,10 +209,10 @@ describe('ID_CARD: регистрийн дугаар ↔ төрсөн огноо
     expect(r.warnings).toEqual(['birthDate: үнэмлэхний төрсөн огноо регистрийн дугаараас зөрж байна']);
   });
 
-  it('хүйс зөрвөл анхааруулга: ЖЮ85061512 (7-р цифр 1 = эр) ↔ "Эм"', () => {
+  it('хүйсийг регистртэй тулгахгүй: ЖЮ85061512 ↔ "Эм" → анхааруулга байхгүй', () => {
     const r = run('Регистрийн дугаар: ЖЮ85061512\nХүйс: Эм');
     expect(r.fields.gender.value).toBe('F');
-    expect(r.warnings).toEqual(['gender: үнэмлэхний хүйс регистрийн дугаараас зөрж байна']);
+    expect(r.warnings).toEqual([]);
   });
 
   it('2000 оноос хойш төрсөн (сар+20): УБ05210512 → 2005-01-05', () => {

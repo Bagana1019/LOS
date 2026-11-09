@@ -11,22 +11,23 @@ const citizen: XypCitizen = {
 describe('citizenPrefill (FR-2.2)', () => {
   it('maps XYP fields to form fields and skips nulls', () => {
     const p = citizenPrefill(citizen);
-    expect(p).toMatchObject({ customerType: 'INDIVIDUAL', registerNo: 'УБ90010112', lastName: 'Болд', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'MARRIED', familySize: 3 });
+    expect(p).toMatchObject({ customerType: 'INDIVIDUAL', registerNo: 'УБ90010112', lastName: 'Болд', firstName: 'Сарнай', birthDate: '1990-01-01', maritalStatus: 'MARRIED', familySize: 3 });
+    expect(p).not.toHaveProperty('gender'); // Q-074: хүйсийг бүртгэгч гараар сонгоно
     expect(p).not.toHaveProperty('activitySector');
     expect(p).toMatchObject({ clanName: 'Боржигин', civilId: '1234567890' }); // ургийн овог, иргэний бүртгэлийн дугаар
-    expect(leafPaths(p)).toHaveLength(15); // 11 энгийн (сегмент санал болгосон) + 4 хаягийн түвшин → "10+ талбар автоматаар"
+    expect(leafPaths(p)).toHaveLength(14); // 11 энгийн (сегмент санал болгосон) + 4 хаягийн түвшин → "10+ талбар автоматаар"
   });
   it('a ХУР-only prefill still fails validation on exactly the fields XYP cannot know', () => {
     const r = CustomerInput.safeParse(citizenPrefill(citizen));
     const missing = r.success ? [] : r.error.issues.map((i) => i.path.join('.'));
-    expect([...missing].sort()).toEqual(['activitySector', 'education', 'email', 'employment', 'phone', 'photoFileId', 'residenceAddress']);
+    expect([...missing].sort()).toEqual(['activitySector', 'education', 'email', 'employment', 'gender', 'phone', 'photoFileId', 'residenceAddress']);
   });
 });
 
 describe('mergeXyp', () => {
   it('XYP wins identity fields but keeps what the officer already filled for fill-only fields', () => {
     const merged = mergeXyp({ registerNo: 'УБ90010112', lastName: 'Хуурамч', firstName: 'Хуурамч', gender: 'MALE', birthDate: '1980-05-05', maritalStatus: 'SINGLE', phone: '99112233' }, citizen);
-    expect(merged).toMatchObject({ lastName: 'Болд', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'SINGLE', familySize: 3, phone: '99112233' });
+    expect(merged).toMatchObject({ lastName: 'Болд', firstName: 'Сарнай', gender: 'MALE', birthDate: '1990-01-01', maritalStatus: 'SINGLE', familySize: 3, phone: '99112233' });
   });
   it('does not blank a client value when XYP has nothing for it', () => {
     expect(mergeXyp({ registerNo: 'УБ90010112', activitySector: 'Худалдаа' }, citizen)).toMatchObject({ activitySector: 'Худалдаа' });
