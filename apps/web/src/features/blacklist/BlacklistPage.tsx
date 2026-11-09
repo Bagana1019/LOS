@@ -14,7 +14,7 @@ const { Title, Text, Paragraph } = Typography;
 const SeverityTag = ({ value }: { value: BlacklistSeverity }) => <Tag style={severityStyle(value)}>{t(`blacklist.severity.${value}`)}</Tag>;
 const errMsg = (e: unknown) => describeCustomerError(e).message;
 
-/** FR-13.1: дотоод хар/саарал жагсаалт. BR-9: хоёул зөвхөн анхааруулга. Бичих — `blacklist:manage` (ADMIN), унших — `blacklist:read`. */
+/** FR-13.1: дотоод хар/саарал жагсаалт. BR-9: хоёул зөвхөн анхааруулга. Бичих — `blacklist:manage` (ADMIN, COMPLIANCE, BRANCH_MANAGER), унших — `blacklist:read`. */
 export function BlacklistPage() {
   const { me } = useAuth();
   const canManage = !!me && me.permissions.includes('blacklist:manage');

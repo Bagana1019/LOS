@@ -35,6 +35,12 @@ describe('RBAC (docs/01 §3)', () => {
     for (const r of UserRole) expect(menuFor([r]).map((m) => m.id)).toContain('blacklist');
     expect(JSON.stringify(MENU)).toBe(before);
   });
+  it('Q-081: blacklist:manage is held only by ADMIN, COMPLIANCE and BRANCH_MANAGER, and BRANCH_MANAGER gains no other write right', () => {
+    const holders = UserRole.filter((r) => ROLE_PERMISSIONS[r].includes('blacklist:manage'));
+    expect([...holders].sort()).toEqual(['ADMIN', 'BRANCH_MANAGER', 'COMPLIANCE']);
+    const bm = permissionsFor(['BRANCH_MANAGER']);
+    for (const p of ['settings:manage', 'user:manage', 'audit:read', 'customer:write', 'application:write', 'disbursement:approve', 'erp-sync:manage'] as const) expect(bm).not.toContain(p);
+  });
   it('AuthResponse schema accepts a menu built by menuFor', () => {
     const roles = ['ADMIN'] as const;
     const parsed = AuthResponse.safeParse({

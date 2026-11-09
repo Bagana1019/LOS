@@ -224,7 +224,7 @@ kyc (`/api`). Хүсэлт эхлээд глобал `ContextAuthGuard`-ыг, д
 
 **Алдааны бие.** Бүтэн аппад глобал `AllExceptionsFilter` бүх алдааг `{ code, message, details?, correlationId }` хэлбэрт оруулна (`code`: `BAD_REQUEST`, `UNAUTHENTICATED`, `FORBIDDEN`, `NOT_FOUND`, `CONFLICT`, `UNAVAILABLE`, `INTERNAL` …; 5xx-ийн дотоод мессеж гарахгүй). Модулийн `ZodPipe` 400-д `{ statusCode, message: 'Validation failed', issues: [{ code, path, message }] }` үүсгэдэг боловч filter `issues`-ийг одоогоор дамжуулдаггүй: бүтэн аппад клиент зөвхөн `{ code: 'BAD_REQUEST', message: 'Validation failed', correlationId }` авна; `issues` нь модулийг filter-гүйгээр суулгасан тестэд (`aml.e2e.test.ts`) л харагдана (§10).
 
-origination (`/api/blacklist`): `GET`, `GET :id`, `POST`, `PATCH :id`, `DELETE :id` (идэвхгүй болгоно, устгахгүй), `POST import` (CSV эсвэл JSON). **Унших — `X-User-Id`-тэй дурын дуудагч** (`X-Roles` хоосон, үл мэдэгдэх ч); хариунд тайлсан регистр орно. Gateway-н route-policy зөвхөн бичих (`writeOnly`) үйлдлийг шалгадаг тул унших дээр `blacklist:read` одоогоор хаана ч шалгагддаггүй (бүх дүрд байгаа тул практик ялгаа алга, §10). **Бичих, импорт — зөвхөн `ADMIN`** (`blacklist:manage`, gateway-н route-policy-той нийцнэ); `BRANCH_MANAGER` бичиж чадахгүй. Дэлгэрэнгүй (concurrency 409, CSV, лимит): `apps/origination/src/modules/blacklist/README.md`.
+origination (`/api/blacklist`): `GET`, `GET :id`, `POST`, `PATCH :id`, `DELETE :id` (идэвхгүй болгоно, устгахгүй), `POST import` (CSV эсвэл JSON). **Унших — `X-User-Id`-тэй дурын дуудагч** (`X-Roles` хоосон, үл мэдэгдэх ч); хариунд тайлсан регистр орно. Gateway-н route-policy зөвхөн бичих (`writeOnly`) үйлдлийг шалгадаг тул унших дээр `blacklist:read` одоогоор хаана ч шалгагддаггүй (бүх дүрд байгаа тул практик ялгаа алга, §10). **Бичих, импорт — `ADMIN`, `COMPLIANCE`, `BRANCH_MANAGER`** (`blacklist:manage`, gateway-н route-policy-той нийцнэ; Q-081). `OFFICER`, `APPROVER` бичиж чадахгүй. Дэлгэрэнгүй (concurrency 409, CSV, лимит): `apps/origination/src/modules/blacklist/README.md`.
 
 Web → зөвхөн gateway (CLAUDE.md §3.2.1): gateway ерөнхий proxy-оор `/api/kyc/…`, `/api/origination/…`-ийг дамжуулдаг (`/api/<service>/<зам>` → `<service>/api/<зам>`); AML-д зориулсан route-policy мөр нэмээгүй (дүрийн шалгалт kyc-д).
 
@@ -325,7 +325,7 @@ Web → зөвхөн gateway (CLAUDE.md §3.2.1): gateway ерөнхий proxy-�
 
 ### 12.1 Жагсаалтад хэрхэн оруулах (UI)
 
-1. **Админ** эрхээр нэвтэрнэ (`blacklist:manage`; одоогоор зөвхөн ADMIN). Бусад дүр (Зээлийн ажилтан, Салбарын захирал, Батлагч) зөвхөн **харна**, регистр нь далдлагдсан харагдана.
+1. **Админ** эрхээр нэвтэрнэ (`blacklist:manage`; ADMIN, Комплаенс, Салбарын захирал бичнэ — Q-081). Бусад дүр (Зээлийн ажилтан, Батлагч) зөвхөн **харна**, регистр нь далдлагдсан харагдана.
 2. Зүүн цэс → **«Хар жагсаалт»** (дээд түвшний цэс, «Тохиргоо»-ны яг дээр). Хаяг: `/los/blacklist`.
 3. **«Жагсаалтад нэмэх»** дарна.
 4. Талбаруудыг бөглөнө:
