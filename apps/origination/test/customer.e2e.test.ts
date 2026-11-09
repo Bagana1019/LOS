@@ -172,9 +172,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       expect(res.body.prefilledFields.length).toBeGreaterThanOrEqual(10);
       expect(res.body).toMatchObject({
         registerNo: REGISTER, customerType: 'INDIVIDUAL', fetchedAt: '2026-01-01T00:00:00.000Z', existing: null, warnings: [],
-        prefill: { lastName: 'Цэрэн', clanName: 'Хиад', civilId: '1234567890', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'DIVORCED', familySize: 3, officialAddress: ADDRESS },
+        prefill: { lastName: 'Цэрэн', clanName: 'Хиад', civilId: '1234567890', firstName: 'Сарнай', birthDate: '1990-01-01', maritalStatus: 'DIVORCED', familySize: 3, officialAddress: ADDRESS },
       });
-      expect([...res.body.missing].sort()).toEqual(['activitySector', 'education', 'email', 'employment', 'phone', 'photoFileId', 'residenceAddress']);
+      expect(res.body.prefill).not.toHaveProperty('gender'); // Q-074: хүйсийг бүртгэгч гараар сонгоно
+      expect([...res.body.missing].sort()).toEqual(['activitySector', 'education', 'email', 'employment', 'gender', 'phone', 'photoFileId', 'residenceAddress']);
       expect(await db.customer.count()).toBe(0); // хадгалахгүй
     });
 
@@ -186,7 +187,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       });
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({
-        lastName: 'Цэрэн', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', officialAddress: ADDRESS, // ХУР
+        lastName: 'Цэрэн', firstName: 'Сарнай', gender: 'MALE', birthDate: '1990-01-01', officialAddress: ADDRESS, // ХУР (хүйс нь ЗЭЗ-ийн сонгосон)
         maritalStatus: 'MARRIED', familySize: 3, // ЗЭЗ-ийн бөглөснийг хадгалж, хоосныг ХУР нөхнө
         phone: '99112233', xypFetchedAt: '2026-01-01T00:00:00.000Z',
       });
