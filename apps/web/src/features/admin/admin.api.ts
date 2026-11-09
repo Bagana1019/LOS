@@ -1,8 +1,8 @@
 // M13 · Админ API. Gateway-ээр л: origination → `/origination/...`, өөрийн (iam) → `/admin/...`.
 import {
-  AdminBranchDto, AdminUserDto, ApprovalLevelDto, AuditLogPage, PricingTierSet, ProductAdminDto, SubmitChangeResult,
-  type AuditLogQuery, type ContractNumberTemplateBody, type ProductCreateRequest, type ProductSetActiveRequest, type ProductUpdateRequest,
-  type ReplaceApprovalLevelsRequest, type SavePricingTiersRequest,
+  AdminBranchDto, AdminUserDto, ApprovalLevelDto, AuditLogPage, PricingTierSet, ProductAdminDto, SubmitChangeResult, UserCredentialResult,
+  type AuditLogQuery, type ChangePasswordBody, type ContractNumberTemplateBody, type CreateBranchBody, type CreateUserBody, type ProductCreateRequest, type ProductSetActiveRequest, type ProductUpdateRequest,
+  type ReplaceApprovalLevelsRequest, type SavePricingTiersRequest, type UpdateBranchBody, type UpdateUserBody,
 } from '@los/contracts';
 import { z } from 'zod';
 import { apiFetch, originationFetch, qs } from '../../lib/api';
@@ -27,6 +27,16 @@ export const fetchUsers = () => apiFetch<AdminUserDto[]>('/admin/users', { schem
 export const assignUserBranch = (userId: string, branchId: string | null) => apiFetch<AdminUserDto>(`/admin/users/${userId}/branch`, { method: 'PUT', body: { branchId }, schema: AdminUserDto });
 export const fetchAuthAudit = (q: Partial<AuditLogQuery>) => apiFetch<AuditLogPage>(`/admin/audit-logs${qs(q)}`, { schema: AuditLogPage });
 
+// FR-13 · салбар, хэрэглэгчийн удирдлага (устгахгүй — идэвхгүй болгоно)
+const post = <T>(path: string, schema: z.ZodType<T>, body?: unknown) => apiFetch<T>(path, { method: 'POST', body, schema });
+export const createBranch = (b: CreateBranchBody) => post('/admin/branches', AdminBranchDto, b);
+export const updateBranch = (id: string, b: UpdateBranchBody) => apiFetch<AdminBranchDto>(`/admin/branches/${id}`, { method: 'PUT', body: b, schema: AdminBranchDto });
+export const setBranchActive = (id: string, active: boolean) => post(`/admin/branches/${id}/${active ? 'reactivate' : 'deactivate'}`, AdminBranchDto);
+export const createUser = (b: CreateUserBody) => post('/admin/users', UserCredentialResult, b);
+export const updateUser = (id: string, b: UpdateUserBody) => apiFetch<AdminUserDto>(`/admin/users/${id}`, { method: 'PUT', body: b, schema: AdminUserDto });
+export const setUserActive = (id: string, active: boolean) => post(`/admin/users/${id}/${active ? 'reactivate' : 'deactivate'}`, AdminUserDto);
+export const resetUserPassword = (id: string) => post(`/admin/users/${id}/reset-password`, UserCredentialResult);
+export const changeOwnPassword = (b: ChangePasswordBody) => apiFetch<void>('/auth/change-password', { method: 'POST', body: b });
 // ── Бүтээгдэхүүний админ (FR-13, Q-124 хэв маяг): унших шууд, бичих бүр 4 нүдний санал ──
 export const fetchProducts = () => originationFetch<ProductAdminDto[]>('/products', { schema: z.array(ProductAdminDto) });
 export const proposeProductCreate = (body: ProductCreateRequest) => originationFetch<SubmitChangeResult>('/products', { method: 'POST', body, schema: SubmitChangeResult });

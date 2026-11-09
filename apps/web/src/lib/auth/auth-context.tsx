@@ -25,7 +25,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 export const ME_KEY = ['auth', 'me'] as const;
-const meOf = ({ user, permissions, menu }: AuthResponse): MeResponse => ({ user, permissions, menu });
+const meOf = ({ user, permissions, menu, mustChangePassword }: AuthResponse): MeResponse => ({ user, permissions, menu, ...(mustChangePassword ? { mustChangePassword } : {}) });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();

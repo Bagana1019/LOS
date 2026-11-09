@@ -57,6 +57,7 @@ export class MockApi {
   get(path: string, h: MockHandler | MockReply) { return this.on('GET', path, h); }
   post(path: string, h: MockHandler | MockReply) { return this.on('POST', path, h); }
   patch(path: string, h: MockHandler | MockReply) { return this.on('PATCH', path, h); }
+  put(path: string, h: MockHandler | MockReply) { return this.on('PUT', path, h); }
 
   callsTo(method: string, path: string): MockRequest[] {
     const { re } = compile(path);
@@ -76,7 +77,7 @@ export class MockApi {
   private async handle(route: Route): Promise<void> {
     const request = route.request();
     const origin = request.headers()['origin'] ?? '*';
-    const cors = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,PATCH,OPTIONS', vary: 'origin' };
+    const cors = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS', vary: 'origin' };
     if (request.method() === 'OPTIONS') {
       await route.fulfill({ status: 204, headers: cors });
       return;

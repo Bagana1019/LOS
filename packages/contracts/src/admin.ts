@@ -56,12 +56,54 @@ export const ADMIN_BRANCH_BOUND_ROLES = ['OFFICER', 'BRANCH_MANAGER'] as const;
 export const AdminUserDto = z.object({
   id: z.string(), username: z.string(), fullName: z.string(), roles: z.array(z.string()),
   branchId: z.string().nullable(), isActive: z.boolean(), lastLoginAt: z.string().nullable(),
+  email: z.string().nullable().default(null), phone: z.string().nullable().default(null),
+  mustChangePassword: z.boolean().default(false),
 });
 export type AdminUserDto = z.infer<typeof AdminUserDto>;
-export const AdminBranchDto = z.object({ id: z.string(), code: z.string(), name: z.string(), isActive: z.boolean() });
+export const AdminBranchDto = z.object({ id: z.string(), code: z.string(), name: z.string(), isActive: z.boolean(), activeUserCount: z.number().int().default(0) });
 export type AdminBranchDto = z.infer<typeof AdminBranchDto>;
 export const AssignUserBranchBody = z.object({ branchId: z.string().uuid().nullable() });
 export type AssignUserBranchBody = z.infer<typeof AssignUserBranchBody>;
+
+// ── Салбарын удирдлага (FR-13): нэмэх, засах, идэвхгүй болгох/сэргээх. Устгахгүй — хүсэлт, аудит ID-аар заасан. ──
+export const BRANCH_CODE_RE = /^[A-Za-z0-9]{1,12}$/;
+export const CreateBranchBody = z.object({
+  code: z.string().trim().toUpperCase().regex(BRANCH_CODE_RE, 'Код: үсэг, тоо (1–12 тэмдэгт)'),
+  name: z.string().trim().min(2).max(120),
+});
+export type CreateBranchBody = z.infer<typeof CreateBranchBody>;
+export const UpdateBranchBody = z.object({ name: z.string().trim().min(2).max(120) });
+export type UpdateBranchBody = z.infer<typeof UpdateBranchBody>;
+
+// ── Хэрэглэгчийн удирдлага (FR-13): нэмэх, засах, дүр оноох, идэвхгүй болгох, нууц үг шинэчлэх ──
+export const ADMIN_ASSIGNABLE_ROLES = ['OFFICER', 'BRANCH_MANAGER', 'APPROVER', 'ADMIN', 'COMPLIANCE'] as const;
+export const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,39}$/;
+export const PASSWORD_MIN_LENGTH = 12;
+/** Нууц үгийн бодлого: ≥12 тэмдэгт, том/жижиг үсэг, тоо (DEMO босго — Q-137-тэй адил тохиргоонд шилжүүлж болно). */
+export const PasswordField = z.string().min(PASSWORD_MIN_LENGTH).max(200)
+  .refine((p) => /[a-z]/.test(p) && /[A-Z]/.test(p) && /\d/.test(p), 'Нууц үг том, жижиг үсэг, тоо агуулсан байх ёстой');
+const UserRoles = z.array(z.enum(ADMIN_ASSIGNABLE_ROLES)).min(1).max(5).refine((r) => new Set(r).size === r.length, 'Дүр давхцсан байна');
+const OptionalText = (max: number) => z.string().trim().max(max).nullable().optional().transform((v) => (v ? v : null));
+export const CreateUserBody = z.object({
+  username: z.string().trim().toLowerCase().regex(USERNAME_RE, 'Нэвтрэх нэр: жижиг латин үсэг, тоо, . _ - (3–40)'),
+  fullName: z.string().trim().min(2).max(120),
+  email: OptionalText(160), phone: OptionalText(40),
+  roles: UserRoles,
+  branchId: z.string().uuid().nullable(),
+});
+export type CreateUserBody = z.infer<typeof CreateUserBody>;
+export const UpdateUserBody = z.object({
+  fullName: z.string().trim().min(2).max(120),
+  email: OptionalText(160), phone: OptionalText(40),
+  roles: UserRoles,
+  branchId: z.string().uuid().nullable(),
+});
+export type UpdateUserBody = z.infer<typeof UpdateUserBody>;
+/** Түр нууц үг зөвхөн нэг удаа буцна; хэрэглэгч эхний нэвтрэлтээр заавал солино. */
+export const UserCredentialResult = z.object({ user: AdminUserDto, temporaryPassword: z.string() });
+export type UserCredentialResult = z.infer<typeof UserCredentialResult>;
+export const ChangePasswordBody = z.object({ currentPassword: z.string().min(1).max(200), newPassword: PasswordField });
+export type ChangePasswordBody = z.infer<typeof ChangePasswordBody>;
 
 // ── Аудит лог харах (FR-13.5) ──
 export const AuditLogQuery = z.object({

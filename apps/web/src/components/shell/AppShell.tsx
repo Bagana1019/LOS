@@ -9,6 +9,7 @@ import type { MeResponse } from '@los/contracts';
 import { t } from '@los/ui';
 import { canAccess, hasOwnShell, isPublicPath, isStandalonePath, safeNext } from '../../lib/access';
 import { useAuth } from '../../lib/auth/auth-context';
+import { ForcedPasswordChange } from '../../features/admin/ForcedPasswordChange';
 import { NotificationBellContainer } from '../../features/notifications/NotificationBellContainer';
 import { BrandLockup } from '../../theme/brand';
 import { HeaderSearch } from './HeaderSearch';
@@ -58,7 +59,7 @@ function Frame({ me, children }: { me: MeResponse; children: ReactNode }) {
 
 /** NFR-3: нэвтрэлтийн хаалга. Сесс сэргээгдтэл хүлээнэ, нэвтрээгүй бол /login руу, нэвтэрсэн бол shell. */
 export function AppShell({ children }: { children: ReactNode }) {
-  const { status, me, reason, retry } = useAuth();
+  const { status, me, reason, retry, logout } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
   const standalone = isStandalonePath(pathname);
@@ -82,6 +83,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
   if (isPublic) return status === 'anonymous' ? <>{children}</> : <Loading />;
   if (status !== 'authenticated' || !me) return <Loading />;
+  // FR-13: түр нууц үгтэй хэрэглэгч нууц үгээ солтол өөр юу ч харахгүй (gateway мөн 403 PASSWORD_CHANGE_REQUIRED өгнө)
+  if (me.mustChangePassword) return <ForcedPasswordChange onDone={logout} />;
   if (hasOwnShell(pathname)) return <>{children}</>;
   return <Frame me={me}>{children}</Frame>;
 }

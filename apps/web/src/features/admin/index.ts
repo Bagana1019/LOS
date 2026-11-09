@@ -4,5 +4,7 @@ export { BranchesPage } from './BranchesPage';
 export { ContractNumberPage } from './ContractNumberPage';
 export { ParametersPage } from './ParametersPage';
 export { AuditLogPage } from './AuditLogPage';
+export { UsersPage } from './UsersPage';
+export { ForcedPasswordChange } from './ForcedPasswordChange';
 export { ProductsPage } from './ProductsPage';
 export { PricingTiersPage } from './PricingTiersPage';

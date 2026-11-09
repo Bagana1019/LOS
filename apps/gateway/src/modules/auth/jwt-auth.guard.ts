@@ -5,7 +5,10 @@ import { ForbiddenException } from '@nestjs/common';
 import { permissionsFor, type Permission, type SessionUser } from '@los/contracts';
 import { AuthService } from './auth.service';
 
-type Req = { headers: Record<string, string | string[] | undefined>; user?: SessionUser };
+type Req = { headers: Record<string, string | string[] | undefined>; user?: SessionUser; mustChangePassword?: boolean; originalUrl?: string; url?: string };
+
+/** FR-13: түр нууц үгтэй хэрэглэгчид зөвхөн өөрийн мэдээлэл авах, нууц үг солих зөвшөөрөгдөнө. */
+const PASSWORD_CHANGE_PATHS = new Set(['/api/auth/me', '/api/auth/change-password']);
 
 /**
  * Глобал guard: `Authorization: Bearer <JWT>` шалгаад хүсэлтийн контекстийг (req.ctx — ALS-тэй ижил объект) БАТАЛГААЖСАН утгаар дүүргэнэ.
@@ -25,9 +28,13 @@ export class JwtAuthGuard implements CanActivate {
     const m = typeof header === 'string' ? /^Bearer\s+(\S+)$/i.exec(header) : null;
     if (!m) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Нэвтрээгүй хүсэлт' });
 
-    const { user } = await this.auth.authenticate(m[1]!);
+    const { user, mustChangePassword } = await this.auth.authenticate(m[1]!);
+    if (mustChangePassword && !PASSWORD_CHANGE_PATHS.has(((req.originalUrl ?? req.url ?? '').split('?')[0] ?? '').replace(/\/+$/, ''))) {
+      throw new ForbiddenException({ code: 'PASSWORD_CHANGE_REQUIRED', message: 'Түр нууц үгээ солино уу' });
+    }
     Object.assign(contextOf(req as never), { userId: user.id, roles: [...user.roles], branchId: user.branchId, orgId: user.orgId, customerId: null });
     req.user = user;
+    req.mustChangePassword = mustChangePassword;
 
     const roles = this.reflector.getAllAndOverride<string[] | undefined>(ROLES_KEY, targets);
     if (roles?.length && !roles.some((r) => user.roles.includes(r as never))) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Энэ үйлдэлд эрх хүрэхгүй' });

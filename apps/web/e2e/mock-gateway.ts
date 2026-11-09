@@ -3,13 +3,14 @@ import { menuFor, permissionsFor, type AuthResponse, type NotificationView, type
 
 export const PASSWORD = 'correct horse';
 
-export function authResponse(role: UserRole = 'OFFICER', username = 'officer.a'): AuthResponse {
+export function authResponse(role: UserRole = 'OFFICER', username = 'officer.a', mustChangePassword = false): AuthResponse {
   return {
     accessToken: `token-${username}`,
     expiresIn: 900,
     user: { id: `id-${username}`, orgId: 'org', branchId: 'branch', username, fullName: `${username} Бат`, roles: [role] },
     permissions: permissionsFor([role]),
     menu: menuFor([role]),
+    ...(mustChangePassword ? { mustChangePassword } : {}),
   };
 }
 
@@ -29,13 +30,15 @@ export interface Gateway {
    * Өөрийн `page.route('**\/api/**')`-тай модулийн e2e (MockApi) энэ горимоор нэвтэрсэн ажилтныг дуурайна.
    */
   authOnly: boolean;
+  /** FR-13: админ түр нууц үг олгосон хэрэглэгч — /auth/refresh, /auth/login, /auth/me `mustChangePassword: true` буцаана; /auth/change-password дараа нь сесс хаана. */
+  mustChangePassword?: boolean;
 }
 
 const cors = (route: Route) => ({
   'access-control-allow-origin': route.request().headers().origin ?? '*',
   'access-control-allow-credentials': 'true',
   'access-control-allow-headers': 'authorization,content-type,x-correlation-id',
-  'access-control-allow-methods': 'GET,POST,OPTIONS',
+  'access-control-allow-methods': 'GET,POST,PUT,OPTIONS',
 });
 
 /** Gateway-г Playwright-ийн route-аар дуурайна (CORS-той, бодит хэлбэр — `@los/contracts`-аас). */
@@ -61,21 +64,26 @@ export async function mockGateway(page: Page, init: Partial<Gateway> = {}): Prom
 
       if (path === '/auth/refresh') {
         if (gw.down) return route.abort('failed');
-        return gw.signedIn ? reply(200, authResponse(gw.role)) : reply(401, { code: 'INVALID_REFRESH_TOKEN', message: 'Дахин нэвтэрнэ үү' });
+        return gw.signedIn ? reply(200, authResponse(gw.role, 'officer.a', gw.mustChangePassword)) : reply(401, { code: 'INVALID_REFRESH_TOKEN', message: 'Дахин нэвтэрнэ үү' });
       }
       if (path === '/auth/login') {
         const body = req.postDataJSON() as { username: string; password: string };
         if (body.username === 'throttled') return reply(429, { statusCode: 429, message: 'ThrottlerException: Too Many Requests' });
         if (body.password !== PASSWORD) return reply(401, { code: 'INVALID_CREDENTIALS', message: 'Нэвтрэх нэр эсвэл нууц үг буруу' });
         gw.signedIn = true;
-        return reply(200, authResponse(gw.role, body.username));
+        return reply(200, authResponse(gw.role, body.username, gw.mustChangePassword));
       }
       if (path === '/auth/logout') {
         gw.signedIn = false;
         return reply(204);
       }
+      if (path === '/auth/change-password') {
+        gw.mustChangePassword = false;
+        gw.signedIn = false;
+        return reply(204);
+      }
       if (path === '/auth/me') {
-        const { accessToken: _t, expiresIn: _e, ...me } = authResponse(gw.role);
+        const { accessToken: _t, expiresIn: _e, ...me } = authResponse(gw.role, 'officer.a', gw.mustChangePassword);
         return reply(200, me);
       }
       if (path === '/origination/notifications/unread-count') return reply(200, { unreadCount: gw.notifications.filter((n) => n.readAt === null).length });

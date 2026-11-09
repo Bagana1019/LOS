@@ -8,6 +8,7 @@ const ITEMS = [
   { href: '/settings/pricing', key: 'pricing' },
   { href: '/settings/approval-levels', key: 'approval_levels' },
   { href: '/settings/branches', key: 'branches' },
+  { href: '/settings/users', key: 'users' },
   { href: '/settings/contract-number', key: 'contract_number' },
   { href: '/settings/parameters', key: 'parameters' },
   { href: '/settings/audit', key: 'audit' },

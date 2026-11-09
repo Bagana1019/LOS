@@ -1,12 +1,12 @@
 import { Body, Controller, ForbiddenException, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { LoginRequest, type MeResponse, type AuthResponse, type SessionUser } from '@los/contracts';
+import { ChangePasswordBody, LoginRequest, type MeResponse, type AuthResponse, type SessionUser } from '@los/contracts';
 import { Public, ZodValidationPipe, contextOf } from '@los/nest-common';
 import { Inject } from '@nestjs/common';
 import { AUTH_CONFIG, REFRESH_COOKIE, type AuthConfig } from './auth.config';
 import { AuthService, type ClientMeta, type Issued } from './auth.service';
 
-type Req_ = { headers: Record<string, string | string[] | undefined>; cookies?: Record<string, string>; ip?: string; user?: SessionUser };
+type Req_ = { headers: Record<string, string | string[] | undefined>; cookies?: Record<string, string>; ip?: string; user?: SessionUser; mustChangePassword?: boolean };
 type Res_ = { cookie(n: string, v: string, o: object): void; clearCookie(n: string, o: object): void };
 
 @Controller('auth')
@@ -53,8 +53,15 @@ export class AuthController {
     res.clearCookie(REFRESH_COOKIE, this.cookieOpts());
   }
 
+  /** FR-13 · Өөрийн нууц үг солих (түр нууц үгтэй хэрэглэгчид зөвшөөрөгдсөн цорын ганц үйлдэл). Сесс бүгд хаагдана → дахин нэвтэрнэ. */
+  @Post('change-password') @HttpCode(204) @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async changePassword(@Body(new ZodValidationPipe(ChangePasswordBody)) body: ChangePasswordBody, @Req() req: Req_, @Res({ passthrough: true }) res: Res_): Promise<void> {
+    await this.auth.changePassword(req.user!.id, body.currentPassword, body.newPassword, this.meta(req));
+    res.clearCookie(REFRESH_COOKIE, this.cookieOpts());
+  }
+
   @Get('me')
   me(@Req() req: Req_): MeResponse {
-    return this.auth.me(req.user!);
+    return this.auth.me(req.user!, req.mustChangePassword);
   }
 }

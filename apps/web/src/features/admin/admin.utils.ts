@@ -28,3 +28,8 @@ export function validateBranchCodes(codes: Record<string, string>): string | nul
 }
 
 export const errorText = (e: unknown): string => (e instanceof ApiError ? e.message : e instanceof Error ? e.message : t('admin.common.load_error'));
+
+/** Дүрийн сонголтын дараалал (хамгийн өндөр эрхтэй нь эхэнд) */
+export const SUPPORTED_ROLES_ORDER = ['ADMIN', 'APPROVER', 'BRANCH_MANAGER', 'OFFICER', 'COMPLIANCE'] as const;
+/** ЗЭЗ, салбарын захирал заавал салбартай (gateway `ADMIN_BRANCH_BOUND_ROLES`-той ижил) */
+export const needsBranch = (roles: readonly string[]) => roles.some((r) => r === 'OFFICER' || r === 'BRANCH_MANAGER');

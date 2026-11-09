@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { type AccessTokenClaims, type AuthResponse, menuFor, permissionsFor, type SessionUser, type UserRole, UserRole as UserRoles } from '@los/contracts';
 import { Clock } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
@@ -10,7 +10,7 @@ import { TokenService } from './token.service';
 
 export interface ClientMeta { ip: string | null; userAgent: string | null; correlationId: string }
 export interface Issued { response: AuthResponse; refreshToken: string; refreshExpiresAt: Date }
-export interface Authenticated { claims: AccessTokenClaims; user: SessionUser }
+export interface Authenticated { claims: AccessTokenClaims; user: SessionUser; mustChangePassword: boolean }
 
 const BAD_CREDENTIALS = () => new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Нэвтрэх нэр эсвэл нууц үг буруу' });
 const BAD_REFRESH = () => new UnauthorizedException({ code: 'INVALID_REFRESH_TOKEN', message: 'Дахин нэвтэрнэ үү' });
@@ -97,16 +97,33 @@ export class AuthService {
       throw new UnauthorizedException({ code: 'SESSION_ENDED', message: 'Нэвтрэх хугацаа дууссан. Дахин нэвтэрнэ үү' });
     }
     // Эрх/салбар токеноос биш DB-ээс (эрх өөрчлөгдвөл шууд хүчинтэй)
-    return { claims, user: this.toSessionUser(session.user) };
+    return { claims, user: this.toSessionUser(session.user), mustChangePassword: session.user.mustChangePassword };
   }
 
-  me(user: SessionUser) { return { user, permissions: permissionsFor(user.roles), menu: menuFor(user.roles) }; }
+  me(user: SessionUser, mustChangePassword = false) { return { user, permissions: permissionsFor(user.roles), menu: menuFor(user.roles), ...(mustChangePassword ? { mustChangePassword } : {}) }; }
 
-  private toSessionUser(u: { id: string; orgId: string; branchId: string | null; username: string; fullName: string; roles: string[] }): SessionUser {
+  /** FR-13 · Өөрийн нууц үгээ солих. Бүх сесс хүчингүй болно (хулгайлагдсан token-ийг тасална), хэрэглэгч шинэ нууц үгээр дахин нэвтэрнэ. Нууц үгийг лог/аудитад бичихгүй. */
+  async changePassword(userId: string, currentPassword: string, newPassword: string, meta: ClientMeta): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive || !(await verifyPassword(currentPassword, user.passwordHash))) {
+      throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Одоогийн нууц үг буруу' });
+    }
+    if (await verifyPassword(newPassword, user.passwordHash)) {
+      throw new UnprocessableEntityException({ code: 'PASSWORD_UNCHANGED', message: 'Шинэ нууц үг одоогийнхоос өөр байх ёстой' });
+    }
+    const passwordHash = await hashPassword(newPassword);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, failedLoginCount: 0, lockedUntil: null, updatedBy: userId } }),
+      this.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: this.clock.now() } }),
+    ]);
+    await this.audit.record({ orgId: user.orgId, entity: 'USER', entityId: userId, action: 'PASSWORD_CHANGED', actorId: userId, correlationId: meta.correlationId, ip: meta.ip, userAgent: meta.userAgent });
+  }
+
+  private toSessionUser(u: { id: string; orgId: string; branchId: string | null; username: string; fullName: string; roles: string[]; [k: string]: unknown }): SessionUser {
     return { id: u.id, orgId: u.orgId, branchId: u.branchId, username: u.username, fullName: u.fullName, roles: knownRoles(u.roles) };
   }
 
-  private async issue(u: { id: string; orgId: string; branchId: string | null; username: string; fullName: string; roles: string[] }, familyId: string, meta: ClientMeta): Promise<Issued> {
+  private async issue(u: { id: string; orgId: string; branchId: string | null; username: string; fullName: string; roles: string[]; mustChangePassword?: boolean }, familyId: string, meta: ClientMeta): Promise<Issued> {
     const now = this.clock.now();
     const refresh = this.tokens.newRefreshToken();
     const expiresAt = new Date(now.getTime() + this.cfg.refreshTtlSeconds * 1000);
@@ -114,7 +131,7 @@ export class AuthService {
     const user = this.toSessionUser(u);
     return {
       refreshToken: refresh.token, refreshExpiresAt: expiresAt,
-      response: { accessToken: this.tokens.signAccess(user, session.id), expiresIn: this.cfg.accessTtlSeconds, ...this.me(user) },
+      response: { accessToken: this.tokens.signAccess(user, session.id), expiresIn: this.cfg.accessTtlSeconds, ...this.me(user, u.mustChangePassword) },
     };
   }
 }
