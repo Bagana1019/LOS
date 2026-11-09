@@ -19,6 +19,10 @@ export const ApprovalLevelInput = z.object({
 });
 /** Нийтлэг (productId = null) түвшнүүдийг бүхэлд нь солино. */
 export const ReplaceApprovalLevelsBody = z.object({ levels: z.array(ApprovalLevelInput).min(1).max(10) });
+/** Q-124: батлах түвшний өөрчлөлт 4 нүдээр — maker-ийн шалтгаан заавал (MC-BR-4) */
+export const ChangeReasonField = z.string().trim().min(3).max(2000);
+export const ReplaceApprovalLevelsRequest = ReplaceApprovalLevelsBody.extend({ reason: ChangeReasonField });
+export type ReplaceApprovalLevelsRequest = z.infer<typeof ReplaceApprovalLevelsRequest>;
 export type ApprovalLevelInput = z.infer<typeof ApprovalLevelInput>;
 export type ReplaceApprovalLevelsBody = z.infer<typeof ReplaceApprovalLevelsBody>;
 

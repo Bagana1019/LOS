@@ -1,7 +1,7 @@
 // M13 · Админ API. Gateway-ээр л: origination → `/origination/...`, өөрийн (iam) → `/admin/...`.
 import {
-  AdminBranchDto, AdminUserDto, ApprovalLevelDto, AuditLogPage,
-  type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsBody,
+  AdminBranchDto, AdminUserDto, ApprovalLevelDto, AuditLogPage, SubmitChangeResult,
+  type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsRequest,
 } from '@los/contracts';
 import { z } from 'zod';
 import { apiFetch, originationFetch, qs } from '../../lib/api';
@@ -10,11 +10,15 @@ export interface SettingView { key: string; value: unknown; description: string;
 export interface TemplateView { id: string | null; pattern: string; prefix: string; seqScope: 'DAY' | 'BRANCH' | 'GLOBAL' }
 
 export const fetchLevels = () => originationFetch<ApprovalLevelDto[]>('/approval-levels', { schema: z.array(ApprovalLevelDto) });
-export const saveLevels = (body: ReplaceApprovalLevelsBody) => originationFetch<ApprovalLevelDto[]>('/approval-levels', { method: 'PUT', body, schema: z.array(ApprovalLevelDto) });
+/** Q-124: батлах түвшний өөрчлөлт 4 нүдээр — санал үүсгэнэ (outcome PENDING = өөр хэрэглэгч батлах хүртэл хэрэгжихгүй). */
+export const saveLevels = (body: ReplaceApprovalLevelsRequest) => originationFetch<SubmitChangeResult>('/approval-levels', { method: 'PUT', body, schema: SubmitChangeResult });
 export const fetchTemplate = () => originationFetch<TemplateView>('/contract-number-template');
 export const saveTemplate = (body: ContractNumberTemplateBody) => originationFetch<TemplateView>('/contract-number-template', { method: 'PUT', body });
 export const fetchSettings = () => originationFetch<SettingView[]>('/settings');
 export const saveSetting = (key: string, value: unknown) => originationFetch<SettingView>(`/settings/${encodeURIComponent(key)}`, { method: 'PUT', body: { value } });
+/** Q-124: `FOUR_EYES_SETTING_KEYS` түлхүүр — санал үүсгэнэ (шалтгаан заавал). */
+export const proposeSetting = (key: string, value: unknown, reason: string) =>
+  originationFetch<SubmitChangeResult>(`/settings/${encodeURIComponent(key)}`, { method: 'PUT', body: { value, reason }, schema: SubmitChangeResult });
 export const fetchOriginationAudit = (q: Partial<AuditLogQuery>) => originationFetch<AuditLogPage>(`/audit-logs${qs(q)}`, { schema: AuditLogPage });
 
 export const fetchBranches = () => apiFetch<AdminBranchDto[]>('/admin/branches', { schema: z.array(AdminBranchDto) });

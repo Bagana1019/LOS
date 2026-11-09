@@ -1,17 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import {
-  validateApprovalLevels, type ApprovalLevelDto, type AuditLogPage, type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsBody, type RequestContext,
+  APPROVAL_LEVELS_ACTION_REPLACE, APPROVAL_LEVELS_TARGET_ID, APPROVAL_LEVELS_TARGET_TYPE,
+  type ApprovalLevelDto, type AuditLogPage, type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsRequest, type RequestContext, type SubmitChangeResult,
 } from '@los/contracts';
 import { buildEvent, enqueueOutbox, recordAudit } from '@los/database';
-import { DomainError, conflict } from '@los/nest-common';
+import { DomainError } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
+import { actorFrom } from '../maker-checker/actor';
+import { MakerCheckerService } from '../maker-checker/maker-checker.service';
+import { levelsProblem } from './approval-levels-change.handler';
 
 const num = (v: { toString(): string } | null | undefined): number | null => (v == null ? null : Number(v.toString()));
 
 /** FR-13 · Админ тохиргоо: батлах түвшин (BR-13), гэрээний дугаарын загвар (BR-11), аудит лог (FR-13.5). Эрх: @Permissions (settings:manage | audit:read). */
 @Injectable()
 export class AdminService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(private readonly db: PrismaService, private readonly mc: MakerCheckerService) {}
 
   // ── батлах түвшин ──
   async listLevels(ctx: RequestContext): Promise<ApprovalLevelDto[]> {
@@ -22,34 +26,17 @@ export class AdminService {
     }));
   }
 
-  /** Нийтлэг түвшнүүдийг бүхэлд нь солино (BR-13). Шийдвэр хүлээж буй (PENDING) батлах хүсэлт байвал 409 — түвшний дугаар зөрөхөөс сэргийлнэ. */
-  async replaceLevels(ctx: RequestContext, body: ReplaceApprovalLevelsBody): Promise<ApprovalLevelDto[]> {
-    const bad = validateApprovalLevels(body.levels);
+  /**
+   * Q-124: нийтлэг түвшнүүдийг бүхэлд нь солих нь 4 нүдээр — энд зөвхөн санал (change request) үүснэ; хэрэгжилт нь
+   * `ApprovalLevelsChangeHandler.apply` (өөр хэрэглэгч батлахад). Policy идэвхгүй бол шууд хэрэгжиж аудитлагдана (DIRECT).
+   */
+  async proposeLevels(ctx: RequestContext, body: ReplaceApprovalLevelsRequest): Promise<SubmitChangeResult> {
+    const { reason, ...payload } = body;
+    const bad = levelsProblem(payload);
     if (bad) throw new DomainError('APPROVAL_LEVELS_INVALID', bad, 422);
-    if (body.levels.some((l) => new Set(l.members.map((m) => m.userId)).size !== l.members.length)) {
-      throw new DomainError('APPROVAL_LEVELS_INVALID', 'Нэг түвшинд нэг батлагч давхар орж болохгүй', 422);
-    }
-    await this.db.$transaction(async (tx) => {
-      const pending = await tx.approvalRequest.count({ where: { orgId: ctx.orgId, status: 'PENDING' } });
-      if (pending > 0) throw conflict('APPROVALS_IN_FLIGHT', `Шийдвэр хүлээж буй ${pending} батлах хүсэлт байна — дууссаны дараа өөрчилнө үү`);
-      const before = await tx.approvalLevel.findMany({ where: { orgId: ctx.orgId, productId: null }, include: { members: true }, orderBy: { levelNo: 'asc' } });
-      await tx.approvalLevel.deleteMany({ where: { orgId: ctx.orgId, productId: null } }); // member нь onDelete: Cascade
-      for (const l of body.levels) {
-        await tx.approvalLevel.create({
-          data: {
-            orgId: ctx.orgId, productId: null, levelNo: l.levelNo, name: l.name, amountFrom: l.amountFrom, amountTo: l.amountTo, quorumType: l.quorumType, slaHours: l.slaHours,
-            createdBy: ctx.userId, updatedBy: ctx.userId, members: { create: l.members.map((m) => ({ orgId: ctx.orgId, userId: m.userId, createdBy: ctx.userId, updatedBy: ctx.userId })) },
-          },
-        });
-      }
-      await recordAudit(tx, {
-        orgId: ctx.orgId, entity: 'APPROVAL_LEVEL', entityId: 'default', action: 'APPROVAL_LEVELS_REPLACED', actorId: ctx.userId, correlationId: ctx.correlationId,
-        beforeJson: { levels: before.map((l) => ({ levelNo: l.levelNo, name: l.name, amountFrom: num(l.amountFrom), amountTo: num(l.amountTo), slaHours: l.slaHours, members: l.members.map((m) => m.userId) })) },
-        afterJson: { levels: body.levels },
-      });
-      await enqueueOutbox(tx, buildEvent(ctx, 'SettingsChanged', { key: 'approval.levels', productId: null }));
+    return this.mc.submit(actorFrom(ctx), {
+      targetType: APPROVAL_LEVELS_TARGET_TYPE, action: APPROVAL_LEVELS_ACTION_REPLACE, targetId: APPROVAL_LEVELS_TARGET_ID, payload, reason,
     });
-    return this.listLevels(ctx);
   }
 
   // ── гэрээний дугаарын загвар ──

@@ -2,11 +2,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { App, Alert, Button, Flex, InputNumber, Input, Select, Skeleton, Table, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
-import { validateApprovalLevels, type ApprovalLevelInput } from '@los/contracts';
+import { APPROVAL_LEVELS_TARGET_TYPE, validateApprovalLevels, type ApprovalLevelInput } from '@los/contracts';
 import { t, formatMoney } from '../../lib/i18n';
 import { errorText } from './admin.utils';
 import { useLevels, useSaveLevels, useUsers } from './admin.hooks';
 import { BackLink } from './SettingsHome';
+import { PendingChangeNotice, ReasonField, reasonOk, submittedText } from './FourEyes';
 
 type Row = ApprovalLevelInput;
 const APPROVER_ROLES = ['APPROVER', 'BRANCH_MANAGER', 'ADMIN'];
@@ -18,6 +19,7 @@ export function ApprovalLevelsPage() {
   const users = useUsers();
   const save = useSaveLevels();
   const [rows, setRows] = useState<Row[]>([]);
+  const [reason, setReason] = useState('');
   useEffect(() => { if (levels.data) setRows(levels.data.map(({ id: _id, ...r }) => r)); }, [levels.data]);
 
   const error = useMemo(() => validateApprovalLevels(rows), [rows]);
@@ -57,8 +59,8 @@ export function ApprovalLevelsPage() {
     },
   ];
 
-  const onSave = () => save.mutate({ levels: rows }, {
-    onSuccess: () => void message.success(t('admin.levels.saved')),
+  const onSave = () => save.mutate({ levels: rows, reason: reason.trim() }, {
+    onSuccess: (r) => { setReason(''); void message.success(submittedText(r, 'admin.levels.applied_direct')); },
     onError: (e) => void message.error(errorText(e)),
   });
 
@@ -67,6 +69,7 @@ export function ApprovalLevelsPage() {
       <BackLink />
       <Typography.Title level={3} style={{ margin: 0 }}>{t('admin.levels.title')}</Typography.Title>
       <Alert type="info" showIcon message={t('admin.levels.hint')} />
+      <PendingChangeNotice targetType={APPROVAL_LEVELS_TARGET_TYPE} />
       {levels.isError ? <Alert type="error" showIcon message={t('admin.common.load_error')} description={errorText(levels.error)} action={<Button onClick={() => void levels.refetch()}>{t('admin.common.refresh')}</Button>} />
         : levels.isLoading ? <Skeleton active />
         : (
@@ -74,11 +77,13 @@ export function ApprovalLevelsPage() {
             <Table<Row> rowKey="levelNo" size="small" pagination={false} columns={columns} dataSource={rows} scroll={{ x: 900 }} />
             {rows.some((r) => r.members.length === 0) ? <Alert type="warning" showIcon message={t('admin.levels.empty_members')} /> : null}
             {error ? <Alert type="error" showIcon message={error} /> : null}
+            <Alert type="info" showIcon message={t('admin.four_eyes.notice')} />
+            <ReasonField value={reason} onChange={setReason} />
             <Flex gap={8} wrap>
               <Button onClick={add} disabled={rows.length >= 10}>{t('admin.levels.add')}</Button>
               <Button onClick={removeLast} disabled={rows.length <= 1}>{t('admin.levels.remove_last')}</Button>
               <Button onClick={() => levels.data && setRows(levels.data.map(({ id: _id, ...r }) => r))}>{t('admin.levels.reset')}</Button>
-              <Button type="primary" onClick={onSave} loading={save.isPending} disabled={!!error || rows.length === 0}>{t('admin.common.save')}</Button>
+              <Button type="primary" onClick={onSave} loading={save.isPending} disabled={!!error || rows.length === 0 || !reasonOk(reason)}>{t('admin.four_eyes.submit')}</Button>
             </Flex>
           </>
         )}
