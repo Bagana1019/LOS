@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AuditLogQuery, ContractNumberTemplateBody, ReplaceApprovalLevelsBody } from '@los/contracts';
+import { ChangeRequestPage, type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsRequest } from '@los/contracts';
+import { listRequests } from '../maker-checker/api';
 import * as api from './admin.api';
 
 const key = (...p: unknown[]) => ['admin', ...p] as const;
@@ -14,8 +15,22 @@ export const useAudit = (source: 'origination' | 'auth', q: Partial<AuditLogQuer
 
 export function useSaveLevels() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (b: ReplaceApprovalLevelsBody) => api.saveLevels(b), onSuccess: (data) => qc.setQueryData(key('levels'), data) });
+  return useMutation({ mutationFn: (b: ReplaceApprovalLevelsRequest) => api.saveLevels(b), onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: key('levels') }), qc.invalidateQueries({ queryKey: ['maker-checker'] })]) });
 }
+export function useProposeSetting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { key: string; value: unknown; reason: string }) => api.proposeSetting(v.key, v.value, v.reason),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: key('settings') }), qc.invalidateQueries({ queryKey: ['maker-checker'] })]),
+  });
+}
+/** Q-124: тухайн зорилтод хүлээгдэж буй (PENDING) санал — админ хуудсанд анхааруулга, /los/maker-checker руу холбоос. Зөвхөн ADMIN (scope=all). */
+export const usePendingChanges = (targetType: string) =>
+  useQuery({
+    queryKey: ['maker-checker', 'pending', targetType],
+    queryFn: ({ signal }) => listRequests({ scope: 'all', status: 'PENDING', targetType, page: 1, pageSize: 20 }, signal),
+    select: (p: ChangeRequestPage) => p.items,
+  });
 export function useSaveSetting() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (v: { key: string; value: unknown }) => api.saveSetting(v.key, v.value), onSuccess: () => qc.invalidateQueries({ queryKey: key('settings') }) });

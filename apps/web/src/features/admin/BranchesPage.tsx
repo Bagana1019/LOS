@@ -2,11 +2,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { App, Alert, Button, Card, Flex, Input, Select, Skeleton, Table, Tag, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
-import type { AdminBranchDto, AdminUserDto } from '@los/contracts';
+import { SETTING_TARGET_TYPE, type AdminBranchDto, type AdminUserDto } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { errorText, validateBranchCodes } from './admin.utils';
-import { useAssignBranch, useBranches, useSaveSetting, useSettings, useUsers } from './admin.hooks';
+import { useAssignBranch, useBranches, useProposeSetting, useSettings, useUsers } from './admin.hooks';
 import { BackLink } from './SettingsHome';
+import { PendingChangeNotice, ReasonField, reasonOk, submittedText } from './FourEyes';
 
 const KEY = 'contract.branch_codes';
 
@@ -16,7 +17,8 @@ export function BranchesPage() {
   const branches = useBranches();
   const users = useUsers();
   const settings = useSettings();
-  const saveSetting = useSaveSetting();
+  const saveSetting = useProposeSetting();
+  const [reason, setReason] = useState('');
   const assign = useAssignBranch();
   const saved = useMemo(() => (settings.data?.find((s) => s.key === KEY)?.value ?? {}) as Record<string, string>, [settings.data]);
   const [codes, setCodes] = useState<Record<string, string>>({});
@@ -25,7 +27,7 @@ export function BranchesPage() {
 
   const onSaveCodes = () => {
     const clean = Object.fromEntries(Object.entries(codes).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
-    saveSetting.mutate({ key: KEY, value: clean }, { onSuccess: () => void message.success(t('admin.branches.codes.saved')), onError: (e) => void message.error(errorText(e)) });
+    saveSetting.mutate({ key: KEY, value: clean, reason: reason.trim() }, { onSuccess: (r) => { setReason(''); void message.success(submittedText(r, 'admin.branches.codes.applied_direct')); }, onError: (e) => void message.error(errorText(e)) });
   };
   const onAssign = (userId: string, branchId: string | null) =>
     assign.mutate({ userId, branchId }, { onSuccess: () => void message.success(t('admin.users.assigned')), onError: (e) => void message.error(errorText(e)) });
@@ -59,9 +61,12 @@ export function BranchesPage() {
       <BackLink />
       <Typography.Title level={3} style={{ margin: 0 }}>{t('admin.branches.title')}</Typography.Title>
       {err ? <Alert type="error" showIcon message={t('admin.common.load_error')} description={errorText(err)} /> : null}
-      <Card title={t('admin.branches.codes.title')} extra={<Button type="primary" onClick={onSaveCodes} loading={saveSetting.isPending} disabled={!!codeError}>{t('admin.common.save')}</Button>}>
+      <Card title={t('admin.branches.codes.title')} extra={<Button type="primary" onClick={onSaveCodes} loading={saveSetting.isPending} disabled={!!codeError || !reasonOk(reason)}>{t('admin.four_eyes.submit')}</Button>}>
         <Flex vertical gap={12}>
           <Typography.Text type="secondary">{t('admin.branches.codes.hint')}</Typography.Text>
+          <PendingChangeNotice targetType={SETTING_TARGET_TYPE} targetId={KEY} />
+          <Alert type="info" showIcon message={t('admin.four_eyes.notice')} />
+          <ReasonField value={reason} onChange={setReason} />
           {codeError ? <Alert type="error" showIcon message={codeError} /> : null}
           {branches.isLoading ? <Skeleton active /> : <Table<AdminBranchDto> rowKey="id" size="small" pagination={false} columns={branchCols} dataSource={branches.data ?? []} />}
         </Flex>

@@ -158,6 +158,19 @@ export type MakerCheckerPolicyDto = z.infer<typeof MakerCheckerPolicyDto>;
 export const POLICY_TARGET_TYPE = 'MAKER_CHECKER_POLICY';
 export const POLICY_ACTION_UPDATE = 'UPDATE';
 
+// ── Q-124: батлах босго/түвшин, салбарын код зэрэг тохиргооны засвар 4 нүдээр ─────────────────────
+/** Нийтлэг батлах түвшин (productId = null) бүхэлд нь солих хүсэлт: targetType = APPROVAL_LEVELS, action = REPLACE, targetId = 'default' */
+export const APPROVAL_LEVELS_TARGET_TYPE = 'APPROVAL_LEVELS';
+export const APPROVAL_LEVELS_ACTION_REPLACE = 'REPLACE';
+export const APPROVAL_LEVELS_TARGET_ID = 'default';
+/** `setting` түлхүүр засах хүсэлт: targetType = SETTING, action = UPDATE, targetId = түлхүүр */
+export const SETTING_TARGET_TYPE = 'SETTING';
+export const SETTING_ACTION_UPDATE = 'UPDATE';
+/** Батлах урсгалд нөлөөлдөг тул зөвхөн 4 нүдээр өөрчлөгдөх тохиргооны түлхүүрүүд; бусад түлхүүр өмнөх шигээ шууд (settings:manage). */
+export const FOUR_EYES_SETTING_KEYS = ['contract.branch_codes', 'approval.default_sla_hours'] as const;
+export type FourEyesSettingKey = typeof FOUR_EYES_SETTING_KEYS[number];
+export const isFourEyesSettingKey = (k: string): k is FourEyesSettingKey => (FOUR_EYES_SETTING_KEYS as readonly string[]).includes(k);
+
 // ── Event (CLAUDE.md §3.3; outbox → los:events) ─────────────────────────────────
 const base = z.object({
   eventId: z.string().uuid(), occurredAt: z.string().datetime(), version: z.literal(1),
