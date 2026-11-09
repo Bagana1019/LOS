@@ -1,0 +1,10 @@
+{
+  "loan.list.title": "Зээлийн жагсаалт",
+  "loan.list.subtitle": "Олгогдсон зээлүүд. Зээлийн дугаар дээр дарж эргэн төлөлт, ЭТХ харна.",
+  "loan.list.empty": "Энэ төлөвт зээл алга",
+  "loan.list.error": "Зээлийн жагсаалтыг ачаалж чадсангүй",
+  "loan.col.contractNo": "Гэрээний дугаар",
+  "loan.col.decidedAt": "Олгосон огноо",
+  "loan.action.payments": "Эргэн төлөлт",
+  "loan.action.card": "Хүсэлт"
+}
