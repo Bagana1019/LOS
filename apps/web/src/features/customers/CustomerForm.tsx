@@ -132,7 +132,7 @@ export function CustomerForm({ customerType, registerNo, initial, prefilled, ser
           <Form.Item name="firstName" label={L('firstName')} rules={[req]} style={{ flex: '1 1 200px' }} {...marked('firstName')}><Input maxLength={100} /></Form.Item>
           {individual ? (
             <Form.Item name="gender" label={L('gender')} rules={[req]} style={{ flex: '1 1 160px' }} {...marked('gender')}>
-              <Select options={Gender.map((v) => ({ value: v, label: t(`customer.gender.${v}`) }))} />
+              <Select placeholder={t('customer.gender.select')} options={Gender.map((v) => ({ value: v, label: t(`customer.gender.${v}`) }))} />
             </Form.Item>
           ) : null}
           {individual ? <Form.Item name="civilId" label={L('civilId')} style={{ flex: '1 1 200px' }} {...marked('civilId')}><Input maxLength={30} /></Form.Item> : null}

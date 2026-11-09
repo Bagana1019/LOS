@@ -6,7 +6,7 @@ export function citizenPrefill(c: XypCitizen): Partial<CustomerInputRaw> {
   if (c.lastName) p.lastName = c.lastName;
   if (c.clanName) p.clanName = c.clanName;
   if (c.civilId) p.civilId = c.civilId;
-  if (c.gender) p.gender = c.gender;
+  // Хүйсийг ХУР/регистрээс автоматаар бөглөхгүй — бүртгэгч гараар сонгоно (Q-074).
   if (c.birthDate) p.birthDate = c.birthDate;
   if (c.maritalStatus) p.maritalStatus = c.maritalStatus;
   if (c.familySize) p.familySize = c.familySize;
@@ -18,7 +18,7 @@ export function citizenPrefill(c: XypCitizen): Partial<CustomerInputRaw> {
 }
 
 /** ХУР-аас ирсэн утга ЭРХТЭЙ — ЗЭЗ-ийн гараар бичсэн нэр, төрсөн огноог дарна (бүртгэлийн үнэн зөв байдал). */
-const AUTHORITATIVE = ['customerType', 'registerNo', 'lastName', 'firstName', 'clanName', 'civilId', 'gender', 'birthDate', 'officialAddress'] as const;
+const AUTHORITATIVE = ['customerType', 'registerNo', 'lastName', 'firstName', 'clanName', 'civilId', 'birthDate', 'officialAddress'] as const;
 /** ХУР хоцрох боломжтой (гэрлэлт, ам бүл) тул ЗЭЗ бөглөсөн бол түүнийг хадгалж, зөвхөн хоосныг нөхнө. */
 const FILL_ONLY = ['maritalStatus', 'familySize', 'activitySector', 'segment'] as const;
 
