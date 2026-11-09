@@ -45,6 +45,8 @@ describe('inquiry, income, admin: gateway-ийн `/origination` угтварта
     ['inquiry: list', () => inquiry.fetchInquiries('a1'), '/applications/a1/inquiries', 'GET'],
     ['inquiry: fetch', () => inquiry.fetchInquiriesNow('a1', {}), '/applications/a1/inquiries/fetch', 'POST'],
     ['admin: approval levels', () => admin.fetchLevels(), '/approval-levels', 'GET'],
+    ['admin: products', () => admin.fetchProducts(), '/products', 'GET'],
+    ['admin: pricing tiers', () => admin.fetchPricingTiers(null), '/loan-terms/pricing/tiers', 'GET'],
     ['admin: contract number template', () => admin.fetchTemplate(), '/contract-number-template', 'GET'],
     ['admin: audit log', () => admin.fetchOriginationAudit({ page: 1 }), '/audit-logs?page=1', 'GET'],
     ['income: overview', () => income.fetchIncome('a1'), '/applications/a1/income', 'GET'],

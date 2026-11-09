@@ -1,5 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChangeRequestPage, type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsRequest } from '@los/contracts';
+import {
+  ChangeRequestPage, type AuditLogQuery, type ContractNumberTemplateBody, type ProductCreateRequest, type ProductSetActiveRequest, type ProductUpdateRequest,
+  type ReplaceApprovalLevelsRequest, type SavePricingTiersRequest,
+} from '@los/contracts';
 import { listRequests } from '../maker-checker/api';
 import * as api from './admin.api';
 
@@ -42,4 +45,23 @@ export function useSaveTemplate() {
 export function useAssignBranch() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (v: { userId: string; branchId: string | null }) => api.assignUserBranch(v.userId, v.branchId), onSuccess: () => qc.invalidateQueries({ queryKey: key('users') }) });
+}
+
+// ── Бүтээгдэхүүн (4 нүд) ба үнэлгээний шатлал ──
+export const useProducts = () => useQuery({ queryKey: key('products'), queryFn: api.fetchProducts });
+export function useProductMutation() {
+  const qc = useQueryClient();
+  type Vars =
+    | { kind: 'create'; body: ProductCreateRequest }
+    | { kind: 'update'; id: string; body: ProductUpdateRequest }
+    | { kind: 'active'; id: string; body: ProductSetActiveRequest };
+  return useMutation({
+    mutationFn: (v: Vars) => (v.kind === 'create' ? api.proposeProductCreate(v.body) : v.kind === 'update' ? api.proposeProductUpdate(v.id, v.body) : api.proposeProductActive(v.id, v.body)),
+    onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: key('products') }), qc.invalidateQueries({ queryKey: ['maker-checker'] })]),
+  });
+}
+export const usePricingTiers = (productId: string | null) => useQuery({ queryKey: key('pricing', productId), queryFn: () => api.fetchPricingTiers(productId), retry: false });
+export function useSavePricingTiers() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (b: SavePricingTiersRequest) => api.savePricingTiers(b), onSuccess: () => qc.invalidateQueries({ queryKey: key('pricing') }) });
 }
