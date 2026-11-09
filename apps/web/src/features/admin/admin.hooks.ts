@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChangeRequestPage, type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsRequest } from '@los/contracts';
+import { ChangeRequestPage, type CreateBranchBody, type CreateUserBody, type UpdateBranchBody, type UpdateUserBody, type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsRequest } from '@los/contracts';
 import { listRequests } from '../maker-checker/api';
 import * as api from './admin.api';
 
@@ -43,3 +43,16 @@ export function useAssignBranch() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (v: { userId: string; branchId: string | null }) => api.assignUserBranch(v.userId, v.branchId), onSuccess: () => qc.invalidateQueries({ queryKey: key('users') }) });
 }
+
+/** FR-13: дүр/салбар/төлөв өөрчлөгдөхөд салбарын хэрэглэгчийн тоо ч өөрчлөгдөх тул хоёуланг шинэчилнэ */
+function useAdminMutation<V, R>(fn: (v: V) => Promise<R>) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: fn, onSuccess: () => Promise.all([qc.invalidateQueries({ queryKey: key('users') }), qc.invalidateQueries({ queryKey: key('branches') })]) });
+}
+export const useCreateBranch = () => useAdminMutation((b: CreateBranchBody) => api.createBranch(b));
+export const useUpdateBranch = () => useAdminMutation((v: { id: string; body: UpdateBranchBody }) => api.updateBranch(v.id, v.body));
+export const useSetBranchActive = () => useAdminMutation((v: { id: string; active: boolean }) => api.setBranchActive(v.id, v.active));
+export const useCreateUser = () => useAdminMutation((b: CreateUserBody) => api.createUser(b));
+export const useUpdateUser = () => useAdminMutation((v: { id: string; body: UpdateUserBody }) => api.updateUser(v.id, v.body));
+export const useSetUserActive = () => useAdminMutation((v: { id: string; active: boolean }) => api.setUserActive(v.id, v.active));
+export const useResetUserPassword = () => useAdminMutation((id: string) => api.resetUserPassword(id));

@@ -60,23 +60,25 @@ model Role {
 }
 
 model User {
-  id               String    @id @default(uuid())
-  orgId            String    @map("org_id")
-  branchId         String?   @map("branch_id") // төвийн хэрэглэгч (батлагч, админ) = null байж болно
-  username         String    @unique
-  passwordHash     String    @map("password_hash") // scrypt
-  fullName         String    @map("full_name")
-  email            String?
-  phone            String?
-  roles            String[] // UserRole[]
-  isActive         Boolean   @default(true) @map("is_active")
-  failedLoginCount Int       @default(0) @map("failed_login_count")
-  lockedUntil      DateTime? @map("locked_until")
-  lastLoginAt      DateTime? @map("last_login_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-  createdBy        String?   @map("created_by")
-  updatedBy        String?   @map("updated_by")
+  id                 String    @id @default(uuid())
+  orgId              String    @map("org_id")
+  branchId           String?   @map("branch_id") // төвийн хэрэглэгч (батлагч, админ) = null байж болно
+  username           String    @unique
+  passwordHash       String    @map("password_hash") // scrypt
+  fullName           String    @map("full_name")
+  email              String?
+  phone              String?
+  roles              String[] // UserRole[]
+  isActive           Boolean   @default(true) @map("is_active")
+  mustChangePassword Boolean   @default(false) @map("must_change_password") // админ нууц үг шинэчилсэн/шинэ хэрэглэгч — эхний нэвтрэлтээр заавал солино
+  deactivatedAt      DateTime? @map("deactivated_at")
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until")
+  lastLoginAt        DateTime? @map("last_login_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+  createdBy          String?   @map("created_by")
+  updatedBy          String?   @map("updated_by")
 
   org      Org       @relation(fields: [orgId], references: [id])
   branch   Branch?   @relation(fields: [branchId], references: [id])

@@ -106,7 +106,7 @@ export const SessionUser = z.object({
 });
 export type SessionUser = z.infer<typeof SessionUser>;
 /** Refresh token нь httpOnly cookie-д (`los_rt`); body-д зөвхөн access token. */
-export const AuthResponse = z.object({ accessToken: z.string(), expiresIn: z.number().int(), user: SessionUser, permissions: z.array(z.enum(Permission)), menu: z.array(MenuItemSchema) });
+export const AuthResponse = z.object({ accessToken: z.string(), expiresIn: z.number().int(), user: SessionUser, permissions: z.array(z.enum(Permission)), menu: z.array(MenuItemSchema), mustChangePassword: z.boolean().optional() });
 export type AuthResponse = z.infer<typeof AuthResponse>;
 export const MeResponse = AuthResponse.omit({ accessToken: true, expiresIn: true });
 export type MeResponse = z.infer<typeof MeResponse>;
