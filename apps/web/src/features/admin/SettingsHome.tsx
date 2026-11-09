@@ -4,6 +4,8 @@ import { Card, Col, Flex, Row, Typography } from 'antd';
 import { t } from '../../lib/i18n';
 
 const ITEMS = [
+  { href: '/settings/products', key: 'products' },
+  { href: '/settings/pricing', key: 'pricing' },
   { href: '/settings/approval-levels', key: 'approval_levels' },
   { href: '/settings/branches', key: 'branches' },
   { href: '/settings/contract-number', key: 'contract_number' },

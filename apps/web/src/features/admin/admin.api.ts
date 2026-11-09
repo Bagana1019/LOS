@@ -1,7 +1,8 @@
 // M13 · Админ API. Gateway-ээр л: origination → `/origination/...`, өөрийн (iam) → `/admin/...`.
 import {
-  AdminBranchDto, AdminUserDto, ApprovalLevelDto, AuditLogPage, SubmitChangeResult,
-  type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsRequest,
+  AdminBranchDto, AdminUserDto, ApprovalLevelDto, AuditLogPage, PricingTierSet, ProductAdminDto, SubmitChangeResult,
+  type AuditLogQuery, type ContractNumberTemplateBody, type ProductCreateRequest, type ProductSetActiveRequest, type ProductUpdateRequest,
+  type ReplaceApprovalLevelsRequest, type SavePricingTiersRequest,
 } from '@los/contracts';
 import { z } from 'zod';
 import { apiFetch, originationFetch, qs } from '../../lib/api';
@@ -25,3 +26,13 @@ export const fetchBranches = () => apiFetch<AdminBranchDto[]>('/admin/branches',
 export const fetchUsers = () => apiFetch<AdminUserDto[]>('/admin/users', { schema: z.array(AdminUserDto) });
 export const assignUserBranch = (userId: string, branchId: string | null) => apiFetch<AdminUserDto>(`/admin/users/${userId}/branch`, { method: 'PUT', body: { branchId }, schema: AdminUserDto });
 export const fetchAuthAudit = (q: Partial<AuditLogQuery>) => apiFetch<AuditLogPage>(`/admin/audit-logs${qs(q)}`, { schema: AuditLogPage });
+
+// ── Бүтээгдэхүүний админ (FR-13, Q-124 хэв маяг): унших шууд, бичих бүр 4 нүдний санал ──
+export const fetchProducts = () => originationFetch<ProductAdminDto[]>('/products', { schema: z.array(ProductAdminDto) });
+export const proposeProductCreate = (body: ProductCreateRequest) => originationFetch<SubmitChangeResult>('/products', { method: 'POST', body, schema: SubmitChangeResult });
+export const proposeProductUpdate = (id: string, body: ProductUpdateRequest) => originationFetch<SubmitChangeResult>(`/products/${encodeURIComponent(id)}`, { method: 'PUT', body, schema: SubmitChangeResult });
+export const proposeProductActive = (id: string, body: ProductSetActiveRequest) => originationFetch<SubmitChangeResult>(`/products/${encodeURIComponent(id)}/active`, { method: 'POST', body, schema: SubmitChangeResult });
+
+// ── Үнэлгээний шатлал (FR-5.5): `PUT` шууд хадгална (settings:manage) ──
+export const fetchPricingTiers = (productId: string | null) => originationFetch<PricingTierSet>(`/loan-terms/pricing/tiers${qs({ productId: productId ?? undefined })}`, { schema: PricingTierSet });
+export const savePricingTiers = (body: SavePricingTiersRequest) => originationFetch<PricingTierSet>('/loan-terms/pricing/tiers', { method: 'PUT', body, schema: PricingTierSet });
