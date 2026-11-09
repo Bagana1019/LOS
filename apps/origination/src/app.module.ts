@@ -12,6 +12,7 @@ import { LoanTermsModule } from './modules/loan-terms/loan-terms.module';
 import { ScoreModule } from './modules/score/score.module';
 import { ScheduleModule } from './modules/schedule/schedule.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { ProductModule } from './modules/product/product.module';
 import { ApprovalModule } from './modules/approval/approval.module';
 import { ContractModule } from './modules/contract/contract.module';
 import { DisbursementModule } from './modules/disbursement/disbursement.module';
@@ -46,6 +47,7 @@ import { CommentModule } from './modules/comment/comment.module';
     ScoreModule,
     ScheduleModule,
     AdminModule,
+    ProductModule,
     ApprovalModule,
     ContractModule,
     DisbursementModule,

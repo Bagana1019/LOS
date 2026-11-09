@@ -143,10 +143,12 @@
   "maker_checker.target_type.BLACKLIST_ENTRY": "Хар жагсаалтын бүртгэл",
   "maker_checker.target_type.APPROVAL_LEVELS": "Батлах түвшин, босго",
   "maker_checker.target_type.SETTING": "Тохиргоо",
+  "maker_checker.target_type.PRODUCT": "Зээлийн бүтээгдэхүүн",
   "maker_checker.change_action.CREATE": "Үүсгэх",
   "maker_checker.change_action.UPDATE": "Өөрчлөх",
   "maker_checker.change_action.DELETE": "Устгах",
   "maker_checker.change_action.REPLACE": "Бүхэлд нь солих",
+  "maker_checker.change_action.SET_ACTIVE": "Идэвх солих",
 
   "maker_checker.policies.title": "4 нүдний бодлого",
   "maker_checker.policies.notice": "Бодлого өөрчлөх нь өөрөө 4 нүдний хүсэлт бөгөөд өөр админ батлах хүртэл хүчин төгөлдөр болохгүй.",
