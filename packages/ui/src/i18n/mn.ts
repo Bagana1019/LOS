@@ -19,6 +19,7 @@ import admin from './mn.admin.json'; // Модуль 13 — Админ (FR-13): 
 import bsa from './mn.bsa.json'; // Модуль 12 — BSA: bsa.*
 import blacklist from './mn.blacklist.json'; // FR-13.1 — Хар/саарал жагсаалт: blacklist.*
 import lifecycle from './mn.lifecycle.json'; // Wizard-ийн 4,6,9–12-р алхам: terms.*, sched.*, decide.*, cstep.*, letters.*, disb.*
+import loan from './mn.loan.json'; // docs/01 §2 — Зээлийн жагсаалт: loan.*
 
 // Модуль бүр `mn.<module>.json` үүсгээд доор НЭГ import + `mnSources`-д НЭГ мөр нэмнэ (зэрэгцээ салбар зөрчилгүй мерж хийгдэнэ).
 // Түлхүүр модулиар угтвартай (`auth.*`, `shell.*`, `customer.*`); давхардлыг web-ийн i18n тест барина.
@@ -44,6 +45,7 @@ export const mnSources = {
   bsa,
   blacklist,
   lifecycle,
+  loan,
 } as const;
 
 type UnionToIntersection<U> = (U extends unknown ? (k: U) => void : never) extends (k: infer I) => void ? I : never;
