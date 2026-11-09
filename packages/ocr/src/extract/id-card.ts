@@ -1,5 +1,5 @@
 // ID_CARD (Иргэний үнэмлэх) талбар задлалт. Шошго: Овог, Нэр, Регистрийн дугаар, Төрсөн огноо, Хүйс, Үнэмлэхний дугаар, Хүчинтэй хугацаа
-// (кирилл/латин, OCR-ийн шуугианд тэсвэртэй). Регистрийн дугаараас төрсөн огноо/хүйсийг тооцож зөрүүг анхааруулна.
+// (кирилл/латин, OCR-ийн шуугианд тэсвэртэй). Регистрээс төрсөн огноог тооцож зөрүүг анхааруулна (хүйсийг тооцохгүй, Q-074).
 // TODO(samples): бодит үнэмлэхний зураг байхгүй — шошго/байрлалын хэв маяг зохиомол, баталгаажаагүй.
 import type { OcrDoc } from './doc';
 import type { ExtractSettings } from './defaults';
@@ -89,14 +89,10 @@ export function extractIdCard(doc: OcrDoc, settings: ExtractSettings): FieldsRes
   else if (registerInfo?.birthDate) {
     fields.birthDate = make({ value: registerInfo.birthDate, raw: null, confidence: combineConfidence(regConf, { derived: true }), notes: ['Үнэмлэхнээс уншаагүй - регистрийн дугаараас гаргав'] });
   } else fields.birthDate = emptyField('Олдсонгүй');
-  if (genderValue === null) {
-    fields.gender = registerInfo?.gender
-      ? make({ value: registerInfo.gender, raw: null, confidence: combineConfidence(regConf, { derived: true }), notes: ['Үнэмлэхнээс уншаагүй - регистрийн дугаараас гаргав'] })
-      : emptyField('Олдсонгүй');
-  }
+  // Хүйсийг регистрээс гаргахгүй, зөрүү шалгахгүй — бүртгэгч гараар сонгоно (Q-074).
+  if (genderValue === null) fields.gender = emptyField('Олдсонгүй');
   if (registerInfo) {
     if (birth.iso && registerInfo.birthDate && birth.iso !== registerInfo.birthDate) warnings.push('birthDate: үнэмлэхний төрсөн огноо регистрийн дугаараас зөрж байна');
-    if (genderValue && registerInfo.gender && genderValue !== registerInfo.gender) warnings.push('gender: үнэмлэхний хүйс регистрийн дугаараас зөрж байна');
   }
 
   // ---- үнэмлэхний дугаар ----

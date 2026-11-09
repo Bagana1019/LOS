@@ -31,8 +31,8 @@ test('шинэ харилцагч: регистр → ХУР → дутууг б
   api.on('POST', '/customers/xyp-fetch', {
     json: {
       registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', fetchedAt: '2026-11-03T00:00:00.000Z', existing: null, warnings: [],
-      prefill: { lastName: 'Болд', firstName: 'Бат', gender: 'MALE', birthDate: '1990-01-01', maritalStatus: 'MARRIED', familySize: 3, officialAddress: addr, activitySector: 'Худалдаа' },
-      prefilledFields: ['lastName', 'firstName', 'gender'], missing: ['phone', 'email'],
+      prefill: { lastName: 'Болд', firstName: 'Бат', birthDate: '1990-01-01', maritalStatus: 'MARRIED', familySize: 3, officialAddress: addr, activitySector: 'Худалдаа' },
+      prefilledFields: ['lastName', 'firstName'], missing: ['phone', 'email'],
     },
   });
   api.on('POST', '/customers', { status: 201, json: view });
@@ -48,6 +48,9 @@ test('шинэ харилцагч: регистр → ХУР → дутууг б
   await expect(page.locator('.ant-form-item-explain-error').first()).toBeVisible();
   expect(api.callsTo('POST', '/customers')).toHaveLength(0);
 
+  // Q-074: хүйсийг бүртгэгч гараар сонгоно
+  await page.locator('#gender').click();
+  await page.getByTitle('Эрэгтэй').click();
   await page.locator('#phone').fill('99112233');
   await page.locator('#email').fill('bat@example.mn');
   await page.locator('#segment').fill('Жижиг');
@@ -72,7 +75,7 @@ test('ХУР-аас татахад ургийн овог, иргэний бүр�
   api.on('POST', '/customers/xyp-fetch', {
     json: {
       registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', fetchedAt: '2026-11-03T00:00:00.000Z', existing: null, warnings: [],
-      prefill: { lastName: 'Болд', clanName: 'Боржигин', civilId: '1234567890', firstName: 'Бат', gender: 'MALE', birthDate: '1990-01-01', officialAddress: addr, activitySector: 'Худалдаа', segment: 'Жижиглэн' },
+      prefill: { lastName: 'Болд', clanName: 'Боржигин', civilId: '1234567890', firstName: 'Бат', birthDate: '1990-01-01', officialAddress: addr, activitySector: 'Худалдаа', segment: 'Жижиглэн' },
       prefilledFields: ['lastName', 'clanName', 'civilId', 'firstName', 'activitySector', 'segment'], missing: ['phone'],
     },
   });

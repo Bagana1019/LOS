@@ -47,6 +47,7 @@
   "customer.field.contacts.employment": "Ажил эрхлэлт",
   "customer.field.contacts.homeAddress": "Гэрийн хаяг",
   "customer.field.contacts.homeSameAsResidence": "Оршин суугаа хаягтай ижил",
+  "customer.gender.select": "Хүйсээ сонгоно уу",
   "customer.gender.MALE": "Эрэгтэй",
   "customer.gender.FEMALE": "Эмэгтэй",
   "customer.maritalStatus.SINGLE": "Гэрлээгүй",
