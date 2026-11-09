@@ -31,7 +31,7 @@ export class BlacklistEscalationHandler implements ChangeHandler<Payload> {
   readonly targetType = BLACKLIST_CHANGE_TARGET;
   readonly action = BLACKLIST_CHANGE_ACTION;
   readonly payloadSchema = Payload;
-  readonly makerRoles = ['ADMIN', 'COMPLIANCE'] as const;
+  readonly makerRoles = ['ADMIN', 'COMPLIANCE', 'BRANCH_MANAGER'] as const;
   readonly defaultPolicy = { enabled: true, checkerRoles: ['ADMIN', 'COMPLIANCE'], expiresInHours: 72 } as const;
 
   constructor(@Inject(ChangeHandlerRegistry) registry: ChangeHandlerRegistry) { registry.register(this); }

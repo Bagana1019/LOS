@@ -149,7 +149,7 @@ describe('BlacklistController (HTTP)', () => {
       await api().get('/api/blacklist').set(as(roles)).expect(200);
     });
 
-    it.each(['OFFICER', 'APPROVER', 'BRANCH_MANAGER', 'BOGUS', ''])('forbids writes and import for role "%s"', async (roles) => {
+    it.each(['OFFICER', 'APPROVER', 'BOGUS', ''])('forbids writes and import for role "%s"', async (roles) => {
       const { body } = await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(201);
       await api().post('/api/blacklist').set(as(roles)).send(entryInput({ registerNo: 'АА87654321' })).expect(403);
       await api().patch(`/api/blacklist/${body.id}`).set(as(roles)).send({ name: 'x' }).expect(403);
@@ -158,7 +158,7 @@ describe('BlacklistController (HTTP)', () => {
       await api().post('/api/blacklist/import').set(as(roles, { 'Content-Type': 'text/csv' })).send(`${CSV_HEADER}\n`).expect(403);
     });
 
-    it.each(['ADMIN', 'OFFICER,ADMIN', 'officer, admin'])('lets "%s" write', async (roles) => {
+    it.each(['ADMIN', 'BRANCH_MANAGER', 'OFFICER,ADMIN', 'officer, admin'])('lets "%s" write', async (roles) => {
       await api().post('/api/blacklist').set(as(roles)).send(entryInput()).expect(201);
     });
 
