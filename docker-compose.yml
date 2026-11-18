@@ -17,7 +17,9 @@ services:
     ports: ["6379:6379"]
     healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, timeout: 3s, retries: 20 }
   minio:
-    image: minio/minio
+    # H5: minio/minio, minio/mc Docker Hub-аас устсан (2026-11-18 шалгав). Chainguard-ийн MinIO image (minio + mc, sh-тэй),
+    # digest-ээр бэхэлсэн — шинэчлэхдээ `docker pull chainguard/minio:latest` хийж digest-ийг солино.
+    image: chainguard/minio@sha256:7618b82bba99aadd77fcf59eb6cfd89b4b8b8e01ac796c474d57a1c1abf17e79
     command: server /data --console-address ":9001"
     environment: { MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: minio12345 }
     ports: ["9000:9000", "9001:9001"]
@@ -25,7 +27,7 @@ services:
     healthcheck: { test: ["CMD", "mc", "ready", "local"], interval: 5s, timeout: 3s, retries: 20 }
   # Bucket урьдчилан үүсгэнэ (dms мөн эхлэхдээ ensureBucket хийдэг — давхардсан ч аюулгүй)
   minio-init:
-    image: minio/mc
+    image: chainguard/minio@sha256:7618b82bba99aadd77fcf59eb6cfd89b4b8b8e01ac796c474d57a1c1abf17e79
     depends_on: { minio: { condition: service_healthy } }
     entrypoint: ["/bin/sh", "-c", "mc alias set local http://minio:9000 minio minio12345 && mc mb --ignore-existing local/los-files"]
     restart: "no"
