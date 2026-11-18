@@ -17,6 +17,14 @@ export interface SubscribeOptions {
    * `${ms}-0` хэлбэрээр шинэ group-ийн replay-г хугацаагаар хязгаарлана.
    */
   startId?: string;
+  /**
+   * Infrastructure fault (e.g. the subscriber's DB is unreachable) → `true`: the failure does NOT consume a delivery attempt, the message
+   * stays pending and is redelivered after retryAfterMs (never dead-lettered for it). Omitted → every error counts (previous behaviour).
+   * A throwing classifier counts as `false`.
+   */
+  isTransientError?: (err: unknown) => boolean;
+  /** Called once when a message is moved to the dead-letter stream (after maxDeliveries counted failures). */
+  onDeadLetter?: (err: unknown, event?: DomainEvent) => void;
 }
 export interface EventBus {
   publish(e: DomainEvent): Promise<void>;
@@ -75,6 +83,7 @@ export function createRedisEventBus(url: string, opts: { stream?: string; consum
       const maxDeliveries = so.maxDeliveries ?? 5;
       const retryAfterMs = so.retryAfterMs ?? 30_000;
       const blockMs = so.blockMs ?? 1000;
+      const isTransient = (err: unknown) => { try { return so.isTransientError?.(err) === true; } catch { return false; } };
 
       const handle = async (id: string, fields: string[]) => {
         const m = toMap(fields);
@@ -89,9 +98,15 @@ export function createRedisEventBus(url: string, opts: { stream?: string; consum
           // хүргэлтийн тоо хэтэрвэл dead-letter; үгүй бол pending үлдээж retryAfterMs-ийн дараа дахин хүргэнэ
           const pend = (await reader.xpending(stream, group, id, id, 1)) as [string, string, number, number][];
           const deliveries = pend[0]?.[3] ?? 1;
+          if (isTransient(err)) {
+            // undo this delivery's increment (XCLAIM RETRYCOUNT sets the counter; JUSTID itself does not increment it)
+            await reader.call('XCLAIM', stream, group, consumer, '0', id, 'RETRYCOUNT', String(Math.max(0, deliveries - 1)), 'JUSTID');
+            return;
+          }
           if (deliveries >= maxDeliveries) {
             await reader.xadd(dlq, '*', 'group', group, 'id', id, 'error', String(err instanceof Error ? err.message : err).slice(0, 500), ...fields);
             await reader.xack(stream, group, id);
+            so.onDeadLetter?.(err, event);
           }
         }
       };
