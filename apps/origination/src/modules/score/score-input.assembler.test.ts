@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { Prisma } from '.prisma/client-origination';
-import { annuityPayment } from '@los/calc';
+import { annuityPayment, buildSchedule, type ScheduleParams } from '@los/calc';
 import { ScoreRequest, SoscoInput, type ScoreLimits } from '@los/contracts';
 import {
   aggregateIncome, buildScoreRequest, buildSoscoInput, existingDebtService, limitViolations, newMonthlyPayment, readBsaFacts, resolveLimits, resolvePolicy, resolveStress, resolveTerms,
-  sanitizeCreditHistory, SOSCO_UNSERVICEABLE_DTI_PERCENT, termsBlockers, LOAN_TERMS_MISSING_REASON, type BsaFacts, type ProductRow,
+  sanitizeCreditHistory, SOSCO_UNSERVICEABLE_DTI_PERCENT, termsBlockers, LOAN_TERMS_MISSING_REASON, type BsaFacts, type ProductRow, type ScheduleFacts,
 } from './score-input.assembler';
 import { methodVerdict, underwriteResult } from './testing/scoring-fixtures';
 
@@ -234,44 +234,72 @@ describe('existingDebtService · ЗМС ба BSA-ийн ИХ нь (консер�
   });
 });
 
-describe('newMonthlyPayment · annuity (TODO M07) / хуучраагүй ЭТХ', () => {
+// M11 / BR-1, BR-2: ӨОХ/ӨТЧХ-ийн шинэ зээлийн төлбөр нь бодит ЭТХ-ээс (`@los/calc` debtServicePayment) — annuity нь зөвхөн төрөл мэдэгдэхгүй үеийн нөөц.
+describe('newMonthlyPayment · ЭТХ-ээс (M11)', () => {
   const terms = { amount: 1_200_000, termMonths: 12, interestRate: 24 };
-  const annuity = annuityPayment(1_200_000, 24, 12);
-  const rows = (totals: number[], principalEach = 100_000) => totals.map((t) => ({ principal: D(principalEach), total: D(t) }));
-
-  it('ЭТХ байхгүй → annuity', () => {
-    expect(newMonthlyPayment(terms, null, true)).toEqual({ value: annuity, source: 'ANNUITY' });
-    expect(annuity).toBeCloseTo(113_471.52, 1);
+  const params = (o: Partial<ScheduleParams> = {}): ScheduleParams => ({ principal: 1_200_000, annualRate: 24, termMonths: 12, type: 'ANNUITY', startDate: '2026-01-05', firstPaymentDate: '2026-02-05', dayCount: '30/360', ...o });
+  const facts = (p: ScheduleParams, isStale = false): ScheduleFacts => ({
+    isStale, params: { ...p },
+    rows: buildSchedule(p).map((r) => ({ seq: r.seq, dueDate: new Date(`${r.dueDate}T00:00:00Z`), principal: D(r.principal), interest: D(r.interest) })),
   });
 
-  it('хуучраагүй, тэнцүү төлбөртэй, нөхцөлтэй таарах ЭТХ → эхний мөрийн total', () => {
-    const totals = [...Array(11).fill(113_471.52), 113_470.1];
-    expect(newMonthlyPayment(terms, { isStale: false, rows: rows(totals) }, true)).toEqual({ value: 113_471.52, source: 'SCHEDULE' });
-  });
-
-  it('хуучирсан ЭТХ → annuity', () => {
-    expect(newMonthlyPayment(terms, { isStale: true, rows: rows(Array(12).fill(120_000)) }, true).source).toBe('ANNUITY');
-  });
-
-  it('override-тэй (slider) бол ЭТХ ашиглахгүй', () => {
-    expect(newMonthlyPayment(terms, { isStale: false, rows: rows(Array(12).fill(120_000)) }, false).source).toBe('ANNUITY');
-  });
-
-  it('мөрийн тоо хугацаатай таарахгүй / үндсэн төлбөрийн нийлбэр дүнтэй таарахгүй → annuity', () => {
-    expect(newMonthlyPayment(terms, { isStale: false, rows: rows(Array(11).fill(120_000)) }, true).source).toBe('ANNUITY');
-    expect(newMonthlyPayment(terms, { isStale: false, rows: rows(Array(12).fill(120_000), 50_000) }, true).source).toBe('ANNUITY');
-    expect(newMonthlyPayment(terms, { isStale: false, rows: [] }, true).source).toBe('ANNUITY');
-  });
-
-  it('тэнцүү биш (хөнгөлөлттэй, тэнцүү үндсэн төлбөр) ЭТХ → annuity', () => {
-    const totals = [50_000, ...Array(11).fill(120_000)];
-    expect(newMonthlyPayment(terms, { isStale: false, rows: rows(totals) }, true).source).toBe('ANNUITY');
-    const declining = Array.from({ length: 12 }, (_, i) => 200_000 - i * 8_000);
-    expect(newMonthlyPayment(terms, { isStale: false, rows: rows(declining) }, true).source).toBe('ANNUITY');
-  });
-
-  it('хүү 0 → дүн ÷ хугацаа, 2 орон', () => {
+  it('ЭТХ байхгүй → annuity; хүү 0 → дүн ÷ хугацаа', () => {
+    expect(newMonthlyPayment(terms, null, true)).toEqual({ value: annuityPayment(1_200_000, 24, 12), source: 'ANNUITY' });
     expect(newMonthlyPayment({ amount: 1_000_000, termMonths: 3, interestRate: 0 }, null, true)).toEqual({ value: 333_333.33, source: 'ANNUITY' });
+  });
+
+  it('annuity ЭТХ (seq 0 олголтын мөртэй) → тогтмол төлбөр, SCHEDULE', () => {
+    const r = newMonthlyPayment(terms, facts(params()), true);
+    expect(r.source).toBe('SCHEDULE');
+    expect(r.value).toBeCloseTo(annuityPayment(1_200_000, 24, 12), 0);
+  });
+
+  it('тэнцүү үндсэн → эхний мөр 124,000 (annuity-аас их; өмнө нь дутуу тооцогддог байсан)', () => {
+    expect(newMonthlyPayment(terms, facts(params({ type: 'EQUAL_PRINCIPAL' })), true)).toEqual({ value: 124_000, source: 'SCHEDULE' });
+  });
+
+  it('bullet → сарын хүү + үндсэн ÷ хугацаа = 124,000', () => {
+    expect(newMonthlyPayment(terms, facts(params({ type: 'BULLET' })), true)).toEqual({ value: 124_000, source: 'SCHEDULE' });
+  });
+
+  it('хөнгөлөлттэй (grace 3) → хөнгөлөлтийн дараах annuity (9 сар)', () => {
+    const r = newMonthlyPayment(terms, facts(params({ graceMonths: 3 })), true);
+    expect(r.source).toBe('SCHEDULE');
+    expect(r.value).toBeCloseTo(annuityPayment(1_200_000, 24, 9), 0);
+  });
+
+  it('хуучирсан ЭТХ → хадгалсан төрөл/огноогоор одоогийн нөхцөлөөр дахин бодно (SCHEDULE_PREVIEW)', () => {
+    const r = newMonthlyPayment({ ...terms, amount: 600_000 }, facts(params({ type: 'EQUAL_PRINCIPAL' }), true), true);
+    expect(r).toEqual({ value: 62_000, source: 'SCHEDULE_PREVIEW' });
+  });
+
+  it('override (slider) → хадгалсан ЭТХ-ийн мөрийг ашиглахгүй, төрлөөр нь preview', () => {
+    expect(newMonthlyPayment({ ...terms, amount: 600_000 }, facts(params({ type: 'BULLET' })), false)).toEqual({ value: 62_000, source: 'SCHEDULE_PREVIEW' });
+  });
+
+  it('нөхцөлтэй таарахгүй (дүн/хүү/хугацаа) хуучраагүй ЭТХ → preview', () => {
+    expect(newMonthlyPayment({ ...terms, interestRate: 12 }, facts(params({ type: 'EQUAL_PRINCIPAL' })), true)).toEqual({ value: 112_000, source: 'SCHEDULE_PREVIEW' });
+    expect(newMonthlyPayment({ ...terms, termMonths: 6 }, facts(params({ type: 'EQUAL_PRINCIPAL' })), true).source).toBe('SCHEDULE_PREVIEW');
+  });
+
+  it('төрөл/огноо мэдэгдэхгүй эсвэл буруу параметр → annuity нөөц', () => {
+    const f = facts(params({ type: 'EQUAL_PRINCIPAL' }), true);
+    expect(newMonthlyPayment(terms, { ...f, params: null }, true).source).toBe('ANNUITY');
+    expect(newMonthlyPayment(terms, { ...f, params: { ...f.params, type: 'WEIRD' } }, true).source).toBe('ANNUITY');
+    expect(newMonthlyPayment(terms, { ...f, params: { ...f.params, startDate: 'bad' } }, true).source).toBe('ANNUITY');
+    expect(newMonthlyPayment(terms, { isStale: false, params: null, rows: [] }, true).source).toBe('ANNUITY');
+  });
+
+  it('params_json хоосон (хуучин) ч хуучраагүй, үндсэн нийлбэр таарвал мөрийг ашиглана; олголтын огноогүй бол эхний үе = 1 сар', () => {
+    const rows = [0, 1, 2].map((i) => ({ seq: i + 1, dueDate: `2026-0${i + 2}-05`, principal: D(400_000), interest: D(i === 0 ? 90_000 : 10_000) }));
+    expect(newMonthlyPayment({ amount: 1_200_000, termMonths: 3, interestRate: 24 }, { isStale: false, params: {}, rows }, true)).toEqual({ value: 490_000, source: 'SCHEDULE' });
+    expect(newMonthlyPayment({ amount: 1_200_000, termMonths: 3, interestRate: 24 }, { isStale: false, params: null, rows: rows.slice(1) }, true).source).toBe('ANNUITY'); // нийлбэр таарахгүй
+  });
+
+  it('seq 0 мөргүй ч params.startDate байвал хадгалсан мөрийг ашиглана; огноо string байж болно', () => {
+    const f = facts(params({ type: 'EQUAL_PRINCIPAL' }));
+    const rows = f.rows.filter((r) => r.seq > 0).map((r) => ({ ...r, dueDate: (r.dueDate as Date).toISOString().slice(0, 10) }));
+    expect(newMonthlyPayment(terms, { ...f, rows }, true)).toEqual({ value: 124_000, source: 'SCHEDULE' });
   });
 });
 

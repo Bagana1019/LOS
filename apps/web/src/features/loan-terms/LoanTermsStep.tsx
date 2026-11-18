@@ -1,11 +1,13 @@
 'use client';
 import { Alert, Button, Card, Flex, Form, Input, InputNumber, Select, Skeleton, Tag, Typography, App as AntApp } from 'antd';
-import { MONEY_MAX, MONEY_MAX_INTEGER_DIGITS, type SaveLoanTermsRequest } from '@los/contracts';
+import { useState } from 'react';
+import { MONEY_MAX, MONEY_MAX_INTEGER_DIGITS, type PricingQuoteResponse, type SaveLoanTermsRequest } from '@los/contracts';
 import type { Rule } from 'antd/es/form';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
-import { useCibPurposes, useLoanTerms, useProducts, useSaveTerms } from './loanTerms.api';
+import { useCibPurposes, useLoanTerms, useProducts, useRateQuote, useSaveTerms } from './loanTerms.api';
+import { RateSuggestion } from './RateSuggestion';
 
 interface Props { applicationId: string; onChanged?: () => void }
 type FormValues = { productId: string; amount: number; termMonths: number; interestRate?: number; feeRate?: number; downPayment?: number; charges?: number; insurance?: number; purpose: string; purposeDetail?: string; cibPurposeCode?: string; cibSubCode?: string; officerNote?: string };
@@ -53,6 +55,8 @@ export function LoanTermsStep({ applicationId, onChanged }: Props) {
   const [form] = Form.useForm<FormValues>();
   const purposeCode = Form.useWatch('cibPurposeCode', form);
   const productId = Form.useWatch('productId', form);
+  const rateQuote = useRateQuote();
+  const [suggestion, setSuggestion] = useState<PricingQuoteResponse | null>(null);
   if (q.isLoading) return <Skeleton active />;
   if (q.error || !q.data) return <ApiErrorAlert error={q.error} onRetry={() => void q.refetch()} />;
   const d = q.data;
@@ -62,6 +66,19 @@ export function LoanTermsStep({ applicationId, onChanged }: Props) {
   const subs = cib.data?.items.find((x) => x.code === purposeCode)?.subs ?? [];
   const initial: Partial<FormValues> = { productId: d.productId ?? undefined, amount: d.amount ?? undefined, termMonths: d.termMonths ?? undefined, interestRate: d.interestRate ?? undefined, feeRate: d.feeRate ?? undefined, downPayment: d.downPayment ?? undefined, charges: d.charges ?? undefined, insurance: d.insurance ?? undefined, purpose: d.purpose ?? undefined, purposeDetail: d.purposeDetail ?? undefined, cibPurposeCode: d.cibPurposeCode ?? undefined, cibSubCode: d.cibSubCode ?? undefined, officerNote: d.officerNote ?? undefined };
   const required = [{ required: true, message: t('terms.form.required') }];
+  const effectiveProductId = productId ?? d.productId;
+  // M11 · FR-5.5: серверийн санал (Sosco Score → шатлал → BR-6 хязгаар) хүү/шимтгэлийн талбарыг бөглөнө; ЗЭЗ хязгаарт багтаан өөрчилж болно.
+  const suggestRate = () => {
+    if (!effectiveProductId) { void message.warning(t('terms.suggest.needProduct')); return; }
+    const amount = form.getFieldValue('amount') as unknown;
+    rateQuote.mutateAsync({ productId: effectiveProductId, soscoScore: d.soscoScore ?? null, ...(typeof amount === 'number' && amount > 0 ? { amount } : {}) })
+      .then((res) => {
+        form.setFieldsValue({ interestRate: res.interestRate, feeRate: res.feeRate });
+        setSuggestion(res);
+        void message.success(t('terms.suggest.applied'));
+      })
+      .catch(() => undefined);
+  };
 
   return (
     <Flex vertical gap={16}>
@@ -90,6 +107,13 @@ export function LoanTermsStep({ applicationId, onChanged }: Props) {
             <Form.Item name="interestRate" label={t('terms.field.rate')} extra={t('terms.field.rateHint')} rules={limits ? [{ type: 'number', min: limits.minRate, max: limits.maxRate, message: t('terms.form.range', { field: t('terms.field.rate'), min: limits.minRate, max: limits.maxRate }) }] : []}><InputNumber min={0} max={100} step={0.01} maxLength={8} inputMode="decimal" style={{ width: 140 }} /></Form.Item>
             <Form.Item name="feeRate" label={t('terms.field.fee')} extra={t('terms.field.feeHint')}><InputNumber min={0} max={1} step={0.001} style={{ width: 140 }} /></Form.Item>
           </Flex>
+          {readOnly ? null : (
+            <Flex vertical gap={8} style={{ marginBottom: 16 }}>
+              <Button onClick={suggestRate} loading={rateQuote.isPending} disabled={!effectiveProductId} data-testid="terms-suggest-rate" style={{ alignSelf: 'flex-start' }}>{t('pricing.suggest')}</Button>
+              {suggestion ? <RateSuggestion quote={suggestion} /> : null}
+              {rateQuote.error ? <ApiErrorAlert error={rateQuote.error} /> : null}
+            </Flex>
+          )}
           <Flex gap={16} wrap>
             <Form.Item name="downPayment" label={t('terms.field.downPayment')} rules={moneyRules(t('terms.field.downPayment'))}><InputNumber min={0} max={MONEY_MAX} controls={false} inputMode="decimal" maxLength={MONEY_MAX_INTEGER_DIGITS + 4} formatter={moneyFormatter} parser={moneyParser} style={{ width: 180 }} /></Form.Item>
             <Form.Item name="charges" label={t('terms.field.charges')} rules={moneyRules(t('terms.field.charges'))}><InputNumber min={0} max={MONEY_MAX} controls={false} inputMode="decimal" maxLength={MONEY_MAX_INTEGER_DIGITS + 4} formatter={moneyFormatter} parser={moneyParser} style={{ width: 180 }} /></Form.Item>
