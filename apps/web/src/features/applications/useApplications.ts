@@ -19,7 +19,10 @@ export const useApplication = (id: string) =>
 
 export function useCreateApplication() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (body: CreateApplicationRequest) => api.createApplication(body), onSuccess: () => qc.invalidateQueries({ queryKey: applicationsKey }) });
+  return useMutation({
+    mutationFn: ({ body, idempotencyKey }: { body: CreateApplicationRequest; idempotencyKey?: string }) => api.createApplication(body, idempotencyKey),
+    onSuccess: () => qc.invalidateQueries({ queryKey: applicationsKey }),
+  });
 }
 
 export function useTransition(id: string) {

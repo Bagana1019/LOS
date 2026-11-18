@@ -1,9 +1,9 @@
 'use client';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Form, Input, Modal } from 'antd';
 import type { ApplicationDetail } from '@los/contracts';
 import { t } from '../../lib/i18n';
-import { describeApplicationError, singleFlight } from './applications.utils';
+import { createIdempotencyKeyHolder, describeApplicationError, shouldRotateIdempotencyKey, singleFlight } from './applications.utils';
 import { useCreateApplication } from './useApplications';
 
 interface Props { open: boolean; onClose: () => void; onCreated: (app: ApplicationDetail) => void }
@@ -12,16 +12,21 @@ interface Props { open: boolean; onClose: () => void; onCreated: (app: Applicati
 export function CreateApplicationModal({ open, onClose, onCreated }: Props) {
   const [purpose, setPurpose] = useState('');
   const create = useCreateApplication();
+  // Idempotency-Key: нэг нээлт = нэг түлхүүр. Алдаа/retry-д ижил (сервер давхардуулахгүй), дараагийн нээлтэд шинэ.
+  const keys = useMemo(() => createIdempotencyKeyHolder(), []);
+  useEffect(() => { if (open) keys.reset(); }, [open, keys]);
   // Сүүлийн render-ийн утгаар ажиллана; guard нь нэг л удаа үүснэ (давхар дарах, Enter + onFinish → нэг POST).
   const latest = useRef<() => Promise<void>>(async () => {});
   latest.current = async () => {
     const trimmed = purpose.trim();
     try {
-      const app = await create.mutateAsync(trimmed ? { purpose: trimmed } : {});
+      const app = await create.mutateAsync({ body: trimmed ? { purpose: trimmed } : {}, idempotencyKey: keys.current() });
+      keys.reset();
       setPurpose('');
       onCreated(app);
-    } catch {
-      // Алдааг `create.error`-оор доорх Alert-д харуулна.
+    } catch (e) {
+      // Алдааг `create.error`-оор доорх Alert-д харуулна. Түлхүүр өөр биетэй ашиглагдсан бол солино; сүлжээний алдаанд ижил түлхүүрээр дахин оролдоно.
+      if (shouldRotateIdempotencyKey(e)) keys.reset();
     }
   };
   const guarded = useMemo(() => singleFlight(() => latest.current()), []);

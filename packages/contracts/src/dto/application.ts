@@ -20,6 +20,15 @@ export const CreateApplicationRequest = z.object({
 }).strict();
 export type CreateApplicationRequest = z.infer<typeof CreateApplicationRequest>;
 
+/**
+ * `POST /applications` дээрх заавал биш `Idempotency-Key` толгой: нэг түлхүүр = нэг хүсэлт (давхар дарах, timeout-ын дараах retry, 2 таб).
+ * 8–128 тэмдэгт [A-Za-z0-9_-]. Зөрчвөл 400 IDEMPOTENCY_KEY_INVALID; ижил түлхүүр өөр биетэй бол 422 IDEMPOTENCY_KEY_REUSED.
+ */
+export const IDEMPOTENCY_KEY_HEADER = 'Idempotency-Key';
+export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
+export const ApplicationIdempotencyErrorCode = ['IDEMPOTENCY_KEY_INVALID', 'IDEMPOTENCY_KEY_REUSED'] as const;
+export type ApplicationIdempotencyErrorCode = typeof ApplicationIdempotencyErrorCode[number];
+
 export const ApplicationSort = ['appNo', 'createdAt', 'amount', 'status', 'decidedAt'] as const;
 export const APPLICATION_PAGE_SIZES = [10, 20, 50, 100] as const;
 
