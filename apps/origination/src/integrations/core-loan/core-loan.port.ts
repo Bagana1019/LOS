@@ -31,6 +31,8 @@ export class CoreLoanError extends Error {
  * Origination нь `openLoan`-оос өмнө үргэлж `findLoan` дуудна (DB lease дор), тиймээс Core idempotency алдагдсан ч давхар нээхгүй.
  * `openLoan` timeout болсны дараа Core хүсэлтийг хожуу боловсруулж болно — тиймээс origination `null`-г шууд баталгаа гэж үзэхгүй,
  *   settle цонх (DISBURSEMENT_CORE_SETTLE_SECONDS) + 2 лавлагааны дараа л (H1). Real adapter: Core-ийн хамгийн урт боловсруулалт < settle цонх байх ёстой.
+ * - `CORE_REJECTED` = тухайн түлхүүрээр данс нээгдээгүй бөгөөд нээгдэхгүй нь баталгаатай. Ижил түлхүүрийн өмнөх хүсэлт боловсруулагдаж байвал
+ *   татгалзахгүй — `CORE_UNAVAILABLE` (тодорхойгүй) буцаана; эс бөгөөс origination буцаахыг шууд зөвшөөрнө.
  */
 export interface CoreLoanPort {
   readonly mode: IntegrationMode;

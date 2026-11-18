@@ -173,7 +173,8 @@ export class DisbursementService {
       const lease = this.clock.now();
       const res = await tx.disbursementRequest.updateMany({
         where: { id: row.id, status: row.status, ...(recovering ? { coreRequestedAt: row.coreRequestedAt } : {}) },
-        data: { status: 'APPROVED', coreRequestedAt: lease, ...(recovering ? { coreUnknownAt: row.coreUnknownAt ?? lease } : {}), updatedBy: ctx.userId, historyJson: this.history(row, ctx, recovering ? 'APPROVE_RETRY' : 'APPROVED', comment ?? null) as never },
+        // H1: openLoan дуудагдаж болох тул ижил CAS-д шинэ үе эхэлнэ — settle цонх энэ lease-ээс; хуучин нотолгоо шилжихгүй.
+        data: { status: 'APPROVED', coreRequestedAt: lease, ...this.newEpisode(lease), updatedBy: ctx.userId, historyJson: this.history(row, ctx, recovering ? 'APPROVE_RETRY' : 'APPROVED', comment ?? null) as never },
       });
       if (res.count !== 1) throw new ConflictException({ code: 'STALE_STATE', message: 'Олголтын төлөв өөрчлөгдсөн байна, дахин ачаална уу' });
       return { row, app, lease };
@@ -257,17 +258,32 @@ export class DisbursementService {
     });
   }
 
+  /** openLoan илгээгдэж болох мөч = шинэ нотолгооны үе (тоолуур 0). */
+  private newEpisode(at: Date) {
+    return { coreUnknownAt: at, coreNotFoundCount: 0, coreNotFoundAt: null };
+  }
+
+  /**
+   * claimStale-ийн settle эхлэл = openLoan илгээгдэж болох хамгийн сүүлийн мөч. Инвариант: openLoan дуудаж болох lease бүрийг approve-ийн CAS
+   * `core_unknown_at = core_requested_at` гэж нэг транзакцид тамгална (markUnknown нь түүнээс хойш), тиймээс max(core_unknown_at, хэтэрсэн
+   * core_requested_at) = core_unknown_at. Lookup-only lease (reconcile/sweeper) openLoan илгээдэггүй — max() авбал sweeper цонхыг үүрд хойшлуулна.
+   * Тамгагүй (хуучин) мөр → одоо (хэтэрсэн lease-ээс хойш, консерватив).
+   */
+  private unknownSince(row: Pick<DisbursementRequest, 'coreUnknownAt'>, now: Date): Date {
+    return row.coreUnknownAt ?? now;
+  }
+
   private evidence(row: Pick<DisbursementRequest, 'coreUnknownAt' | 'coreNotFoundCount' | 'coreNotFoundAt'>): NotFoundEvidence {
     return { unknownAt: row.coreUnknownAt, notFoundCount: row.coreNotFoundCount, lastNotFoundAt: row.coreNotFoundAt };
   }
 
   /**
    * Хугацаа хэтэрсэн APPROVED мөрийн lease-ийг CAS-аар авна (fencing: хуучин core_requested_at). Ялагдвал null.
-   * Өмнөх эзэмшигч openLoan илгээгээд унасан байж болох тул үр дүн тодорхойгүй — core_unknown_at-ийг (хоосон бол) одооноос эхлүүлнэ.
+   * Өмнөх эзэмшигч openLoan илгээгээд унасан байж болох тул үр дүн тодорхойгүй — `unknownSince`. Нотолгооны тоолуурыг ХЭЗЭЭ Ч тэглэхгүй (lookup-only).
    */
   private async claimStale(row: DisbursementRequest, actorId: string | null): Promise<Date | null> {
     const lease = this.clock.now();
-    const res = await this.prisma.disbursementRequest.updateMany({ where: { id: row.id, status: 'APPROVED', coreRequestedAt: row.coreRequestedAt }, data: { coreRequestedAt: lease, coreUnknownAt: row.coreUnknownAt ?? lease, updatedBy: actorId } });
+    const res = await this.prisma.disbursementRequest.updateMany({ where: { id: row.id, status: 'APPROVED', coreRequestedAt: row.coreRequestedAt }, data: { coreRequestedAt: lease, coreUnknownAt: this.unknownSince(row, lease), updatedBy: actorId } });
     return res.count === 1 ? lease : null;
   }
 
@@ -310,7 +326,7 @@ export class DisbursementService {
     const fresh = await this.prisma.disbursementRequest.findUniqueOrThrow({ where: { id } });
     const now = this.clock.now();
     const ev = recordNotFound(this.evidence(fresh), now, this.settle);
-    if (isNotFoundDefinitive(ev, now, this.settle)) { await this.markFailed(ctx, id, applicationId, lease, 'CORE_NOT_FOUND', ev); return null; }
+    if (isNotFoundDefinitive(ev, now, this.settle)) { await this.markFailed(ctx, id, applicationId, lease, 'CORE_NOT_FOUND', 'clear'); return null; }
     await this.recordSettling(ctx, fresh, { id, status: 'APPROVED', coreRequestedAt: lease }, ev);
     return ev;
   }
@@ -343,7 +359,8 @@ export class DisbursementService {
     } catch (e) {
       const code = e instanceof CoreLoanError ? e.code : 'CORE_UNAVAILABLE';
       this.logger.warn({ event: 'disbursement.core_failed', applicationId: app.id, disbursementId: row.id, code, correlationId: ctx.correlationId });
-      if (DEFINITIVE_CORE_ERRORS.has(code)) await this.markFailed(ctx, row.id, app.id, lease, code);
+      // Энэ оролдлогын openLoan-ийн тодорхой татгалзалт = данс байхгүй нь баталгаатай → нотолгоо цэвэрлэнэ. Lookup-ийн "тодорхой" алдаа данс байгаа эсэхийг хэлэхгүй → хадгална.
+      if (DEFINITIVE_CORE_ERRORS.has(code)) await this.markFailed(ctx, row.id, app.id, lease, code, opened ? 'clear' : 'keep');
       else await this.markUnknown(ctx, row.id, app.id, lease, code, opened);
       throw new DomainError('CORE_OPEN_LOAN_FAILED', 'Core-д зээлийн данс нээж чадсангүй — дахин оролдох эсвэл буцаана уу', 502, { code });
     }
@@ -388,11 +405,11 @@ export class DisbursementService {
     }, TX);
   }
 
-  /** FAILED (fenced). H1 нотолгоо (core_unknown_at, тоолуур) хадгалагдана — reject нь settle дүрмийг дахин шалгана. */
-  private async markFailed(ctx: RequestContext, id: string, applicationId: string, lease: Date, code: string, ev?: NotFoundEvidence): Promise<void> {
+  /** FAILED (fenced). `clear` = данс байхгүй нь баталгаатай (reject шууд); `keep` = нотолгоо хадгална, reject settle дүрмийг дахин шалгана. */
+  private async markFailed(ctx: RequestContext, id: string, applicationId: string, lease: Date, code: string, evidence: 'clear' | 'keep'): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       const fresh = await tx.disbursementRequest.findUniqueOrThrow({ where: { id } });
-      const res = await tx.disbursementRequest.updateMany({ where: { id, status: 'APPROVED', coreRequestedAt: lease }, data: { status: 'FAILED', coreRequestedAt: null, ...(ev ? { coreNotFoundCount: ev.notFoundCount, coreNotFoundAt: ev.lastNotFoundAt } : {}), historyJson: this.history(fresh, ctx, 'CORE_FAILED', code) as never, updatedBy: ctx.userId } });
+      const res = await tx.disbursementRequest.updateMany({ where: { id, status: 'APPROVED', coreRequestedAt: lease }, data: { status: 'FAILED', coreRequestedAt: null, ...(evidence === 'clear' ? CLEAR_EVIDENCE : {}), historyJson: this.history(fresh, ctx, 'CORE_FAILED', code) as never, updatedBy: ctx.userId } });
       if (res.count !== 1) return; // lease алдсан — шинэ эзэмшигчийн төлөвийг дарахгүй
       await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: id, action: 'DISBURSEMENT_CORE_FAILED', actorId: ctx.userId, afterJson: { code }, applicationId, correlationId: ctx.correlationId });
     }, TX);
