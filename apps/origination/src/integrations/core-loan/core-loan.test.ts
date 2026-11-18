@@ -11,6 +11,18 @@ describe('core-loan integration', () => {
     expect(a.coreLoanId).toMatch(/^CL-[0-9A-F]{10}$/);
     expect((await p.openLoan(req())).coreLoanId).toBe(a.coreLoanId);
   });
+  it('H1: mock lookup by reference returns null before open and the same loan after (no second account)', async () => {
+    const p = createCoreLoanPort({ INTEGRATION_MODE: 'mock' });
+    expect(await p.findLoan('d-1')).toBeNull();
+    const opened = await p.openLoan(req());
+    expect(await p.findLoan('d-1')).toEqual(opened);
+    expect(await p.findLoan('other')).toBeNull();
+  });
+  it('H1: rejected open leaves nothing to find', async () => {
+    const p = createCoreLoanPort({});
+    await expect(p.openLoan(req('5000000000'))).rejects.toBeInstanceOf(CoreLoanError);
+    expect(await p.findLoan('d-1')).toBeNull();
+  });
   it('mock rejects the demo failing account', async () => {
     await expect(createCoreLoanPort({}).openLoan(req('5000000000'))).rejects.toBeInstanceOf(CoreLoanError);
   });
@@ -18,5 +30,8 @@ describe('core-loan integration', () => {
     const p = createCoreLoanPort({ INTEGRATION_MODE: 'real' });
     await expect(p.openLoan(req())).rejects.toThrow(/CORE_LOAN_API_URL/);
     await expect(createCoreLoanPort({ INTEGRATION_MODE: 'real' } as never).openLoan(req())).rejects.toBeTruthy();
+    await expect(p.findLoan('d-1')).rejects.toThrow(/CORE_LOAN_API_URL/);
+    const configured = createCoreLoanPort({ INTEGRATION_MODE: 'real', CORE_LOAN_API_URL: 'http://core', CORE_LOAN_API_KEY: 'k' });
+    await expect(configured.findLoan('d-1')).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' });
   });
 });

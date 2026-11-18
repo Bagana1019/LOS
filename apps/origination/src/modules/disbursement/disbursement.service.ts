@@ -1,7 +1,7 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import type { AccountOwnerType, DisbursementStatus, DisbursementView, RepaymentType, RequestContext, UpdateDisbursementRequest } from '@los/contracts';
 import { decryptedField, encryptedField, recordAudit } from '@los/database';
-import { Clock, DomainError } from '@los/nest-common';
+import { Clock, DomainError, systemContext } from '@los/nest-common';
 import type { DisbursementRequest, LoanApplication } from '.prisma/client-origination';
 import { BANK_GATEWAY } from '../../integrations/bank-transfer/bank-transfer.provider';
 import type { BankGatewayPort } from '../../integrations/bank-transfer/bank-transfer.client';
@@ -16,6 +16,21 @@ import { amountWithinApproved, evaluateGate, maskAccount, reconcile, type Decisi
 
 export const ACCOUNT_AAD = 'disbursement.account_no';
 const TX = { timeout: 20_000, maxWait: 10_000 };
+/**
+ * H1: Core lease. Lease эзэмшигчийн хамгийн урт ажил = findLoan 15с + openLoan 15с (Core timeout, CLAUDE.md §3.1) + tx maxWait 10с + tx 20с ≈ 60с;
+ * 120с нь үүнээс дээш тул хүчинтэй lease-тэй мөрийг өөр pod/sweeper авахгүй. Бизнесийн утга биш — техникийн хязгаар.
+ */
+export const CORE_LEASE_MS = 120_000;
+/** Үр дүн нь тодорхой Core алдаа (данс нээгдээгүй нь баталгаатай) → FAILED. Бусад (timeout, сүлжээ, 5xx) → тодорхойгүй: APPROVED хэвээр. */
+const DEFINITIVE_CORE_ERRORS = new Set(['CORE_REJECTED', 'NOT_IMPLEMENTED']);
+/**
+ * H1: Core idempotency key = `<disbursement_request.id>:<илгээсэн дугаар>`. Буцааж (DRAFT) дахин илгээх бүрт шинэ түлхүүр —
+ * өмнөх оролдлогын (өөр дүн/данстай байж болох) Core дансыг шинэ оролдлого руу хэзээ ч холбохгүй.
+ */
+export function coreKey(row: Pick<DisbursementRequest, 'id' | 'historyJson'>): string {
+  const submits = (Array.isArray(row.historyJson) ? (row.historyJson as unknown as HistoryEntry[]) : []).filter((h) => h.action === 'SUBMITTED').length;
+  return `${row.id}:${Math.max(submits, 1)}`;
+}
 const VISIBLE = ['APPROVED', 'DISBURSING', 'ACTIVE'];
 const num = (d: { toString(): string } | null | undefined): number => (d == null ? 0 : Number(d.toString()));
 const ymd = (d: Date | null | undefined): string | null => (d ? d.toISOString().slice(0, 10) : null);
@@ -28,7 +43,8 @@ interface Snapshot {
 }
 
 /**
- * FR-12 · олголтын хүсэлт. Төлөв: DRAFT → (G4) SUBMITTED → (G5, батлагч) APPROVED → Core openLoan → SENT_TO_CORE + хүсэлт ACTIVE.
+ * FR-12 · олголтын хүсэлт. Төлөв: DRAFT → (G4) SUBMITTED → (G5, батлагч) APPROVED[core lease] → Core findLoan/openLoan → SENT_TO_CORE + хүсэлт ACTIVE;
+ * Core алдаа/олдоогүй → FAILED (дахин зөвшөөрөх эсвэл буцаах). APPROVED гацвал reconcile / sweeper (H1).
  * Хүсэлтийн төлөв солих бүх шилжилт `ApplicationStateMachine.apply()`-аар. Core дуудлага нь DB транзакцаас гадуур (idempotencyKey = disbursement_request.id).
  */
 @Injectable()
@@ -124,74 +140,213 @@ export class DisbursementService {
   }
 
   // ── G5: зөвшөөрөх → Core ──
+  /**
+   * H1 (FR-12.5): Core данс нээх нь давхардахгүй, сэргээгдэх урсгал.
+   * 1) Lease авах (CAS): SUBMITTED|FAILED|хугацаа хэтэрсэн APPROVED → APPROVED + core_requested_at=now. Lease-ийг нэг л дуудагч эзэмшинэ (олон pod-д ч).
+   * 2) Core: эхлээд `findLoan(coreKey)`; байхгүй бол л `openLoan` (idempotencyKey = coreKey). openLoan дуудаж болох зам бүрт G5 дахин шалгана.
+   * 3) Дуусгах транзакц `status=APPROVED AND core_requested_at=<lease>` fencing-тэй. Алдвал мөр APPROVED хэвээр → reconcile / sweeper дуусгана.
+   * Хугацаа хэтэрсэн APPROVED-г дахин зөвшөөрвөл `APPROVE_RETRY` түүх (хэн) бичнэ.
+   */
   async approve(ctx: RequestContext, applicationId: string, comment?: string): Promise<DisbursementView> {
-    const pre = await this.access.load(ctx, applicationId, 'read');
-    // 1) Зөвшөөрлийг бүртгэж, Core руу явуулах төлөвт оруулна (CAS) — зэрэг дарсан хоёр дахь хүсэлтийг хаана.
-    const { row, app } = await this.prisma.$transaction(async (tx) => {
+    await this.access.load(ctx, applicationId, 'read');
+    const { row, app, lease } = await this.prisma.$transaction(async (tx) => {
       const app = await this.machine.lock(tx, ctx.orgId, applicationId);
       const row = await tx.disbursementRequest.findUnique({ where: { applicationId } });
-      if (!row || !['SUBMITTED', 'FAILED'].includes(row.status)) throw new ConflictException({ code: 'DISBURSEMENT_NOT_PENDING', message: 'Зөвшөөрөх олголтын хүсэлт алга', details: { status: row?.status ?? null } });
+      if (!row || !['SUBMITTED', 'FAILED', 'APPROVED'].includes(row.status)) throw new ConflictException({ code: 'DISBURSEMENT_NOT_PENDING', message: 'Зөвшөөрөх олголтын хүсэлт алга', details: { status: row?.status ?? null } });
       if (app.status !== 'DISBURSING') throw new ConflictException({ code: 'DISBURSEMENT_NOT_PENDING', message: 'Хүсэлтийн төлөв "Олгож байна" биш байна', details: { status: app.status } });
+      const recovering = row.status === 'APPROVED';
+      if (recovering && this.leaseActive(row)) throw this.inProgress();
       const submittedBy = (row.historyJson as unknown as HistoryEntry[] | null)?.filter((h) => h.action === 'SUBMITTED').at(-1)?.by;
       if (submittedBy && submittedBy === ctx.userId) throw new ForbiddenException({ code: 'SELF_APPROVAL', message: 'Өөрийн илгээсэн олголтыг өөрөө зөвшөөрөх боломжгүй' });
-      const checks = evaluateGate(this.gateInput(app, row, await this.snapshot(tx, app)));
-      const bad = checks.filter((c) => !c.ok);
+      // openLoan дуудагдаж болох тул G5-ийг үргэлж (сэргээлтэд ч) шалгана. Core-д данс аль хэдийн байвал G5-гүй замаар: reconcile.
+      const bad = evaluateGate(this.gateInput(app, row, await this.snapshot(tx, app))).filter((c) => !c.ok);
       if (bad.length) throw new DomainError('DISBURSEMENT_GATE_FAILED', 'Олголт зөвшөөрөх нөхцөл (G5) хангагдаагүй байна', 422, { failed: bad });
-      const res = await tx.disbursementRequest.updateMany({ where: { id: row.id, status: row.status }, data: { status: 'APPROVED', historyJson: this.history(row, ctx, 'APPROVED', comment ?? null) as never, updatedBy: ctx.userId } });
+      const lease = this.clock.now();
+      const res = await tx.disbursementRequest.updateMany({
+        where: { id: row.id, status: row.status, ...(recovering ? { coreRequestedAt: row.coreRequestedAt } : {}) },
+        data: { status: 'APPROVED', coreRequestedAt: lease, updatedBy: ctx.userId, historyJson: this.history(row, ctx, recovering ? 'APPROVE_RETRY' : 'APPROVED', comment ?? null) as never },
+      });
       if (res.count !== 1) throw new ConflictException({ code: 'STALE_STATE', message: 'Олголтын төлөв өөрчлөгдсөн байна, дахин ачаална уу' });
-      return { row: await tx.disbursementRequest.findUniqueOrThrow({ where: { id: row.id } }), app };
+      return { row, app, lease };
     }, TX);
-    void pre;
-
-    // 2) Core: данс нээх (транзакцаас гадуур)
-    const customerId = (await this.prisma.loanApplicationBorrower.findFirst({ where: { applicationId, isPrimary: true }, select: { customerId: true } }))?.customerId ?? '';
-    let coreLoanId: string;
-    try {
-      coreLoanId = (await this.core.openLoan({
-        idempotencyKey: row.id, applicationId, contractNo: app.contractNo as string, customerId, amount: num(row.disburseAmount), currency: app.currency, termMonths: row.termMonths, interestRate: num(row.interestRate),
-        repaymentType: row.repaymentType, disburseDate: ymd(row.disburseDate) as string, firstPaymentDate: ymd(row.firstPaymentDate),
-        account: { bankCode: row.bankCode as string, accountNo: decryptedField(row.accountNoEncrypted as string, ACCOUNT_AAD), holderName: row.holderName as string },
-      })).coreLoanId;
-    } catch (e) {
-      const code = e instanceof CoreLoanError ? e.code : 'CORE_UNAVAILABLE';
-      this.logger.warn({ event: 'disbursement.core_failed', applicationId, disbursementId: row.id, code, correlationId: ctx.correlationId });
-      await this.prisma.$transaction(async (tx) => {
-        const fresh = await tx.disbursementRequest.findUniqueOrThrow({ where: { id: row.id } });
-        await tx.disbursementRequest.update({ where: { id: row.id }, data: { status: 'FAILED', historyJson: this.history(fresh, ctx, 'CORE_FAILED', code) as never, updatedBy: ctx.userId } });
-        await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: row.id, action: 'DISBURSEMENT_CORE_FAILED', actorId: ctx.userId, afterJson: { code }, applicationId, correlationId: ctx.correlationId });
-      }, TX);
-      throw new DomainError('CORE_OPEN_LOAN_FAILED', 'Core-д зээлийн данс нээж чадсангүй — дахин оролдох эсвэл буцаана уу', 502, { code });
-    }
-
-    // 3) Амжилт: SENT_TO_CORE + ACTIVE + event + ERP нэг транзакцид
-    await this.prisma.$transaction(async (tx) => {
-      const fresh = await tx.disbursementRequest.findUniqueOrThrow({ where: { id: row.id } });
-      await tx.disbursementRequest.update({ where: { id: row.id }, data: { status: 'SENT_TO_CORE', coreLoanId, historyJson: this.history(fresh, ctx, 'SENT_TO_CORE', null) as never, updatedBy: ctx.userId } });
-      await tx.loanApplication.update({ where: { id: applicationId }, data: { disbursedAt: this.clock.now() } });
-      await this.machine.apply(tx, ctx, applicationId, 'ACTIVE', { via: 'SYSTEM' });
-      await this.events.publish(tx, { type: 'DisbursementApproved', applicationId, amount: num(fresh.disburseAmount), coreLoanId }, ctx);
-      await this.erp.emitDisbursement({
-        orgId: ctx.orgId, branchId: app.branchId, applicationId, contractNo: app.contractNo, coreLoanId, customerId: customerId || null, sourceId: row.id, currency: app.currency,
-        businessDate: ymd(fresh.disburseDate) as string, amount: num(fresh.disburseAmount), correlationId: ctx.correlationId, actorId: ctx.userId,
-      }, { tx });
-      await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: row.id, action: 'DISBURSEMENT_SENT_TO_CORE', actorId: ctx.userId, afterJson: { coreLoanId }, applicationId, correlationId: ctx.correlationId });
-    }, TX);
+    await this.runCore(ctx, row, app, lease, { allowOpen: true, note: null });
     return this.get(ctx, applicationId);
   }
 
-  /** Батлагч буцаана: олголт → DRAFT, хүсэлт DISBURSING → APPROVED. Тайлбар заавал. */
+  /**
+   * H1: Core-оос лавлагаагаар шалгаж дуусгана; хэзээ ч данс НЭЭХГҮЙ (G5 шаардахгүй).
+   * APPROVED (lease хэтэрсэн/суллагдсан): олдвол дуусгана, олдохгүй бол FAILED. FAILED: олдвол дуусгана, олдохгүй бол FAILED хэвээр.
+   */
+  async reconcile(ctx: RequestContext, applicationId: string): Promise<DisbursementView> {
+    await this.access.load(ctx, applicationId, 'read');
+    const row = await this.prisma.disbursementRequest.findUnique({ where: { applicationId } });
+    if (!row || !['APPROVED', 'FAILED'].includes(row.status)) throw new ConflictException({ code: 'DISBURSEMENT_NOT_RECONCILABLE', message: 'Сэргээх (Core-д илгээгдээд дуусаагүй) олголт алга', details: { status: row?.status ?? null } });
+    if (row.status === 'FAILED') return this.reconcileFailed(ctx, row);
+    if (this.leaseActive(row)) throw this.inProgress();
+    const lease = await this.claimStale(row, ctx.userId);
+    if (!lease) throw new ConflictException({ code: 'STALE_STATE', message: 'Олголтын төлөв өөрчлөгдсөн байна, дахин ачаална уу' });
+    const app = await this.prisma.loanApplication.findUniqueOrThrow({ where: { id: applicationId } });
+    await this.runCore(ctx, row, app, lease, { allowOpen: false, note: 'RECONCILED' });
+    return this.get(ctx, applicationId);
+  }
+
+  /** H1 sweeper: олон pod-д аюулгүй — мөр бүрийг CAS lease-ээр авна (нэг л pod ялна). Буцаах утга = авсан мөрийн тоо. */
+  async reconcileStale(limit = 50): Promise<number> {
+    const staleBefore = new Date(this.clock.now().getTime() - CORE_LEASE_MS);
+    const rows = await this.prisma.disbursementRequest.findMany({
+      where: { status: 'APPROVED', OR: [{ coreRequestedAt: null }, { coreRequestedAt: { lt: staleBefore } }] },
+      orderBy: { coreRequestedAt: 'asc' }, take: limit,
+    });
+    let claimed = 0;
+    for (const row of rows) {
+      const lease = await this.claimStale(row, null);
+      if (!lease) continue;
+      claimed += 1;
+      const app = await this.prisma.loanApplication.findUniqueOrThrow({ where: { id: row.applicationId } });
+      await this.runCore(systemContext(row.orgId), row, app, lease, { allowOpen: false, note: 'RECONCILED' }).catch((e: unknown) => {
+        this.logger.warn({ event: 'disbursement.reconcile_failed', disbursementId: row.id, error: e instanceof DomainError ? e.code : (e as Error).name });
+      });
+    }
+    return claimed;
+  }
+
+  /** Батлагч буцаана: олголт → DRAFT, хүсэлт DISBURSING → APPROVED. Тайлбар заавал. FAILED бол Core-д данс нээгдээгүйг эхлээд баталгаажуулна (H1). */
   async reject(ctx: RequestContext, applicationId: string, comment?: string): Promise<DisbursementView> {
     await this.access.load(ctx, applicationId, 'read');
     if (!comment?.trim()) throw new DomainError('COMMENT_REQUIRED', 'Буцаахдаа тайлбар бичих шаардлагатай', 400);
+    const pre = await this.prisma.disbursementRequest.findUnique({ where: { applicationId } });
+    if (pre?.status === 'FAILED') await this.assertNoCoreLoan(pre, applicationId, ctx);
     await this.prisma.$transaction(async (tx) => {
       const app = await this.machine.lock(tx, ctx.orgId, applicationId);
       const row = await tx.disbursementRequest.findUnique({ where: { applicationId } });
       if (!row || !['SUBMITTED', 'FAILED'].includes(row.status) || app.status !== 'DISBURSING') throw new ConflictException({ code: 'DISBURSEMENT_NOT_PENDING', message: 'Буцаах олголтын хүсэлт алга' });
+      // Core шалгасны дараа өөр хэн нэгэн дахин оролдсон бол (updatedAt өөрчлөгдсөн) буцаахгүй.
+      if (row.status === 'FAILED' && row.updatedAt.getTime() !== pre?.updatedAt.getTime()) throw new ConflictException({ code: 'STALE_STATE', message: 'Олголтын төлөв өөрчлөгдсөн байна, дахин ачаална уу' });
       await this.machine.apply(tx, ctx, applicationId, 'APPROVED', { via: 'SYSTEM', reason: comment });
-      await tx.disbursementRequest.update({ where: { id: row.id }, data: { status: 'DRAFT', historyJson: this.history(row, ctx, 'REJECTED', comment) as never, updatedBy: ctx.userId } });
+      await tx.disbursementRequest.update({ where: { id: row.id }, data: { status: 'DRAFT', coreRequestedAt: null, historyJson: this.history(row, ctx, 'REJECTED', comment) as never, updatedBy: ctx.userId } });
       await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: row.id, action: 'DISBURSEMENT_REJECTED', actorId: ctx.userId, afterJson: { comment }, applicationId, correlationId: ctx.correlationId });
     }, TX);
     return this.get(ctx, applicationId);
+  }
+
+  // ── H1 дотоод: Core lease ──
+  private leaseActive(row: Pick<DisbursementRequest, 'coreRequestedAt'>): boolean {
+    return !!row.coreRequestedAt && this.clock.now().getTime() - row.coreRequestedAt.getTime() < CORE_LEASE_MS;
+  }
+
+  private inProgress(): ConflictException {
+    return new ConflictException({ code: 'DISBURSEMENT_CORE_IN_PROGRESS', message: 'Core руу илгээж байна — түр хүлээгээд дахин оролдоно уу' });
+  }
+
+  /** Хугацаа хэтэрсэн APPROVED мөрийн lease-ийг CAS-аар авна (fencing: хуучин core_requested_at). Ялагдвал null. */
+  private async claimStale(row: DisbursementRequest, actorId: string | null): Promise<Date | null> {
+    const lease = this.clock.now();
+    const res = await this.prisma.disbursementRequest.updateMany({ where: { id: row.id, status: 'APPROVED', coreRequestedAt: row.coreRequestedAt }, data: { coreRequestedAt: lease, updatedBy: actorId } });
+    return res.count === 1 ? lease : null;
+  }
+
+  /** Core лавлагаа (зөвхөн унших). Тодорхойгүй хариу → 502 CORE_LOOKUP_FAILED (төлөв өөрчлөхгүй). */
+  private async lookupOrFail(row: Pick<DisbursementRequest, 'id' | 'historyJson'>, applicationId: string, ctx: RequestContext): Promise<string | null> {
+    try {
+      return (await this.core.findLoan(coreKey(row)))?.coreLoanId ?? null;
+    } catch (e) {
+      this.logger.warn({ event: 'disbursement.core_lookup_failed', applicationId, disbursementId: row.id, code: e instanceof CoreLoanError ? e.code : 'CORE_UNAVAILABLE', correlationId: ctx.correlationId });
+      throw new DomainError('CORE_LOOKUP_FAILED', 'Core-оос олголтын төлөв шалгаж чадсангүй — дараа дахин оролдоно уу', 502);
+    }
+  }
+
+  private async assertNoCoreLoan(row: DisbursementRequest, applicationId: string, ctx: RequestContext): Promise<void> {
+    if (await this.lookupOrFail(row, applicationId, ctx)) throw new ConflictException({ code: 'DISBURSEMENT_CORE_LOAN_EXISTS', message: 'Core-д зээлийн данс аль хэдийн нээгдсэн тул буцаах боломжгүй — "Сэргээх"-ээр дуусгана уу' });
+  }
+
+  /** FAILED: Core-д данс байвал (CAS: FAILED → APPROVED + lease) дуусгана; байхгүй бол юу ч өөрчлөхгүй. */
+  private async reconcileFailed(ctx: RequestContext, row: DisbursementRequest): Promise<DisbursementView> {
+    const coreLoanId = await this.lookupOrFail(row, row.applicationId, ctx);
+    if (!coreLoanId) return this.get(ctx, row.applicationId);
+    const lease = this.clock.now();
+    const res = await this.prisma.disbursementRequest.updateMany({ where: { id: row.id, status: 'FAILED', updatedAt: row.updatedAt }, data: { status: 'APPROVED', coreRequestedAt: lease, updatedBy: ctx.userId } });
+    if (res.count !== 1) throw new ConflictException({ code: 'STALE_STATE', message: 'Олголтын төлөв өөрчлөгдсөн байна, дахин ачаална уу' });
+    const app = await this.prisma.loanApplication.findUniqueOrThrow({ where: { id: row.applicationId } });
+    const customerId = (await this.prisma.loanApplicationBorrower.findFirst({ where: { applicationId: app.id, isPrimary: true }, select: { customerId: true } }))?.customerId ?? '';
+    await this.completeOrPending(ctx, row.id, app, customerId, coreLoanId, lease, 'RECONCILED');
+    return this.get(ctx, row.applicationId);
+  }
+
+  /**
+   * Lease эзэмшигч Core-г дуудна: lookup → (allowOpen бол) open. Тодорхой алдаа / олдоогүй → FAILED; тодорхойгүй (timeout, сүлжээ) →
+   * APPROVED хэвээр, lease суллана (reconcile/sweeper дахин шалгана). Бүгд fenced. Амжилт → complete (fenced).
+   */
+  private async runCore(ctx: RequestContext, row: DisbursementRequest, app: LoanApplication, lease: Date, o: { allowOpen: boolean; note: string | null }): Promise<void> {
+    const customerId = (await this.prisma.loanApplicationBorrower.findFirst({ where: { applicationId: app.id, isPrimary: true }, select: { customerId: true } }))?.customerId ?? '';
+    let coreLoanId: string | null;
+    try {
+      coreLoanId = (await this.core.findLoan(coreKey(row)))?.coreLoanId ?? null;
+      if (!coreLoanId && o.allowOpen) coreLoanId = (await this.core.openLoan(this.openRequest(row, app, customerId))).coreLoanId;
+    } catch (e) {
+      const code = e instanceof CoreLoanError ? e.code : 'CORE_UNAVAILABLE';
+      this.logger.warn({ event: 'disbursement.core_failed', applicationId: app.id, disbursementId: row.id, code, correlationId: ctx.correlationId });
+      if (DEFINITIVE_CORE_ERRORS.has(code)) await this.markFailed(ctx, row.id, app.id, lease, code);
+      else await this.releaseUnknown(ctx, row.id, app.id, lease, code);
+      throw new DomainError('CORE_OPEN_LOAN_FAILED', 'Core-д зээлийн данс нээж чадсангүй — дахин оролдох эсвэл буцаана уу', 502, { code });
+    }
+    if (!coreLoanId) { await this.markFailed(ctx, row.id, app.id, lease, 'CORE_NOT_FOUND'); return; }
+    await this.completeOrPending(ctx, row.id, app, customerId, coreLoanId, lease, o.note);
+  }
+
+  private async completeOrPending(ctx: RequestContext, id: string, app: LoanApplication, customerId: string, coreLoanId: string, lease: Date, note: string | null): Promise<void> {
+    try {
+      await this.complete(ctx, id, app, customerId, coreLoanId, lease, note);
+    } catch (e) {
+      if (e instanceof ConflictException) throw e;
+      this.logger.error({ event: 'disbursement.complete_failed', applicationId: app.id, disbursementId: id, correlationId: ctx.correlationId, error: (e as Error).name });
+      throw new DomainError('DISBURSEMENT_COMPLETION_PENDING', 'Core-д данс нээгдсэн, LOS-д бүртгэх үлдлээ — автоматаар (эсвэл "Сэргээх"-ээр) дуусгана', 503);
+    }
+  }
+
+  private openRequest(row: DisbursementRequest, app: LoanApplication, customerId: string) {
+    return {
+      idempotencyKey: coreKey(row), applicationId: app.id, contractNo: app.contractNo as string, customerId, amount: num(row.disburseAmount), currency: app.currency, termMonths: row.termMonths, interestRate: num(row.interestRate),
+      repaymentType: row.repaymentType, disburseDate: ymd(row.disburseDate) as string, firstPaymentDate: ymd(row.firstPaymentDate),
+      account: { bankCode: row.bankCode as string, accountNo: decryptedField(row.accountNoEncrypted as string, ACCOUNT_AAD), holderName: row.holderName as string },
+    };
+  }
+
+  /** Тодорхойгүй Core үр дүн: APPROVED хэвээр, lease суллана (fenced). Ижил шалтгаан дараалан давтагдвал түүхийг дахин бичихгүй (sweeper-ийн tick бүрт). */
+  private async releaseUnknown(ctx: RequestContext, id: string, applicationId: string, lease: Date, code: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const fresh = await tx.disbursementRequest.findUniqueOrThrow({ where: { id } });
+      const last = (Array.isArray(fresh.historyJson) ? (fresh.historyJson as unknown as HistoryEntry[]) : []).at(-1);
+      const repeat = last?.action === 'CORE_UNKNOWN' && last.note === code;
+      const res = await tx.disbursementRequest.updateMany({ where: { id, status: 'APPROVED', coreRequestedAt: lease }, data: { coreRequestedAt: null, updatedBy: ctx.userId, ...(repeat ? {} : { historyJson: this.history(fresh, ctx, 'CORE_UNKNOWN', code) as never }) } });
+      if (res.count !== 1 || repeat) return;
+      await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: id, action: 'DISBURSEMENT_CORE_UNKNOWN', actorId: ctx.userId, afterJson: { code }, applicationId, correlationId: ctx.correlationId });
+    }, TX);
+  }
+
+  private async markFailed(ctx: RequestContext, id: string, applicationId: string, lease: Date, code: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const fresh = await tx.disbursementRequest.findUniqueOrThrow({ where: { id } });
+      const res = await tx.disbursementRequest.updateMany({ where: { id, status: 'APPROVED', coreRequestedAt: lease }, data: { status: 'FAILED', coreRequestedAt: null, historyJson: this.history(fresh, ctx, 'CORE_FAILED', code) as never, updatedBy: ctx.userId } });
+      if (res.count !== 1) return; // lease алдсан — шинэ эзэмшигчийн төлөвийг дарахгүй
+      await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: id, action: 'DISBURSEMENT_CORE_FAILED', actorId: ctx.userId, afterJson: { code }, applicationId, correlationId: ctx.correlationId });
+    }, TX);
+  }
+
+  /** SENT_TO_CORE + ACTIVE + event + ERP нэг транзакцид; fencing тул давхар дуусгахгүй. */
+  private async complete(ctx: RequestContext, id: string, app: LoanApplication, customerId: string, coreLoanId: string, lease: Date, note: string | null): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const fresh = await tx.disbursementRequest.findUniqueOrThrow({ where: { id } });
+      const res = await tx.disbursementRequest.updateMany({ where: { id, status: 'APPROVED', coreRequestedAt: lease }, data: { status: 'SENT_TO_CORE', coreLoanId, historyJson: this.history(fresh, ctx, 'SENT_TO_CORE', note) as never, updatedBy: ctx.userId } });
+      if (res.count !== 1) throw new ConflictException({ code: 'STALE_STATE', message: 'Олголтыг өөр процесс дуусгасан байна' });
+      await tx.loanApplication.update({ where: { id: app.id }, data: { disbursedAt: this.clock.now() } });
+      await this.machine.apply(tx, ctx, app.id, 'ACTIVE', { via: 'SYSTEM' });
+      await this.events.publish(tx, { type: 'DisbursementApproved', applicationId: app.id, amount: num(fresh.disburseAmount), coreLoanId }, ctx);
+      await this.erp.emitDisbursement({
+        orgId: ctx.orgId, branchId: app.branchId, applicationId: app.id, contractNo: app.contractNo, coreLoanId, customerId: customerId || null, sourceId: id, currency: app.currency,
+        businessDate: ymd(fresh.disburseDate) as string, amount: num(fresh.disburseAmount), correlationId: ctx.correlationId, actorId: ctx.userId,
+      }, { tx });
+      await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: id, action: 'DISBURSEMENT_SENT_TO_CORE', actorId: ctx.userId, afterJson: { coreLoanId, reconciled: note === 'RECONCILED' }, applicationId: app.id, correlationId: ctx.correlationId });
+    }, TX);
   }
 
   // ── дотоод ──

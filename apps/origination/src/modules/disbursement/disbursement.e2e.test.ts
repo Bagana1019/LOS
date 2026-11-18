@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { ContractView, DisbursementView, OfficialLetterView } from '@los/contracts';
@@ -11,7 +11,9 @@ import { ApplicationModule } from '../application/application.module';
 import { ContractModule } from '../contract/contract.module';
 import { DMS_DOCGEN } from '../contract/dms-docgen.port';
 import { FakeDmsDocgen } from '../contract/testing/fake-dms-docgen';
+import { ErpSyncService } from '../erp-sync/erp-sync.service';
 import { DisbursementModule } from './disbursement.module';
+import { CORE_LEASE_MS, DisbursementService } from './disbursement.service';
 
 // Модуль 11 AC: гэрээнд нэр/дүн/ЭТХ орно; олгох дүн > батлагдсан → 400; гарын үсэггүй → илгээх идэвхгүй; зөвшөөрөхөд ACTIVE + core_loan_id хадгалагдана.
 describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
@@ -19,28 +21,29 @@ describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
   let baseUrl: string;
   const dms = new FakeDmsDocgen();
   let core: CoreLoanPort = new MockCoreLoanPort();
+  let mock = core as MockCoreLoanPort;
   const officer = actors.officer('officer-1');
   const approver = actors.approver('approver-1');
 
   beforeAll(async () => {
-    t = await createTestApp([ApplicationModule, ContractModule, DisbursementModule], (b) => b.overrideProvider(DMS_DOCGEN).useValue(dms).overrideProvider(CORE_LOAN_PORT).useFactory({ factory: () => ({ get mode() { return core.mode; }, openLoan: (r: never) => core.openLoan(r) }) }));
+    t = await createTestApp([ApplicationModule, ContractModule, DisbursementModule], (b) => b.overrideProvider(DMS_DOCGEN).useValue(dms).overrideProvider(CORE_LOAN_PORT).useFactory({ factory: () => ({ get mode() { return core.mode; }, openLoan: (r: never) => core.openLoan(r), findLoan: (k: string) => core.findLoan(k) }) }));
     await t.app.listen(0, '127.0.0.1');
     baseUrl = `http://127.0.0.1:${(t.app.getHttpServer().address() as AddressInfo).port}`;
   });
   afterAll(async () => { await t.close(); });
-  beforeEach(async () => { await resetDb(t.prisma); dms.renders.length = 0; dms.files.clear(); core = new MockCoreLoanPort(); });
+  beforeEach(async () => { await resetDb(t.prisma); dms.renders.length = 0; dms.files.clear(); mock = new MockCoreLoanPort(); core = mock; vi.restoreAllMocks(); });
 
   const http = () => request(baseUrl);
   const base = (id: string) => `/api/applications/${id}`;
 
-  async function approvedApp(o: { requiresCollateral?: boolean; registryNo?: string | null } = {}) {
-    const product = await t.prisma.product.create({ data: { orgId: ORG, code: 'P1', name: 'Хэрэглээний', productType: 'CONSUMER', minAmount: 100_000, maxAmount: 50_000_000, minTerm: 1, maxTerm: 36, minRate: 10, maxRate: 40, requiresCollateral: o.requiresCollateral ?? true } });
+  async function approvedApp(o: { requiresCollateral?: boolean; registryNo?: string | null; productCode?: string; contractNo?: string } = {}) {
+    const product = await t.prisma.product.create({ data: { orgId: ORG, code: o.productCode ?? 'P1', name: 'Хэрэглээний', productType: 'CONSUMER', minAmount: 100_000, maxAmount: 50_000_000, minTerm: 1, maxTerm: 36, minRate: 10, maxRate: 40, requiresCollateral: o.requiresCollateral ?? true } });
     const customer = await createCustomer(t.prisma, { firstName: 'Дорж', lastName: 'Бат-Эрдэнэ' });
-    const app = await createApplication(t.prisma, { status: 'APPROVED', productId: product.id, contractNo: 'C-2026-0001', amount: 30_000_000, interestRate: 24, termMonths: 12 });
+    const app = await createApplication(t.prisma, { status: 'APPROVED', productId: product.id, contractNo: o.contractNo ?? 'C-2026-0001', amount: 30_000_000, interestRate: 24, termMonths: 12 });
     await createBorrower(t.prisma, app.id, customer.id);
     const sched = await createSchedule(t.prisma, app.id, { principal: 30_000_000, rate: 24, months: 12, firstDue: '2026-12-05' });
     await t.prisma.repaymentSchedule.update({ where: { id: sched.id }, data: { paramsJson: { type: 'ANNUITY', firstPaymentDate: '2026-12-05', principal: 30_000_000, termMonths: 12, annualRate: 24 } } });
-    await t.prisma.decisionRecord.create({ data: { orgId: ORG, applicationId: app.id, decisionNo: 'D-1', decidedAt: new Date() } });
+    await t.prisma.decisionRecord.create({ data: { orgId: ORG, applicationId: app.id, decisionNo: `D-${app.id}`, decidedAt: new Date() } });
     if (o.requiresCollateral !== false) await t.prisma.collateral.create({ data: { orgId: ORG, applicationId: app.id, kind: 'REAL_ESTATE', assetType: 'APARTMENT', collateralValue: 60_000_000, registryNo: o.registryNo === undefined ? 'ЭБ-100' : o.registryNo } });
     return app;
   }
@@ -139,15 +142,18 @@ describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
     expect((await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({})).status).toBe(409);
   });
 
-  it('Core унавал FAILED (хүсэлт DISBURSING хэвээр), дахин оролдож болно; буцаавал DRAFT/APPROVED', async () => {
+  it('Core унавал (үр дүн тодорхойгүй) APPROVED хэвээр, lease суллагдана — FAILED биш; дахин оролдож болно', async () => {
     const app = await approvedApp();
     await ready(app.id);
     await http().post(`${base(app.id)}/disbursement/submit`).set(officer);
-    core = { mode: 'mock', openLoan: async () => { throw new CoreLoanError('CORE_UNAVAILABLE', 'down'); } };
+    core = { mode: 'mock', findLoan: async () => null, openLoan: async () => { throw new CoreLoanError('CORE_UNAVAILABLE', 'down'); } };
     const bad = await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({});
     expect(bad.status).toBe(502);
     expect(bad.body.code).toBe('CORE_OPEN_LOAN_FAILED');
-    expect((await t.prisma.disbursementRequest.findUniqueOrThrow({ where: { applicationId: app.id } })).status).toBe('FAILED');
+    const row = await t.prisma.disbursementRequest.findUniqueOrThrow({ where: { applicationId: app.id } });
+    expect(row.status).toBe('APPROVED');
+    expect(row.coreRequestedAt).toBeNull();
+    expect((row.historyJson as Array<{ action: string; note: string | null }>).at(-1)).toMatchObject({ action: 'CORE_UNKNOWN', note: 'CORE_UNAVAILABLE' });
     expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: app.id } })).status).toBe('DISBURSING');
     expect(await t.prisma.erpEvent.count({ where: { applicationId: app.id } })).toBe(0);
 
@@ -166,6 +172,220 @@ describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(DisbursementView.parse(res.body).status).toBe('DRAFT');
     expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: app.id } })).status).toBe('APPROVED');
+  });
+
+  // ── H1: Core амжилттай болсны дараах сэргээлт — Core-д давхар данс хэзээ ч нээхгүй ──
+  async function submitted(contractNo = 'C-2026-0001') {
+    const app = await approvedApp({ productCode: `P-${contractNo}`, contractNo });
+    await ready(app.id);
+    expect((await http().post(`${base(app.id)}/disbursement/submit`).set(officer)).status).toBe(200);
+    return app;
+  }
+  const disb = (applicationId: string) => t.prisma.disbursementRequest.findUniqueOrThrow({ where: { applicationId } });
+  const appStatus = async (id: string) => (await t.prisma.loanApplication.findUniqueOrThrow({ where: { id } })).status;
+  const expireLease = (_applicationId: string) => { t.clock.advanceMs(CORE_LEASE_MS + 1_000); };
+  async function coreOkLocalFails(appId: string) {
+    vi.spyOn(t.app.get(ErpSyncService), 'emitDisbursement').mockRejectedValueOnce(new Error('db down'));
+    const res = await http().post(`${base(appId)}/disbursement/approve`).set(approver).send({});
+    expect(res.status, JSON.stringify(res.body)).toBe(503);
+    expect(res.body.code).toBe('DISBURSEMENT_COMPLETION_PENDING');
+  }
+
+  it('H1: Core нээгээд DB алдвал APPROVED + lease үлдэнэ; lease дуусахаас өмнө approve/reconcile/reject 409', async () => {
+    const app = await submitted();
+    await coreOkLocalFails(app.id);
+    const row = await disb(app.id);
+    expect(row.status).toBe('APPROVED');
+    expect(row.coreRequestedAt).not.toBeNull();
+    expect(row.coreLoanId).toBeNull();
+    expect(await appStatus(app.id)).toBe('DISBURSING');
+    expect(await t.prisma.erpEvent.count({ where: { applicationId: app.id } })).toBe(0);
+    for (const action of ['approve', 'reconcile']) {
+      const r = await http().post(`${base(app.id)}/disbursement/${action}`).set(approver).send({});
+      expect(r.status, action).toBe(409);
+      expect(r.body.code, action).toBe('DISBURSEMENT_CORE_IN_PROGRESS');
+    }
+    expect((await http().post(`${base(app.id)}/disbursement/reject`).set(approver).send({ comment: 'x' })).status).toBe(409);
+    expect(mock.calls).toHaveLength(1);
+  });
+
+  it('H1: lease дууссаны дараа reconcile → Core-оос лавлагаагаар олж дуусгана (ACTIVE, ERP 1), openLoan 1 удаа', async () => {
+    const app = await submitted();
+    await coreOkLocalFails(app.id);
+    const coreLoanId = (await mock.findLoan(mock.calls[0]!.idempotencyKey))!.coreLoanId;
+    await expireLease(app.id);
+    const res = await http().post(`${base(app.id)}/disbursement/reconcile`).set(approver).send({});
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const v = DisbursementView.parse(res.body);
+    expect(v.status).toBe('SENT_TO_CORE');
+    expect(v.coreLoanId).toBe(coreLoanId);
+    expect(v.history.map((h) => h.action)).toEqual(['DRAFT_UPDATED', 'SUBMITTED', 'APPROVED', 'SENT_TO_CORE']);
+    expect(v.history.at(-1)!.note).toBe('RECONCILED');
+    expect(await appStatus(app.id)).toBe('ACTIVE');
+    expect(await t.prisma.erpEvent.count({ where: { applicationId: app.id, eventType: 'DISBURSEMENT' } })).toBe(1);
+    expect(mock.calls).toHaveLength(1);
+    expect((await http().post(`${base(app.id)}/disbursement/reconcile`).set(approver).send({})).status).toBe(409);
+  });
+
+  it('H1: lease дууссаны дараа approve дахин дарвал мөн нээхгүй, зөвхөн дуусгана', async () => {
+    const app = await submitted();
+    await coreOkLocalFails(app.id);
+    await expireLease(app.id);
+    const res = await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({});
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(DisbursementView.parse(res.body).status).toBe('SENT_TO_CORE');
+    expect(mock.calls).toHaveLength(1);
+  });
+
+  it('H1 sweeper: хугацаа хэтэрсэн APPROVED-г олж дуусгана; Core-д байхгүй бол FAILED (sweeper хэзээ ч нээхгүй)', async () => {
+    const svc = t.app.get(DisbursementService);
+    const a = await submitted();
+    await coreOkLocalFails(a.id);
+    expect(await svc.reconcileStale()).toBe(0); // lease хүчинтэй
+    // Core руу хүрээгүй (процесс унасан) мөр
+    const b = await submitted('C-2026-0002');
+    await t.prisma.disbursementRequest.update({ where: { applicationId: b.id }, data: { status: 'APPROVED', coreRequestedAt: t.clock.now() } });
+    await expireLease(b.id);
+
+    expect(await svc.reconcileStale()).toBe(2);
+    expect((await disb(a.id)).status).toBe('SENT_TO_CORE');
+    expect(await appStatus(a.id)).toBe('ACTIVE');
+    expect((await disb(b.id)).status).toBe('FAILED');
+    expect(await appStatus(b.id)).toBe('DISBURSING');
+    expect(mock.calls).toHaveLength(1); // зөвхөн a-гийн анхны дуудлага
+    expect(await svc.reconcileStale()).toBe(0);
+    // FAILED-ийг батлагч дахин зөвшөөрвөл нэг л удаа нээнэ
+    expect((await http().post(`${base(b.id)}/disbursement/approve`).set(approver).send({})).status).toBe(200);
+    expect(mock.calls).toHaveLength(2);
+  });
+
+  const lookupDown: CoreLoanPort = { mode: 'mock', findLoan: async () => { throw new CoreLoanError('CORE_UNAVAILABLE', 'down'); }, openLoan: async () => { throw new CoreLoanError('CORE_UNAVAILABLE', 'down'); } };
+  const breakG5 = (applicationId: string) => t.prisma.repaymentSchedule.updateMany({ where: { applicationId }, data: { isStale: true } });
+  const history = async (applicationId: string) => (await disb(applicationId)).historyJson as Array<{ action: string; by: string | null; note: string | null }>;
+  /** Core данс нээгээд "татгалзсан" гэж хариулсан (FAILED, гэхдээ Core-д данс бий) — FAILED + данс гэсэн хамгийн муу тохиолдол. */
+  async function failedWithCoreLoan(appId: string) {
+    core = { mode: 'mock', findLoan: (k) => mock.findLoan(k), openLoan: async (r) => { await mock.openLoan(r); throw new CoreLoanError('CORE_REJECTED', 'rejected'); } };
+    expect((await http().post(`${base(appId)}/disbursement/approve`).set(approver).send({})).status).toBe(502);
+    expect((await disb(appId)).status).toBe('FAILED');
+    core = mock;
+  }
+
+  it('H1: Core timeout боловч данс нээгдсэн → APPROVED (тодорхойгүй, lease суллагдсан); буцаах 409; reconcile нээхгүй, олж дуусгана', async () => {
+    const app = await submitted();
+    core = { mode: 'mock', findLoan: (k) => mock.findLoan(k), openLoan: async (r) => { await mock.openLoan(r); throw new CoreLoanError('CORE_UNAVAILABLE', 'timeout'); } };
+    expect((await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({})).status).toBe(502);
+    expect((await disb(app.id)).status).toBe('APPROVED');
+    expect((await disb(app.id)).coreRequestedAt).toBeNull();
+    core = mock;
+    expect((await http().post(`${base(app.id)}/disbursement/reject`).set(approver).send({ comment: 'буцаая' })).status).toBe(409);
+    const ok = await http().post(`${base(app.id)}/disbursement/reconcile`).set(approver).send({});
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(DisbursementView.parse(ok.body).status).toBe('SENT_TO_CORE');
+    expect(mock.calls).toHaveLength(1);
+    expect(await appStatus(app.id)).toBe('ACTIVE');
+  });
+
+  it('H1 sweeper: Core лавлагаа унавал FAILED болгохгүй — APPROVED хэвээр, lease суллагдана (дараагийн tick дахин шалгана)', async () => {
+    const svc = t.app.get(DisbursementService);
+    const app = await submitted();
+    await t.prisma.disbursementRequest.update({ where: { applicationId: app.id }, data: { status: 'APPROVED', coreRequestedAt: t.clock.now() } });
+    await expireLease(app.id);
+    core = lookupDown;
+    expect(await svc.reconcileStale()).toBe(1);
+    const row = await disb(app.id);
+    expect(row.status).toBe('APPROVED');
+    expect(row.coreRequestedAt).toBeNull();
+    core = mock;
+    expect(await svc.reconcileStale()).toBe(1); // суллагдсан тул шууд дахин авна; одоо олдохгүй → FAILED (тодорхой)
+    expect((await disb(app.id)).status).toBe('FAILED');
+    expect(mock.calls).toHaveLength(0);
+  });
+
+  it('H1: FAILED мөрийг Core лавлагаа унасан үед буцаахгүй (fail closed, 502)', async () => {
+    const app = await submitted();
+    core = { mode: 'mock', findLoan: async () => null, openLoan: async () => { throw new CoreLoanError('CORE_REJECTED', 'no'); } };
+    expect((await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({})).status).toBe(502);
+    expect((await disb(app.id)).status).toBe('FAILED');
+    core = lookupDown;
+    expect((await http().post(`${base(app.id)}/disbursement/reject`).set(approver).send({ comment: 'буцаая' })).status).toBe(502);
+    expect((await disb(app.id)).status).toBe('FAILED');
+  });
+
+  it('H1: FAILED + Core-д данс бий + G5 одоо унасан → approve 422, буцаах 409, reconcile нээхгүйгээр дуусгана', async () => {
+    const app = await submitted();
+    await failedWithCoreLoan(app.id);
+    await breakG5(app.id);
+    expect((await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({})).status).toBe(422);
+    expect((await http().post(`${base(app.id)}/disbursement/reject`).set(approver).send({ comment: 'буцаая' })).body.code).toBe('DISBURSEMENT_CORE_LOAN_EXISTS');
+    const res = await http().post(`${base(app.id)}/disbursement/reconcile`).set(approver).send({});
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(DisbursementView.parse(res.body).status).toBe('SENT_TO_CORE');
+    expect(await appStatus(app.id)).toBe('ACTIVE');
+    expect(mock.calls).toHaveLength(1);
+  });
+
+  it('H1: FAILED reconcile — Core-д байхгүй бол FAILED хэвээр (нээхгүй); лавлагаа унавал 502, FAILED хэвээр', async () => {
+    const app = await submitted();
+    core = { mode: 'mock', findLoan: async () => null, openLoan: async () => { throw new CoreLoanError('CORE_REJECTED', 'no'); } };
+    await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({});
+    core = mock;
+    const before = await history(app.id);
+    const res = await http().post(`${base(app.id)}/disbursement/reconcile`).set(approver).send({});
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(DisbursementView.parse(res.body).status).toBe('FAILED');
+    expect(await history(app.id)).toEqual(before);
+    expect(mock.calls).toHaveLength(0);
+    core = lookupDown;
+    expect((await http().post(`${base(app.id)}/disbursement/reconcile`).set(approver).send({})).status).toBe(502);
+    expect((await disb(app.id)).status).toBe('FAILED');
+  });
+
+  it('H1: хугацаа хэтэрсэн APPROVED-г дахин зөвшөөрөхөд G5 дахин шалгана (унасан бол нээхгүй); амжилттай бол APPROVE_RETRY түүх', async () => {
+    const app = await submitted();
+    await t.prisma.disbursementRequest.update({ where: { applicationId: app.id }, data: { status: 'APPROVED', coreRequestedAt: t.clock.now() } });
+    await expireLease(app.id);
+    await breakG5(app.id);
+    const bad = await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({});
+    expect(bad.status).toBe(422);
+    expect(bad.body.code).toBe('DISBURSEMENT_GATE_FAILED');
+    expect(mock.calls).toHaveLength(0);
+    await t.prisma.repaymentSchedule.updateMany({ where: { applicationId: app.id }, data: { isStale: false } });
+    const ok = await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({ comment: 'дахин' });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect((await history(app.id)).find((h) => h.action === 'APPROVE_RETRY')).toMatchObject({ by: 'approver-1', note: 'дахин' });
+    expect(mock.calls).toHaveLength(1);
+  });
+
+  it('H1: буцааж дахин илгээсэн олголт өмнөх оролдлогын Core дансыг холбохгүй (оролдлого бүр шинэ idempotency key)', async () => {
+    const app = await submitted();
+    const id = (await disb(app.id)).id;
+    expect((await http().post(`${base(app.id)}/disbursement/reject`).set(approver).send({ comment: 'дүн буруу' })).status).toBe(200);
+    // Өмнөх оролдлогод (шалгалтын дараа) Core данс нээсэн гэж үзье — хуучин ба 1-р оролдлогын түлхүүрээр
+    const planted = mock.calls.length;
+    const req = { applicationId: app.id, contractNo: 'C-2026-0001', customerId: 'c', amount: 30_000_000, currency: 'MNT', termMonths: 12, interestRate: 24, repaymentType: 'ANNUITY', disburseDate: '2026-11-05', firstPaymentDate: null, account: { bankCode: 'KHAN', accountNo: '5012345670', holderName: 'X' } };
+    const old = [(await mock.openLoan({ ...req, idempotencyKey: id })).coreLoanId, (await mock.openLoan({ ...req, idempotencyKey: `${id}:1` })).coreLoanId];
+    expect((await http().put(`${base(app.id)}/disbursement`).set(officer).send({ disburseAmount: 20_000_000 })).status).toBe(200);
+    expect((await http().post(`${base(app.id)}/disbursement/submit`).set(officer)).status).toBe(200);
+    const ok = await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({});
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(old).not.toContain(DisbursementView.parse(ok.body).coreLoanId);
+    expect(mock.calls).toHaveLength(planted + 3);
+    expect(mock.calls.at(-1)).toMatchObject({ idempotencyKey: `${id}:2`, amount: 20_000_000 });
+  });
+
+  it('H1: зэрэг хоёр approve → нэг нь 200, нөгөө нь 409; openLoan 1 удаа', async () => {
+    const app = await submitted();
+    const [r1, r2] = await Promise.all([1, 2].map(() => http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({})));
+    expect([r1!.status, r2!.status].sort()).toEqual([200, 409]);
+    expect(mock.calls).toHaveLength(1);
+  });
+
+  it('H1: reconcile нь SUBMITTED мөрт 409 DISBURSEMENT_NOT_RECONCILABLE; ЗЭЗ-д 403', async () => {
+    const app = await submitted();
+    const r = await http().post(`${base(app.id)}/disbursement/reconcile`).set(approver).send({});
+    expect(r.status).toBe(409);
+    expect(r.body.code).toBe('DISBURSEMENT_NOT_RECONCILABLE');
+    expect((await http().post(`${base(app.id)}/disbursement/reconcile`).set(officer).send({})).status).toBe(403);
   });
 
   it('албан бичиг: үүсгэж, хэвлэсэн тэмдэглэнэ; загвар тохируулаагүй бол 422', async () => {

@@ -5,9 +5,17 @@ import { CoreLoanError, type CoreLoanPort, type OpenLoanRequest, type OpenLoanRe
 export class MockCoreLoanPort implements CoreLoanPort {
   readonly mode = 'mock' as const;
   readonly calls: OpenLoanRequest[] = [];
+  /** H1: нээгдсэн данс (idempotencyKey → coreLoanId) — `findLoan`-д. Instance бүрт тусдаа (тест тусгаарлалт). */
+  private readonly opened = new Map<string, string>();
   async openLoan(req: OpenLoanRequest): Promise<OpenLoanResult> {
     this.calls.push(req);
     if (req.account.accountNo.endsWith('0000')) throw new CoreLoanError('CORE_REJECTED', 'Core: данс нээх хүсэлтийг татгалзлаа (DEMO)');
-    return { coreLoanId: `CL-${createHash('sha256').update(req.idempotencyKey).digest('hex').slice(0, 10).toUpperCase()}` };
+    const coreLoanId = `CL-${createHash('sha256').update(req.idempotencyKey).digest('hex').slice(0, 10).toUpperCase()}`;
+    this.opened.set(req.idempotencyKey, coreLoanId);
+    return { coreLoanId };
+  }
+  async findLoan(idempotencyKey: string): Promise<OpenLoanResult | null> {
+    const coreLoanId = this.opened.get(idempotencyKey);
+    return coreLoanId ? { coreLoanId } : null;
   }
 }
