@@ -23,7 +23,31 @@ export interface HandlerPolicyDefaults {
   expiresInHours: number;
 }
 
-export interface SnapshotContext { db: unknown; repo: ChangeRequestTx; orgId: string; targetId: string }
+export interface SnapshotContext {
+  db: unknown; repo: ChangeRequestTx; orgId: string; targetId: string;
+  /** Илгээж буй maker ба шалгагдсан payload (нэмэлт — хуучин handler ашиглахгүй) */
+  actor?: Actor; payload?: unknown;
+}
+export interface SnapshotResult {
+  before: unknown;
+  baseVersion?: string;
+  /**
+   * Хүсэлтийн хүрээний салбар (MC-BR-2: BRANCH_MANAGER зөвхөн энэ салбарынхыг шийднэ). Өгөөгүй (undefined) бол maker-ийн салбар — өмнөх зан төлөв.
+   * Жишээ: CUSTOMER/UPDATE-д харилцагчийг эзэмшигч салбар. `null` = салбаргүй (салбарын дүр шийдэхгүй, fail-closed).
+   */
+  scopeBranchId?: string | null;
+}
+
+/** Codec-д дамжих зорилтын лавлагаа — шифрийг (AAD) тухайн зорилттой холбоно */
+export interface CodecRef { orgId: string; targetType: string; targetId: string }
+/**
+ * Immutable `change_request.payload/before`-д PII ил текстээр орохгүйн тулд (docs/05 §8, §9): framework нь хадгалахаас өмнө `seal`,
+ * хэрэгжүүлэх/дэлгэрэнгүй харуулахаас өмнө `unseal` дууддаг. `seal`-ийн гаралт нь PII-гүй байх ёстой (жишээ: шифр + талбарын нэрс).
+ */
+export interface PayloadCodec {
+  seal(value: unknown, ref: CodecRef): unknown;
+  unseal(stored: unknown, ref: CodecRef): unknown;
+}
 export interface ApplyContext<P> {
   /** Үндсэн tx handle — handler зөвхөн үүгээр бичнэ (Prisma бол `ctx.db as Prisma.TransactionClient`). Гадагш HTTP/queue дуудахгүй: tx буцаагдаж болно. */
   db: unknown;
@@ -51,9 +75,11 @@ export interface ChangeHandler<P = unknown> {
   /** targetId-г агуулгаас гаргах каноник дүрэм; өгвөл submit-д targetId таарахгүй бол 422 (давхардал хамгаалалтыг тойруулахгүй) */
   canonicalTargetId?(payload: P): string;
   /** Нэмэлт бизнес шалгалт (schema-аас гадуур). Буруу бол `ChangeValidationError` (эсвэл `MakerCheckerError`) шиднэ; өөр алдаа 500 болно. */
-  validate?(ctx: { payload: P; actor: Actor; repo: ChangeRequestTx }): Promise<void> | void;
-  /** Maker-ийн харж буй төлөв (diff + хуучралт илрүүлэх baseVersion) */
-  snapshot?(ctx: SnapshotContext): Promise<{ before: unknown; baseVersion?: string } | null>;
+  validate?(ctx: { payload: P; actor: Actor; repo: ChangeRequestTx; targetId: string }): Promise<void> | void;
+  /** Maker-ийн харж буй төлөв (diff + хуучралт илрүүлэх baseVersion, сонголттой хүрээний салбар) */
+  snapshot?(ctx: SnapshotContext): Promise<SnapshotResult | null>;
+  /** Өгвөл payload/before шифрлэгдэж хадгалагдана; apply-д тайлагдаад payloadSchema-аар дахин шалгагдана */
+  readonly codec?: PayloadCodec;
   /** Өөрчлөлтийг хэрэгжүүлнэ — checker батлах үед (эсвэл DIRECT горимд) нэг tx дотор */
   apply(ctx: ApplyContext<P>): Promise<void>;
 }

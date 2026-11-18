@@ -144,6 +144,8 @@
   "maker_checker.target_type.APPROVAL_LEVELS": "Батлах түвшин, босго",
   "maker_checker.target_type.SETTING": "Тохиргоо",
   "maker_checker.target_type.PRODUCT": "Зээлийн бүтээгдэхүүн",
+  "maker_checker.target_type.CUSTOMER": "Харилцагчийн мэдээлэл",
+  "maker_checker.customer.sealed_fields": "Өөрчлөх талбарууд: {fields}. Утгууд шифрлэгдсэн тул энд харагдахгүй — дэлгэрэнгүйг дахин нээж үзнэ үү.",
   "maker_checker.change_action.CREATE": "Үүсгэх",
   "maker_checker.change_action.UPDATE": "Өөрчлөх",
   "maker_checker.change_action.DELETE": "Устгах",
