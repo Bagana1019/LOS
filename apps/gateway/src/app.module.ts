@@ -7,6 +7,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard';
+import { DirectoryModule } from './modules/directory/directory.module';
 import { ProxyModule } from './modules/proxy/proxy.module';
 import { PublicEsignModule } from './modules/public-esign/public-esign.module';
 import { PrismaModule, PrismaService } from './prisma.service';
@@ -22,6 +23,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
     AdminModule,
     AuditModule,
     AuthModule,
+    DirectoryModule,
     ProxyModule,
     PublicEsignModule,
   ],

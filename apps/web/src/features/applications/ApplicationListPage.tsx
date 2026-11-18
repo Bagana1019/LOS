@@ -4,17 +4,19 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { App as AntApp, Alert, Badge, Button, Flex, Input, Table, Tabs, Tag, Typography } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { SorterResult } from 'antd/es/table/interface';
-import { APPLICATION_PAGE_SIZES, ApplicationSort, ApplicationStatus, type ApplicationRow } from '@los/contracts';
+import { APPLICATION_PAGE_SIZES, ApplicationSort, type ApplicationRow, type ApplicationStatus } from '@los/contracts';
 import { formatMoney, t } from '../../lib/i18n';
 import { useAuth } from '../../lib/auth/auth-context';
 import { downloadApplications } from './applications.api';
-import { applicationHref, resumeHref, STATUS_TABS } from './applications.utils';
+import { applicationHref, resumeHref } from './applications.utils';
 import { CreateApplicationModal } from './CreateApplicationModal';
-import { useApplicationList } from './useApplications';
+import { directoryLabels } from './directory';
+import { canSeeMyApprovals, listTabs, MY_APPROVALS_TAB, pendingVoteCount, resolveListTab } from './list-tabs';
+import { MyApprovalsPanel } from './MyApprovalsPanel';
+import { useApplicationList, useDirectory, useMyApprovals } from './useApplications';
 
 const { Title, Text } = Typography;
 
-const isStatus = (v: string | null): v is ApplicationStatus => !!v && (ApplicationStatus as readonly string[]).includes(v);
 const isSort = (v: string | null): v is (typeof ApplicationSort)[number] => !!v && (ApplicationSort as readonly string[]).includes(v);
 
 /** FR-1.1…1.4: төлвөөр табаар ангилсан хүсэлтийн жагсаалт — шүүлт URL-д (`?status=&q=&sort=&dir=&page=&pageSize=`). */
@@ -27,7 +29,11 @@ export function ApplicationListPage() {
   const [creating, setCreating] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const status = isStatus(params.get('status')) ? (params.get('status') as ApplicationStatus) : 'DRAFT';
+  // FR-1.1: "Миний батлах" нь төлөв биш таб (`?status=MINE`), санал өгөх дүрд л. Тэр үед жагсаалтын хүсэлт зөвхөн табуудын тоолуурт (counts, myApprovalCount) хэрэгтэй.
+  const canVote = canSeeMyApprovals(me?.user.roles);
+  const tab = resolveListTab(params.get('status'), canVote);
+  const onMineTab = tab === MY_APPROVALS_TAB;
+  const status: ApplicationStatus = onMineTab ? 'IN_APPROVAL' : tab;
   const q = params.get('q') ?? '';
   const sort = isSort(params.get('sort')) ? (params.get('sort') as (typeof ApplicationSort)[number]) : 'createdAt';
   const dir = params.get('dir') === 'asc' ? 'asc' : 'desc';
@@ -43,14 +49,19 @@ export function ApplicationListPage() {
     }
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   };
-  const query = { status, q: q || undefined, sort, dir, page, pageSize };
+  const query = onMineTab ? { status, sort, dir, page: 1, pageSize: 10 } : { status, q: q || undefined, sort, dir, page, pageSize };
   const list = useApplicationList(query);
+  const mine = useMyApprovals(onMineTab);
+  const myApprovalBadge = pendingVoteCount({ onMineTab, mineTotal: mine.data?.total, listCount: list.data?.myApprovalCount });
+  // FR-1.2: салбар / ЗЭЗ-ийг gateway-ийн лавлахаар (id → нэр) харуулна; UUID хэзээ ч харагдахгүй.
+  const directory = useDirectory();
+  const labels = directoryLabels(directory.data, directory.isLoading, { unknown: t('application.directory.unknown'), system: t('application.list.system') });
   const canCreate = !!me && (me.permissions.includes('application:write') || me.user.roles.includes('ADMIN'));
 
   const columns: ColumnsType<ApplicationRow> = [
     { title: t('application.col.appNo'), dataIndex: 'appNo', key: 'appNo', sorter: true, sortOrder: sort === 'appNo' ? (dir === 'asc' ? 'ascend' : 'descend') : null, render: (v: string, r) => <a href={applicationHref(r.id)} onClick={(e) => { e.preventDefault(); router.push(applicationHref(r.id)); }}>{v}</a> },
-    { title: t('application.col.branch'), dataIndex: 'branchId', key: 'branch' },
-    { title: t('application.col.officer'), dataIndex: 'officerId', key: 'officer', render: (v: string | null) => v ?? t('application.list.system') },
+    { title: t('application.col.branch'), dataIndex: 'branchId', key: 'branch', render: (v: string | null) => labels.branch(v) },
+    { title: t('application.col.officer'), dataIndex: 'officerId', key: 'officer', render: (v: string | null) => labels.officer(v) },
     { title: t('application.col.contractNo'), dataIndex: 'contractNo', key: 'contractNo', render: (v: string | null) => v ?? '—' },
     { title: t('application.col.customer'), key: 'customer', render: (_, r) => r.primaryBorrower?.displayName ?? '—' },
     { title: t('application.col.register'), key: 'register', render: (_, r) => r.primaryBorrower?.registerNoMasked ?? '—' },
@@ -86,6 +97,8 @@ export function ApplicationListPage() {
     try { await downloadApplications({ status, q: q || undefined, sort, dir }); } catch { void message.error(t('application.list.error')); } finally { setExporting(false); }
   };
 
+  const refresh = () => { void list.refetch(); if (onMineTab) void mine.refetch(); };
+
   return (
     <div style={{ maxWidth: 1600, margin: '0 auto' }}>
       <Flex justify="space-between" align="flex-start" wrap gap={12}>
@@ -94,34 +107,43 @@ export function ApplicationListPage() {
           <Text type="secondary">{t('application.list.subtitle')}</Text>
         </div>
         <Flex gap={8} wrap>
-          <Button onClick={() => void list.refetch()}>{t('application.list.refresh')}</Button>
-          <Button loading={exporting} onClick={() => void doExport()}>{t('application.list.export')}</Button>
+          <Button onClick={refresh}>{t('application.list.refresh')}</Button>
+          {onMineTab ? null : <Button loading={exporting} onClick={() => void doExport()}>{t('application.list.export')}</Button>}
           {canCreate ? <Button type="primary" data-testid="create-application" onClick={() => setCreating(true)}>{t('application.list.add')}</Button> : null}
         </Flex>
       </Flex>
 
       <Tabs
-        activeKey={status}
+        activeKey={tab}
         onChange={(key) => go({ status: key, page: 1 })}
-        items={STATUS_TABS.map((s) => ({ key: s, label: <Badge count={list.data?.counts[s] ?? 0} showZero={false} overflowCount={999} offset={[10, -2]} color="blue">{t(`status.${s}`)}</Badge> }))}
+        items={listTabs(canVote).map((k) => ({
+          key: k,
+          label: k === MY_APPROVALS_TAB
+            ? <Badge count={myApprovalBadge} showZero={false} overflowCount={999} offset={[10, -2]} color="blue" data-testid="my-approvals-count">{t('application.list.myApproval')}</Badge>
+            : <Badge count={list.data?.counts[k] ?? 0} showZero={false} overflowCount={999} offset={[10, -2]} color="blue">{t(`status.${k}`)}</Badge>,
+        }))}
       />
-      <Flex gap={8} wrap style={{ marginBottom: 12 }}>
-        <Input.Search allowClear defaultValue={q} placeholder={t('application.list.search')} style={{ maxWidth: 360 }} onSearch={(v) => go({ q: v.trim() || undefined, page: 1 })} />
-        {list.data ? <Text type="secondary" style={{ alignSelf: 'center' }}>{t('application.list.total', { total: list.data.total })}</Text> : null}
-      </Flex>
+      {onMineTab ? <MyApprovalsPanel /> : (
+        <>
+          <Flex gap={8} wrap style={{ marginBottom: 12 }}>
+            <Input.Search allowClear defaultValue={q} placeholder={t('application.list.search')} style={{ maxWidth: 360 }} onSearch={(v) => go({ q: v.trim() || undefined, page: 1 })} />
+            {list.data ? <Text type="secondary" style={{ alignSelf: 'center' }}>{t('application.list.total', { total: list.data.total })}</Text> : null}
+          </Flex>
 
-      {list.isError ? <Alert type="error" showIcon message={t('application.list.error')} action={<Button size="small" onClick={() => void list.refetch()}>{t('application.list.retry')}</Button>} style={{ marginBottom: 12 }} /> : null}
-      <Table<ApplicationRow>
-        rowKey="id"
-        size="middle"
-        loading={list.isFetching}
-        dataSource={list.data?.items ?? []}
-        columns={columns}
-        scroll={{ x: 1400 }}
-        locale={{ emptyText: t('application.list.empty') }}
-        pagination={{ current: page, pageSize, total: list.data?.total ?? 0, showSizeChanger: true, pageSizeOptions: [...APPLICATION_PAGE_SIZES].map(String) }}
-        onChange={onTableChange}
-      />
+          {list.isError ? <Alert type="error" showIcon message={t('application.list.error')} action={<Button size="small" onClick={() => void list.refetch()}>{t('application.list.retry')}</Button>} style={{ marginBottom: 12 }} /> : null}
+          <Table<ApplicationRow>
+            rowKey="id"
+            size="middle"
+            loading={list.isFetching}
+            dataSource={list.data?.items ?? []}
+            columns={columns}
+            scroll={{ x: 1400 }}
+            locale={{ emptyText: t('application.list.empty') }}
+            pagination={{ current: page, pageSize, total: list.data?.total ?? 0, showSizeChanger: true, pageSizeOptions: [...APPLICATION_PAGE_SIZES].map(String) }}
+            onChange={onTableChange}
+          />
+        </>
+      )}
 
       <CreateApplicationModal open={creating} onClose={() => setCreating(false)} onCreated={(app) => { setCreating(false); void message.success(t('application.create.success', { appNo: app.appNo })); router.push(resumeHref(app.id)); }} />
     </div>

@@ -5,7 +5,7 @@ import type { ApprovalTimelineLevel } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatDateTime, formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
-import { useDecision, useVote } from './decision.api';
+import { useDecision, useVote, voteTargetOf } from './decision.api';
 
 interface Props { applicationId: string; onChanged?: () => void }
 const stepStatus = (s: ApprovalTimelineLevel['state']) => (s === 'APPROVED' ? 'finish' : s === 'PENDING' ? 'process' : s === 'RETURNED' ? 'error' : 'wait') as 'finish' | 'process' | 'error' | 'wait';
@@ -23,7 +23,8 @@ export function DecisionStep({ applicationId, onChanged }: Props) {
   const s = d.summary;
   const levels = d.approval.levels;
   const current = Math.max(0, levels.findIndex((l) => l.state === 'PENDING'));
-  const send = (decision: 'APPROVE' | 'RETURN', text?: string) => vote.mutateAsync({ decision, ...(text ? { comment: text } : {}) }).then(() => { setReturning(false); setComment(''); void message.success(t(decision === 'APPROVE' ? 'decide.approved' : 'decide.returned')); }).catch(() => undefined);
+  // FR-1.5: харж буй түвшин, хувилбараа дамжуулна — өөр хүн/цонхонд түвшин ахисан, дахин илгээгдсэн бол сервер 409 (ApiErrorAlert-д харагдана).
+  const send = (decision: 'APPROVE' | 'RETURN', text?: string) => vote.mutateAsync({ decision, ...(text ? { comment: text } : {}), ...voteTargetOf(d) }).then(() => { setReturning(false); setComment(''); void message.success(t(decision === 'APPROVE' ? 'decide.approved' : 'decide.returned')); }).catch(() => undefined);
 
   return (
     <Flex vertical gap={16}>

@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { branchCodeOf, counterScopeKey, dueAt, evaluateLevel, formatContractNo, isLevelMember, isOverdue, requiredVotes, selectLevels, ubDate } from './approval.rules';
+import { branchCodeOf, counterScopeKey, dueAt, evaluateLevel, formatContractNo, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, ubDate } from './approval.rules';
+
+// FR-1.5: санал өгөгчийн харсан түвшин / хувилбар одоогийн төлөвтэй зөрвөл хоцрогдсон. Өгөөгүй талбарыг шалгахгүй.
+describe('isVoteTargetStale', () => {
+  const now = { levelNo: 2, version: 3 };
+  it('хоёулаа таарвал хоцрогдоогүй', () => expect(isVoteTargetStale({ levelNo: 2, version: 3 }, now)).toBe(false));
+  it('өгөөгүй бол хоцрогдоогүй (хуучин дуудлага)', () => expect(isVoteTargetStale({}, now)).toBe(false));
+  it('зөвхөн levelNo өгсөн: таарвал үгүй, зөрвөл хоцрогдсон', () => {
+    expect(isVoteTargetStale({ levelNo: 2 }, now)).toBe(false);
+    expect(isVoteTargetStale({ levelNo: 1 }, now)).toBe(true);
+  });
+  it('зөвхөн version өгсөн: таарвал үгүй, зөрвөл хоцрогдсон', () => {
+    expect(isVoteTargetStale({ version: 3 }, now)).toBe(false);
+    expect(isVoteTargetStale({ version: 2 }, now)).toBe(true);
+  });
+  it('нэг нь таарч нөгөө нь зөрвөл хоцрогдсон', () => {
+    expect(isVoteTargetStale({ levelNo: 2, version: 1 }, now)).toBe(true);
+    expect(isVoteTargetStale({ levelNo: 1, version: 3 }, now)).toBe(true);
+  });
+  it('илүү шинэ (ирээдүйн) утга ч зөрүү — хоцрогдсон гэж үзнэ', () => expect(isVoteTargetStale({ levelNo: 3, version: 4 }, now)).toBe(true));
+});
 
 const L = (levelNo: number, amountFrom: number, amountTo: number | null, productId: string | null = null) => ({ id: `l${levelNo}${productId ?? ''}`, productId, levelNo, amountFrom, amountTo, slaHours: 24 });
 const LEVELS = [L(3, 30_000_000, null), L(1, 0, 5_000_000), L(2, 5_000_000, 30_000_000)];
