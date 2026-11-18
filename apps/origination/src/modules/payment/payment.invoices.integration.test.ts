@@ -31,10 +31,12 @@ describe.skipIf(!hasTestDb)('payment: invoice үүсгэх / унших / цуц
       expect((await create(actors.branchManager('bm', 'branch-2'), { applicationId: app.id, provider: 'QPAY', amount: 7000 })).status).toBe(403);
     });
 
-    it('CUSTOMER: зөвхөн өөрийн хүсэлт (PRIMARY/CO_BORROWER); гуравдагч этгээд, батлан даагч → 403', async () => {
+    it('CUSTOMER контекст ажилтны маршрутад → 403 CUSTOMER_CONTEXT_FORBIDDEN (review, phase 3: харилцагчийн төлбөр зөвхөн /api/internal/portal/* -ээр — ажилтны маршрут харилцагчийн контекстыг хаана)', async () => {
       const { app, customer } = await seedLoan(env);
       const other = await seedLoan(env);
-      expect((await create(actors.customer(customer.id), { applicationId: app.id, provider: 'QPAY' })).status).toBe(201);
+      const own = await create(actors.customer(customer.id), { applicationId: app.id, provider: 'QPAY' });
+      expect(own.status).toBe(403);
+      expect(own.body.code).toBe('CUSTOMER_CONTEXT_FORBIDDEN');
       expect((await create(actors.customer(other.customer.id), { applicationId: app.id, provider: 'QPAY' })).status).toBe(403);
     });
 
@@ -321,7 +323,7 @@ describe.skipIf(!hasTestDb)('payment: invoice үүсгэх / унших / цуц
   });
 
   describe('GET payments/invoices/:id', () => {
-    it('PENDING invoice-ийг буцаана; эрх: өөр ЗЭЗ 403, батлагч (read) OK, CUSTOMER өөрийн OK, нэвтрээгүй 401, үл мэдэгдэх 404', async () => {
+    it('PENDING invoice-ийг буцаана; эрх: өөр ЗЭЗ 403, батлагч (read) OK, CUSTOMER 403 (портал), нэвтрээгүй 401, үл мэдэгдэх 404', async () => {
       const { app, customer } = await seedLoan(env);
       const inv = (await create(actors.officer(), { applicationId: app.id, provider: 'QPAY' })).body;
       const get = (headers: Record<string, string>, id = inv.id) => env.http().get(`/api/payments/invoices/${id}`).set(headers);
@@ -329,7 +331,7 @@ describe.skipIf(!hasTestDb)('payment: invoice үүсгэх / унших / цуц
       expect(ok.status).toBe(200);
       expect(PaymentInvoiceView.parse(ok.body).status).toBe('PENDING');
       expect((await get(actors.approver())).status).toBe(200);
-      expect((await get(actors.customer(customer.id))).status).toBe(200);
+      expect((await get(actors.customer(customer.id))).status).toBe(403); // харилцагч зөвхөн порталын дотоод API-аар
       expect((await get(actors.officer('officer-2'))).status).toBe(403);
       expect((await get(actors.anonymous())).status).toBe(401);
       const missing = await get(actors.admin(), 'missing');
@@ -466,14 +468,14 @@ describe.skipIf(!hasTestDb)('payment: invoice үүсгэх / унших / цуц
       expect((await cancel(actors.officer(), inv.id)).body.status).toBe('CANCELLED');
     });
 
-    it('эрх: өөр ЗЭЗ 403, батлагч 403, нэвтрээгүй 401, үл мэдэгдэх 404, CUSTOMER өөрийн OK', async () => {
+    it('эрх: өөр ЗЭЗ 403, батлагч 403, нэвтрээгүй 401, үл мэдэгдэх 404, CUSTOMER 403 (портал)', async () => {
       const { app, customer } = await seedLoan(env);
       const inv = (await create(actors.officer(), { applicationId: app.id, provider: 'QPAY' })).body;
       expect((await cancel(actors.officer('officer-2'), inv.id)).status).toBe(403);
       expect((await cancel(actors.approver(), inv.id)).status).toBe(403);
       expect((await cancel(actors.anonymous(), inv.id)).status).toBe(401);
       expect((await cancel(actors.admin(), 'missing')).status).toBe(404);
-      expect((await cancel(actors.customer(customer.id), inv.id)).status).toBe(200);
+      expect((await cancel(actors.customer(customer.id), inv.id)).status).toBe(403); // харилцагч зөвхөн порталын дотоод API-аар
     });
 
     it('төлөгдсөн → 409 INVOICE_ALREADY_PAID; хугацаа дууссан → 409 INVOICE_NOT_PENDING', async () => {
@@ -525,7 +527,7 @@ describe.skipIf(!hasTestDb)('payment: invoice үүсгэх / унших / цуц
       expect(infos.map((i) => i.provider)).toEqual(['QPAY', 'SOCIALPAY', 'BANK_TRANSFER']);
       expect(infos.every((i) => i.enabled && i.mode === 'mock' && i.reason === null)).toBe(true);
       expect((await env.http().get('/api/payments/providers').set(actors.anonymous())).status).toBe(401);
-      expect((await env.http().get('/api/payments/providers').set(actors.customer('c1'))).status).toBe(200);
+      expect((await env.http().get('/api/payments/providers').set(actors.customer('c1'))).status).toBe(403);
     });
   });
 });

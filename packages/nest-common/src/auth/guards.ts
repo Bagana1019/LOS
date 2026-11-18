@@ -7,6 +7,7 @@ import { contextOf } from '../context/request-context';
 export const PUBLIC_KEY = 'los:public';
 export const ROLES_KEY = 'los:roles';
 export const PERMISSIONS_KEY = 'los:permissions';
+export const CUSTOMER_CONTEXT_KEY = 'los:customer-context';
 
 /** Нэвтрэлт шаардахгүй (health, гадаад callback). Callback бол өөрийн баталгаажуулалтыг заавал хийнэ. */
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
@@ -14,6 +15,11 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
 export const Roles = (...roles: string[]) => SetMetadata(ROLES_KEY, roles);
 /** Эдгээр эрх БҮГД байх ёстой (`@los/contracts` ROLE_PERMISSIONS). */
 export const Permissions = (...permissions: Permission[]) => SetMetadata(PERMISSIONS_KEY, permissions);
+/**
+ * Харилцагчийн контекст (`X-Customer-Id`, portal-bff) зөвхөн ЭНЭ тэмдэглэгээтэй маршрутад хүрнэ. Анхдагчаар ажилтны маршрут
+ * харилцагчийн контекстыг 403-аар хаана: дотоод токентой portal-bff эрх (`@Permissions`) шаардаагүй ажилтны маршрутад хүрэхээс сэргийлнэ.
+ */
+export const AllowCustomerContext = () => SetMetadata(CUSTOMER_CONTEXT_KEY, true);
 
 function safeEqual(a: string, b: string): boolean {
   const x = Buffer.from(a);
@@ -42,6 +48,10 @@ export class ContextAuthGuard implements CanActivate {
     }
     const ctx = contextOf(req as never);
     if (!ctx.userId && !ctx.customerId) throw new UnauthorizedException({ code: 'UNAUTHENTICATED', message: 'Нэвтрээгүй хүсэлт' });
+    // Харилцагчийн контекст (дангаараа эсвэл ажилтантай холилдсон) зөвхөн @AllowCustomerContext маршрутад (confused deputy-ээс сэргийлнэ)
+    if (ctx.customerId && !this.reflector.getAllAndOverride<boolean>(CUSTOMER_CONTEXT_KEY, targets)) {
+      throw new ForbiddenException({ code: 'CUSTOMER_CONTEXT_FORBIDDEN', message: 'Харилцагчийн хүсэлтээр энэ үйлдлийг хийх боломжгүй' });
+    }
     if (!ctx.orgId) throw new UnauthorizedException({ code: 'MISSING_ORG', message: 'X-Org-Id толгой дутуу' });
 
     const roles = this.reflector.getAllAndOverride<string[] | undefined>(ROLES_KEY, targets);

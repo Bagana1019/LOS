@@ -23,6 +23,7 @@ import { RepaymentStatusService } from './repayment-status.service';
     qpayClientProvider, socialPayClientProvider, bankGatewayProvider, ProviderRegistry,
     PaymentService, InvoiceService, RepaymentStatusService, BankReconciliationService, BankAccountService, DevSimulationService, PaymentMaintenance,
   ],
-  exports: [PaymentService],
+  // InvoiceService, ProviderRegistry: portal (H8) харилцагчийн төлбөрийг ижил invoice/провайдерын төлөвөөр эхлүүлнэ.
+  exports: [PaymentService, InvoiceService, ProviderRegistry],
 })
 export class PaymentModule {}

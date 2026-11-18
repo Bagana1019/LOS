@@ -5,7 +5,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { CommonModule } from './common.module';
-import { Public, Permissions, Roles } from './auth/guards';
+import { AllowCustomerContext, Public, Permissions, Roles } from './auth/guards';
 import { assertInScope } from './auth/scope';
 import { Ctx } from './context/request-context';
 import { DomainError } from './http/errors';
@@ -18,6 +18,7 @@ const Body1 = z.object({ amount: z.number().positive() });
 class TestController {
   @Public() @Get('open') open() { return { ok: true }; }
   @Get('me') me(@Ctx() ctx: RequestContext) { return ctx; }
+  @AllowCustomerContext() @Get('cust') cust(@Ctx() ctx: RequestContext) { return ctx; }
   @Roles('ADMIN') @Get('admin') admin() { return { ok: true }; }
   @Permissions('approval:vote') @Get('vote') vote() { return { ok: true }; }
   @Post('echo') echo(@Body(new ZodValidationPipe(Body1)) b: z.infer<typeof Body1>) { return b; }
@@ -51,6 +52,29 @@ describe('CommonModule (guard, filter, context)', () => {
     const r = await request(app.getHttpServer()).get('/api/t/me').set({ 'x-user-id': 'u1' });
     expect(r.status).toBe(401);
     expect(r.body.code).toBe('MISSING_ORG');
+  });
+  // Review (phase 3): a customer-only context (portal-bff, X-Customer-Id) must not reach staff routes by default
+  describe('customer context is opt-in per route', () => {
+    const customer = { 'x-customer-id': 'c1', 'x-org-id': 'o1', 'x-roles': 'CUSTOMER' };
+    it('customer-only context on a staff route → 403 CUSTOMER_CONTEXT_FORBIDDEN', async () => {
+      const res = await request(app.getHttpServer()).get('/api/t/me').set(customer);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('CUSTOMER_CONTEXT_FORBIDDEN');
+    });
+    it('customer-only context on an @AllowCustomerContext route → 200', async () => {
+      const res = await request(app.getHttpServer()).get('/api/t/cust').set(customer);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ customerId: 'c1', userId: null });
+    });
+    it('staff identity mixed with a customer header → 403 (no confused deputy)', async () => {
+      const res = await request(app.getHttpServer()).get('/api/t/me').set({ ...as('OFFICER'), 'x-customer-id': 'c1' });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('CUSTOMER_CONTEXT_FORBIDDEN');
+    });
+    it('plain staff requests are unchanged', async () => {
+      expect((await request(app.getHttpServer()).get('/api/t/me').set(as('OFFICER'))).status).toBe(200);
+      expect((await request(app.getHttpServer()).get('/api/t/cust').set(as('OFFICER'))).status).toBe(200);
+    });
   });
   it('injects the parsed context via @Ctx()', async () => {
     const res = await request(app.getHttpServer()).get('/api/t/me').set(as('OFFICER'));

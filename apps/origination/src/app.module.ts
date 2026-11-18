@@ -30,6 +30,7 @@ import { CollateralModule } from './modules/collateral/collateral.module';
 import { DocumentModule } from './modules/document/document.module';
 import { BsaModule } from './modules/bsa/bsa.module';
 import { CommentModule } from './modules/comment/comment.module';
+import { PortalModule } from './modules/portal/portal.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { CommentModule } from './modules/comment/comment.module';
     DocumentModule,
     BsaModule,
     CommentModule,
+    PortalModule,
   ],
 })
 export class AppModule {}

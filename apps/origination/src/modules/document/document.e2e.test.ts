@@ -353,7 +353,7 @@ describe.skipIf(!hasTestDb)('application documents API (DB, fake dms)', () => {
       await createBorrower(t.prisma, app.id, c.id, 'PRIMARY');
       const calls = (h: Record<string, string>) => [http().get(url(app.id)).set(h), http().post(url(app.id)).set(h).send({}), http().delete(url(app.id, 'x')).set(h), http().post(url(app.id, 'x', 'ocr')).set(h).send({})];
       for (const r of await Promise.all(calls(actors.anonymous()))) expect([r.status, r.body.code]).toEqual([401, 'UNAUTHENTICATED']);
-      for (const r of await Promise.all(calls(actors.customer(c.id)))) expect([r.status, r.body.code]).toEqual([403, 'FORBIDDEN']);
+      for (const r of await Promise.all(calls(actors.customer(c.id)))) expect([r.status, r.body.code]).toEqual([403, 'CUSTOMER_CONTEXT_FORBIDDEN']); // review (phase 3): харилцагчийн контекст ажилтны маршрутад
     });
 
     it('унших: өөрийн ЗЭЗ, өөрийн салбарын захирал, батлагч, админ → 200; өөр ЗЭЗ / өөр салбар → 403', async () => {

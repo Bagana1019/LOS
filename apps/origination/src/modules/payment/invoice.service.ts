@@ -29,6 +29,17 @@ export const UNVERIFIED_EXPIRY_GRACE_MS = 24 * 3_600_000;
 export const EXPIRED_RECHECK_WINDOW_MS = 48 * 3_600_000;
 
 interface CreateResult { invoice: PaymentInvoice; created: boolean }
+
+/** Портал төлбөрийн idempotency (H8): `key` нь (orgId, key) UNIQUE баганад нөөцлөлтийн INSERT-тэй хамт бичигдэнэ. */
+export interface PortalIdempotency { key: string; requestHash: string }
+
+/** Ижил (orgId, portal key)-тэй invoice өөр процесс/pod-д аль хэдийн нөөцлөгдсөн — дуудагч ялагчийг дахин уншина. */
+export class PortalIdempotencyConflict extends Error {
+  override readonly name = 'PortalIdempotencyConflict';
+}
+
+const isPortalKeyConflict = (e: unknown): boolean =>
+  e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' && JSON.stringify(e.meta?.target ?? '').includes('portal_idempotency_key');
 /** verified=false: провайдераас төлөгдсөн эсэхийг баталгаажуулж чадсангүй (шалгалт/бүртгэл унасан, эсвэл провайдер ашиглах боломжгүй). */
 export interface SyncOutcome { invoice: PaymentInvoice; verified: boolean }
 
@@ -55,7 +66,11 @@ export class InvoiceService {
 
   // ── Үүсгэх ──────────────────────────────────────────────────────────────────────
 
-  async create(ctx: RequestContext, dto: CreatePaymentInvoiceRequest): Promise<{ view: PaymentInvoiceView; created: boolean }> {
+  /**
+   * @param portal өгвөл ижил PENDING invoice-ийг дахин ашиглахгүй (өөр түлхүүрийн/ажилтны invoice-д хамааруулахгүй) — түлхүүр бүр өөрийн мөртэй;
+   *   давхардлыг UNIQUE (org_id, portal_idempotency_key) хаана → PortalIdempotencyConflict.
+   */
+  async create(ctx: RequestContext, dto: CreatePaymentInvoiceRequest, portal?: PortalIdempotency): Promise<{ view: PaymentInvoiceView; created: boolean }> {
     const app = await this.access.load(ctx, dto.applicationId, 'pay');
     if (!PAYABLE_STATUSES.includes(app.status)) throw new ConflictException({ code: 'LOAN_NOT_PAYABLE', message: 'Энэ зээл төлбөр хүлээн авах төлөвт биш байна (идэвхтэй зээл байх ёстой)' });
     const schedule = await loadCurrentSchedule(this.prisma, app.id);
@@ -73,11 +88,11 @@ export class InvoiceService {
       if (app.currency !== 'MNT') throw new HttpException({ code: 'CURRENCY_NOT_SUPPORTED', message: 'QPay, SocialPay нь зөвхөн төгрөгийн (MNT) зээлд ашиглагдана' }, 422);
     }
 
-    const key = [app.id, dto.provider, amount.toFixed(2), dto.scheduleRowId ?? ''].join('|');
+    const key = [app.id, dto.provider, amount.toFixed(2), dto.scheduleRowId ?? '', portal?.key ?? ''].join('|');
     let run = this.inflight.get(key);
     const leader = !run; // нэгтгэгдсэн (хоёр дахь, гурав дахь…) хүсэлт нь шинэ invoice үүсгээгүй тул created=false
     if (!run) {
-      run = this.createOrReuse(ctx, app, dto, amount).finally(() => this.inflight.delete(key));
+      run = this.createOrReuse(ctx, app, dto, amount, portal).finally(() => this.inflight.delete(key));
       this.inflight.set(key, run);
     }
     const { invoice, created } = await run;
@@ -91,10 +106,10 @@ export class InvoiceService {
       : new HttpException({ code: 'PROVIDER_NOT_CONFIGURED', message: 'Төлбөрийн үйлчилгээний тохиргоо дутуу байна. Админтай холбогдоно уу.' }, 503);
   }
 
-  private async createOrReuse(ctx: RequestContext, app: LoanApplication, dto: CreatePaymentInvoiceRequest, amount: number): Promise<CreateResult> {
+  private async createOrReuse(ctx: RequestContext, app: LoanApplication, dto: CreatePaymentInvoiceRequest, amount: number, portal?: PortalIdempotency): Promise<CreateResult> {
     const now = this.clock.now();
-    // Брифийн дүрэм 2: адил app+provider+дүн+мөр, PENDING, хугацаа дуусаагүй, үүсгэж дууссан invoice байвал шинээр үүсгэхгүй.
-    const existing = await this.prisma.paymentInvoice.findFirst({
+    // Брифийн дүрэм 2: адил app+provider+дүн+мөр, PENDING, хугацаа дуусаагүй, үүсгэж дууссан invoice байвал шинээр үүсгэхгүй (портал: түлхүүрээр, доор).
+    const existing = portal ? null : await this.prisma.paymentInvoice.findFirst({
       where: {
         applicationId: app.id, provider: dto.provider, amount, scheduleRowId: dto.scheduleRowId ?? null, status: 'PENDING', expiresAt: { gt: now },
         ...(dto.provider === 'BANK_TRANSFER' ? {} : { providerInvoiceId: { not: null } }),
@@ -107,7 +122,7 @@ export class InvoiceService {
     const expiresAt = new Date(now.getTime() + ttl * 60_000);
     const account = dto.provider === 'BANK_TRANSFER' ? await this.registry.collectionAccount(ctx.orgId) : null;
 
-    const reserved = await this.reserve(ctx, app, dto, amount, expiresAt, account);
+    const reserved = await this.reserve(ctx, app, dto, amount, expiresAt, account, portal);
     if (dto.provider === 'BANK_TRANSFER') return { invoice: reserved, created: true };
 
     // Гадаад дуудлага DB транзакцийн ГАДНА. Амжилтгүй бол нөөцөлсөн мөрийг устгана — DB-д хагас invoice үлдээхгүй.
@@ -139,7 +154,10 @@ export class InvoiceService {
   }
 
   /** senderInvoiceNo-г unique constraint-аар атомаар нөөцөлнө (application мөрийн түгжээгээр дараалуулсан, давхцвал дахин оролдоно). */
-  private async reserve(ctx: RequestContext, app: LoanApplication, dto: CreatePaymentInvoiceRequest, amount: number, expiresAt: Date, account: { bankCode: string; accountNo: string; accountName: string } | null): Promise<PaymentInvoice> {
+  private async reserve(
+    ctx: RequestContext, app: LoanApplication, dto: CreatePaymentInvoiceRequest, amount: number, expiresAt: Date,
+    account: { bankCode: string; accountNo: string; accountName: string } | null, portal?: PortalIdempotency,
+  ): Promise<PaymentInvoice> {
     for (let attempt = 0; attempt < 6; attempt++) {
       try {
         return await this.prisma.$transaction(async (tx) => {
@@ -150,11 +168,13 @@ export class InvoiceService {
             data: {
               orgId: app.orgId, applicationId: app.id, scheduleRowId: dto.scheduleRowId ?? null, provider: dto.provider, status: 'PENDING', amount: new Decimal(amount), currency: app.currency,
               senderInvoiceNo, expiresAt, note: dto.note ?? null, createdBy: byWhom(ctx), updatedBy: byWhom(ctx),
+              portalIdempotencyKey: portal?.key ?? null, portalRequestHash: portal?.requestHash ?? null,
               bankTransferJson: account ? { bankCode: account.bankCode, accountNo: account.accountNo, accountName: account.accountName, reference: senderInvoiceNo } : undefined,
             },
           });
         });
       } catch (e) {
+        if (isPortalKeyConflict(e)) throw new PortalIdempotencyConflict('portal idempotency key already reserved');
         if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002' && attempt < 5) continue;
         throw e;
       }
