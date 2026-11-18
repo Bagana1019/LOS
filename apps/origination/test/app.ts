@@ -1,10 +1,12 @@
 import 'reflect-metadata';
 import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { hasTestDatabase } from '@los/config/vitest/test-db.mjs';
 import { SEED } from '@los/database';
 import { AppModule } from '../src/app.module';
 
-export const HAS_DB = !!process.env.TEST_DATABASE_URL;
+/** Throws (before any connection) if TEST_DATABASE_URL / DATABASE_URL is not a database whose name ends with "test" (H7). */
+export const HAS_DB = hasTestDatabase();
 
 export async function createApp(): Promise<INestApplication> {
   const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();

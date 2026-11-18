@@ -1,5 +1,6 @@
 export * from './context/request-context';
 export * from './auth/guards';
+export * from './auth/internal-secret';
 export * from './auth/scope';
 export * from './http/errors';
 export * from './http/zod.pipe';

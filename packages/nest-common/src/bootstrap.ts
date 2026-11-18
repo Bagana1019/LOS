@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { type INestApplication, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { assertInternalAuthSecret } from './auth/internal-secret';
 import { loadEnvFiles } from './config';
 import { JsonLogger } from './logging/json-logger';
 
@@ -21,6 +22,7 @@ export interface BootstrapOptions {
 /** CLAUDE.md §6.4: `/api` угтвар, `GET /api/health`, JSON лог, graceful shutdown. */
 export async function bootstrapService(opts: BootstrapOptions): Promise<INestApplication> {
   loadEnvFiles();
+  assertInternalAuthSecret(); // H2: production-д нууцгүйгээр эхлэхгүй (NestFactory.create-ээс ӨМНӨ)
   const logger = new JsonLogger(opts.service);
   const app = await NestFactory.create(opts.module, { bufferLogs: true, bodyParser: opts.bodyParser ?? true, rawBody: opts.rawBody });
   app.useLogger(logger);

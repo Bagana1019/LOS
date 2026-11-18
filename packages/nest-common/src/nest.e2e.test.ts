@@ -109,6 +109,14 @@ describe('CommonModule (guard, filter, context)', () => {
     expect((await request(app.getHttpServer()).get('/api/health')).status).toBe(200);
     delete process.env.INTERNAL_AUTH_SECRET;
   });
+  it('an empty INTERNAL_AUTH_SECRET leaves the token check off (test setups pin it to "" instead of deleting it, H7)', async () => {
+    process.env.INTERNAL_AUTH_SECRET = '';
+    try {
+      expect((await request(app.getHttpServer()).get('/api/t/me').set(as('OFFICER'))).status).toBe(200);
+    } finally {
+      delete process.env.INTERNAL_AUTH_SECRET;
+    }
+  });
 });
 
 describe('gateway mode (trustIdentityHeaders=false)', () => {

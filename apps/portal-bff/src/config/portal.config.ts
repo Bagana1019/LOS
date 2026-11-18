@@ -10,6 +10,8 @@ export interface PortalConfig {
   originationUrl: string;
   internalTimeoutMs: number;
   internalMaxContractBytes: number;
+  /** origination руу `x-internal-token` болгон илгээнэ (CLAUDE.md §3.2.9); production-д заавал. */
+  internalAuthSecret?: string;
   auth: {
     jwtSecret: string;
     hashSecret: string;
@@ -44,6 +46,7 @@ const Env = z.object({
   ORIGINATION_URL: z.string().url().optional(),
   PORTAL_INTERNAL_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(3000),
   PORTAL_MAX_CONTRACT_BYTES: z.coerce.number().int().min(1024).default(25 * 1024 * 1024),
+  INTERNAL_AUTH_SECRET: z.string().optional(),
   JWT_SECRET: z.string().optional(), // ажилтны gateway-ийн нууц: зөвхөн давхцаж буйг шалгана
   PORTAL_JWT_SECRET: z.string().min(32).optional(),
   PORTAL_HASH_SECRET: z.string().min(32).optional(),
@@ -92,7 +95,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     if (!e.ORIGINATION_URL) problems.push('ORIGINATION_URL is required in production / real integration mode');
     if (e.PORTAL_MOCK_OTP_CODE) problems.push('PORTAL_MOCK_OTP_CODE must not be set in production / real integration mode');
   }
+  const internalAuthSecret = e.INTERNAL_AUTH_SECRET?.trim() || undefined;
   if (prod) {
+    // Бусад сервисийн assertInternalAuthSecret (@los/nest-common)-тэй ижил дүрэм: ≥16 тэмдэгт, нийтийн загвар утга биш.
+    if (!internalAuthSecret) problems.push('INTERNAL_AUTH_SECRET is required in production');
+    else if (internalAuthSecret.length < 16) problems.push('INTERNAL_AUTH_SECRET must be at least 16 characters in production');
+    else if (/change[-_ ]?me/i.test(internalAuthSecret)) problems.push('INTERNAL_AUTH_SECRET must not be a public placeholder in production');
     if (e.INTEGRATION_MODE !== 'real') problems.push('INTEGRATION_MODE must be "real" in production');
     if (storeKind !== 'redis') problems.push('PORTAL_STORE must be "redis" in production (multi-instance)');
   }
@@ -109,6 +117,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     originationUrl: (e.ORIGINATION_URL ?? 'http://localhost:4001').replace(/\/+$/, ''),
     internalTimeoutMs: e.PORTAL_INTERNAL_TIMEOUT_MS,
     internalMaxContractBytes: e.PORTAL_MAX_CONTRACT_BYTES,
+    internalAuthSecret,
     auth: {
       jwtSecret: e.PORTAL_JWT_SECRET ?? DEV_JWT_SECRET,
       hashSecret: e.PORTAL_HASH_SECRET ?? DEV_HASH_SECRET,

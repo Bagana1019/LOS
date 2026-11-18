@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createErpGateway, parseErpEnv } from './erp.config';
 import { MockErpClient } from './mock.client';
@@ -58,7 +60,7 @@ describe('parseErpEnv', () => {
     expect(parseErpEnv({ INTEGRATION_MODE: mode }).INTEGRATION_MODE).toBe(mode);
   });
 
-  it.each([['prod'], ['REAL'], ['Mock'], ['']])('rejects INTEGRATION_MODE=%j', (mode) => {
+  it.each([['prod'], ['REAL'], ['Mock'], ['mock '], ['true']])('rejects INTEGRATION_MODE=%j', (mode) => {
     expect(() => parseErpEnv({ INTEGRATION_MODE: mode })).toThrow(/invalid ERP integration config: INTEGRATION_MODE/);
   });
 
@@ -94,29 +96,95 @@ describe('parseErpEnv', () => {
       expect(msg).not.toContain('pw-S3CRET');
     });
 
-    it('rejects an empty token', () => {
-      expect(() => parseErpEnv({ ERP_API_TOKEN: '' })).toThrow(/ERP_API_TOKEN/);
+    it('treats an empty token as not configured (the token is optional)', () => {
+      expect(parseErpEnv({ ERP_API_TOKEN: '' }).ERP_API_TOKEN).toBeUndefined();
     });
 
     it.each([['true'], ['false']])('accepts ERP_ALLOW_INSECURE=%s', (v) => {
       expect(parseErpEnv({ ERP_ALLOW_INSECURE: v }).ERP_ALLOW_INSECURE).toBe(v);
     });
 
-    it.each([['1'], ['yes'], ['TRUE'], ['']])('rejects ERP_ALLOW_INSECURE=%j', (v) => {
+    it.each([['1'], ['yes'], ['TRUE'], ['false ']])('rejects ERP_ALLOW_INSECURE=%j', (v) => {
       expect(() => parseErpEnv({ ERP_ALLOW_INSECURE: v })).toThrow(/ERP_ALLOW_INSECURE/);
     });
   });
 
   it('lists every offending variable name, and only names, in the error', () => {
     const msg = messageOf(() => parseErpEnv({
-      INTEGRATION_MODE: 'staging', ERP_API_URL: 'nonsense-url', ERP_API_TOKEN: '', ERP_WEBHOOK_SECRET: 'short-s3cr3t',
+      INTEGRATION_MODE: 'staging', ERP_API_URL: 'nonsense-url', ERP_WEBHOOK_SECRET: 'short-s3cr3t',
       ERP_TIMEOUT_MS: '5', ERP_ALLOW_INSECURE: 'maybe',
     }));
     expect(msg.startsWith('invalid ERP integration config: ')).toBe(true);
-    for (const name of ['INTEGRATION_MODE', 'ERP_API_URL', 'ERP_API_TOKEN', 'ERP_WEBHOOK_SECRET', 'ERP_TIMEOUT_MS', 'ERP_ALLOW_INSECURE']) {
+    for (const name of ['INTEGRATION_MODE', 'ERP_API_URL', 'ERP_WEBHOOK_SECRET', 'ERP_TIMEOUT_MS', 'ERP_ALLOW_INSECURE']) {
       expect(msg).toContain(name);
     }
     for (const value of ['staging', 'nonsense-url', 'short-s3cr3t', 'maybe']) expect(msg).not.toContain(value);
+  });
+});
+
+// H6: .env.example ships `ERP_API_URL=`, `ERP_WEBHOOK_SECRET=`, `ERP_API_TOKEN=` (empty); an empty value means "not configured".
+describe('parseErpEnv with empty / whitespace-only values (H6)', () => {
+  const DEFAULTS = { INTEGRATION_MODE: 'mock', ERP_TIMEOUT_MS: 15_000, ERP_ALLOW_INSECURE: 'false', ERP_REQUIRE_ACK: 'true' };
+
+  it.each([[''], ['   '], ['\t']])('treats every ERP variable set to %j as unset and applies the defaults', (blank) => {
+    const env = parseErpEnv({
+      INTEGRATION_MODE: blank, ERP_API_URL: blank, ERP_API_TOKEN: blank, ERP_WEBHOOK_SECRET: blank,
+      ERP_TIMEOUT_MS: blank, ERP_ALLOW_INSECURE: blank, ERP_REQUIRE_ACK: blank,
+    });
+    expect(env).toEqual(DEFAULTS);
+    expect(env.ERP_API_URL).toBeUndefined();
+    expect(env.ERP_WEBHOOK_SECRET).toBeUndefined();
+    expect(env.ERP_API_TOKEN).toBeUndefined();
+  });
+
+  it.each(['ERP_API_URL', 'ERP_API_TOKEN', 'ERP_WEBHOOK_SECRET', 'ERP_TIMEOUT_MS', 'ERP_ALLOW_INSECURE', 'ERP_REQUIRE_ACK'])('does not crash when only %s is empty', (key) => {
+    expect(() => parseErpEnv({ [key]: '' })).not.toThrow();
+  });
+
+  it('boots with the ERP block of the repository .env.example exactly as shipped', () => {
+    const lines = readFileSync(resolve(__dirname, '../../../../../.env.example'), 'utf8').split(/\r?\n/);
+    const example: Record<string, string> = {};
+    for (const line of lines) {
+      const m = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line);
+      if (m) example[m[1]] = m[2];
+    }
+    // The file really does ship the empty values this test is about.
+    expect(example).toMatchObject({ ERP_API_URL: '', ERP_WEBHOOK_SECRET: '', ERP_API_TOKEN: '' });
+    expect(() => parseErpEnv(example)).not.toThrow();
+    expect(() => parseErpEnv({ ...example, NODE_ENV: 'production' })).not.toThrow(); // the example sets INTEGRATION_MODE explicitly
+    expect(createErpGateway(parseErpEnv(example))).toBeInstanceOf(MockErpClient);
+  });
+
+  it('a blank value is not a real one: real mode still refuses to start without URL and secret', () => {
+    const msg = messageOf(() => createErpGateway(parseErpEnv({ INTEGRATION_MODE: 'real', ERP_API_URL: '', ERP_WEBHOOK_SECRET: '  ', ERP_API_TOKEN: '' })));
+    expect(msg).toBe('INTEGRATION_MODE=real requires ERP_API_URL and ERP_WEBHOOK_SECRET');
+  });
+
+  it('a blank optional value does not hide a real one next to it', () => {
+    const gw = createErpGateway(parseErpEnv({ ...REAL, ERP_API_TOKEN: '', ERP_TIMEOUT_MS: '' }));
+    expect(gw).toBeInstanceOf(RealErpClient);
+  });
+
+  it('keeps rejecting values that are present but invalid, without echoing them', () => {
+    const msg = messageOf(() => parseErpEnv({ ERP_API_URL: '', ERP_WEBHOOK_SECRET: 'short-s3cr3t', ERP_TIMEOUT_MS: '' }));
+    expect(msg).toContain('ERP_WEBHOOK_SECRET');
+    expect(msg).not.toContain('ERP_API_URL');
+    expect(msg).not.toContain('ERP_TIMEOUT_MS');
+    expect(msg).not.toContain('short-s3cr3t');
+  });
+
+  describe('production (INTEGRATION_MODE must still be explicit)', () => {
+    it.each([[''], ['   ']])('treats a blank INTEGRATION_MODE=%j as not set and refuses to start', (blank) => {
+      expect(() => parseErpEnv({ NODE_ENV: 'production', INTEGRATION_MODE: blank })).toThrow(/INTEGRATION_MODE must be set explicitly/);
+    });
+
+    it.each([['Production'], [' production ']])('recognises NODE_ENV=%j as production (fail closed)', (nodeEnv) => {
+      expect(() => parseErpEnv({ NODE_ENV: nodeEnv })).toThrow(/INTEGRATION_MODE must be set explicitly/);
+    });
+
+    it('does not treat a blank NODE_ENV as production', () => {
+      expect(parseErpEnv({ NODE_ENV: '' }).INTEGRATION_MODE).toBe('mock');
+    });
   });
 });
 
