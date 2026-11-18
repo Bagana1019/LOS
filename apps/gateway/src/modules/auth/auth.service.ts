@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { type AccessTokenClaims, type AuthResponse, menuFor, permissionsFor, type SessionUser, type UserRole, UserRole as UserRoles } from '@los/contracts';
 import { Clock } from '@los/nest-common';
+import { Prisma } from '.prisma/client-gateway';
 import { normalizeUsername } from './login-limiter';
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -27,21 +28,22 @@ export class AuthService {
     @Inject(AUTH_CONFIG) private readonly cfg: AuthConfig,
   ) {}
 
-  /** AC: 5 хэрэглэгчээр нэвтэрнэ; нэвтрэлт бүр iam.audit_log-д бичигдэнэ. Тохиолдол бүр ижил алдаа (username enumeration-гүй). */
+  /**
+   * AC: 5 хэрэглэгчээр нэвтэрнэ; нэвтрэлт бүр iam.audit_log-д бичигдэнэ. Тохиолдол бүр ижил алдаа (username enumeration-гүй).
+   * M7: дансны оролдлогыг нууц үг шалгахаас ӨМНӨ атомараар нөөцөлнө (`failedLoginCount` increment, `< LOGIN_MAX_FAILURES` нөхцөлтэй) —
+   * зэрэг ирсэн burst нийлээд LOGIN_MAX_FAILURES-аас илүү нууц үг шалгуулж чадахгүй; босгонд хүрвэл LOGIN_LOCK_MINUTES түгжинэ.
+   */
   async login(usernameRaw: string, password: string, meta: ClientMeta): Promise<Issued> {
     const username = normalizeUsername(usernameRaw);
     const now = this.clock.now();
     const user = await this.prisma.user.findUnique({ where: { username } });
-    // Хэрэглэгч байхгүй ч ижил хугацаа зарцуулна
-    const ok = user ? await verifyPassword(password, user.passwordHash) : (await verifyPassword(password, await dummyHash()), false);
-    const locked = !!user?.lockedUntil && user.lockedUntil > now;
+    const attempt = user?.isActive ? await this.reserveAttempt(user.id, now) : null;
+    // Хэрэглэгч байхгүй / идэвхгүй / түгжээтэй ч ижил хугацаа зарцуулна
+    const ok = user && attempt !== null ? await verifyPassword(password, user.passwordHash) : (await verifyPassword(password, await dummyHash()), false);
+    const locked = !!user?.isActive && attempt === null;
 
-    if (!user || !ok || locked || !user.isActive) {
-      if (user && !locked && user.isActive) {
-        const failed = user.failedLoginCount + 1;
-        const lock = failed >= this.cfg.maxFailures;
-        await this.prisma.user.update({ where: { id: user.id }, data: { failedLoginCount: lock ? 0 : failed, lockedUntil: lock ? new Date(now.getTime() + this.cfg.lockMinutes * 60_000) : null } });
-      }
+    if (!user || !ok) {
+      if (user && (locked || attempt! >= this.cfg.maxFailures)) await this.lockIfExhausted(user.id, now);
       await this.audit.record({
         orgId: user?.orgId, entity: 'USER', entityId: user?.id ?? 'unknown', action: locked ? 'LOGIN_LOCKED' : 'LOGIN_FAILED', actorId: null,
         afterJson: { username: username.slice(0, 100), reason: !user ? 'UNKNOWN_USER' : !user.isActive ? 'INACTIVE' : locked ? 'LOCKED' : 'BAD_PASSWORD' },
@@ -118,6 +120,28 @@ export class AuthService {
       this.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: this.clock.now() } }),
     ]);
     await this.audit.record({ orgId: user.orgId, entity: 'USER', entityId: userId, action: 'PASSWORD_CHANGED', actorId: userId, correlationId: meta.correlationId, ip: meta.ip, userAgent: meta.userAgent });
+  }
+
+  /** Нэг оролдлого нөөцлөөд шинэ тоог буцаана; түгжээтэй эсвэл босго дүүрсэн бол null. Postgres UPDATE … WHERE нь мөрийн түгжээгээр атомар. */
+  private async reserveAttempt(userId: string, now: Date): Promise<number | null> {
+    try {
+      const u = await this.prisma.user.update({
+        where: { id: userId, failedLoginCount: { lt: this.cfg.maxFailures }, OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }] },
+        data: { failedLoginCount: { increment: 1 } }, select: { failedLoginCount: true },
+      });
+      return u.failedLoginCount;
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') return null;
+      throw e;
+    }
+  }
+
+  /** Босго дүүрсэн бол түгжинэ (тоолуур 0). Түгжээгүй атлаа дүүрсэн (жнь процесс унасан) төлөв мөнхийн түгжээ болохгүй — хугацаатай түгжээ болно. */
+  private async lockIfExhausted(userId: string, now: Date): Promise<void> {
+    await this.prisma.user.updateMany({
+      where: { id: userId, failedLoginCount: { gte: this.cfg.maxFailures } },
+      data: { failedLoginCount: 0, lockedUntil: new Date(now.getTime() + this.cfg.lockMinutes * 60_000) },
+    });
   }
 
   private toSessionUser(u: { id: string; orgId: string; branchId: string | null; username: string; fullName: string; roles: string[]; [k: string]: unknown }): SessionUser {

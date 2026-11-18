@@ -116,7 +116,10 @@ describe.skipIf(!HAS_DB)('payment provider callbacks through the gateway (H9)', 
   });
 
   describe('rate limit: shared bucket per provider across pods + per-IP abuse ceiling', () => {
-    const keys = ['PAYMENT_CALLBACK_RATE_LIMIT', 'PAYMENT_CALLBACK_IP_RATE_LIMIT', 'TRUST_PROXY'] as const;
+    const keys = ['PAYMENT_CALLBACK_RATE_LIMIT', 'PAYMENT_CALLBACK_IP_RATE_LIMIT', 'TRUST_PROXY', 'PAYMENT_CALLBACK_UNTRUSTED_IP_RATE_LIMIT', 'PAYMENT_CALLBACK_UNTRUSTED_RATE_LIMIT',
+      'PAYMENT_CALLBACK_TRUSTED_CIDRS_QPAY', 'PAYMENT_CALLBACK_TRUSTED_CIDRS_SOCIALPAY'] as const;
+    /** Documentation ranges act as the providers' published source ranges; 100.64.0.0/10 is "anyone else". */
+    const TRUSTED = '203.0.113.0/24, 198.51.100.0/24, 192.0.2.0/24, 2001:db8::/32';
     const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
     const extra: INestApplication[] = [];
     afterEach(async () => {
@@ -124,10 +127,13 @@ describe.skipIf(!HAS_DB)('payment provider callbacks through the gateway (H9)', 
       for (const k of keys) if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
     });
     /** Two pods behind one trusted proxy, so X-Forwarded-For is the client IP. */
-    async function pods(provider: number, perIp: number) {
+    async function pods(provider: number, perIp: number, env: Partial<Record<(typeof keys)[number], string | undefined>> = {}) {
       process.env.PAYMENT_CALLBACK_RATE_LIMIT = String(provider);
       process.env.PAYMENT_CALLBACK_IP_RATE_LIMIT = String(perIp);
       process.env.TRUST_PROXY = '1';
+      process.env.PAYMENT_CALLBACK_TRUSTED_CIDRS_QPAY = TRUSTED;
+      process.env.PAYMENT_CALLBACK_TRUSTED_CIDRS_SOCIALPAY = TRUSTED;
+      for (const [k, v] of Object.entries(env)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
       process.env.RATE_LIMIT_KEY_PREFIX = `test:${randomUUID()}:`;
       const a = (await createGateway()).app; extra.push(a);
       const b = (await createGateway()).app; extra.push(b);
@@ -175,6 +181,62 @@ describe.skipIf(!HAS_DB)('payment provider callbacks through the gateway (H9)', 
       expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
       expect(res.body.code).toBe('RATE_LIMITED');
       expect(seen).toHaveLength(1);
+    });
+
+    it('a flood from many untrusted IPs (each under its own limit) never drains the trusted provider bucket', async () => {
+      const [a, b] = await pods(3, 100, { PAYMENT_CALLBACK_UNTRUSTED_IP_RATE_LIMIT: '1000', PAYMENT_CALLBACK_UNTRUSTED_RATE_LIMIT: '1000' });
+      const flood = await Promise.all(Array.from({ length: 20 }, (_, i) => qpayGet(i % 2 ? a : b, `100.64.0.${i + 1}`))).then((rs) => rs.map((r) => r.status));
+      expect(flood.every((s) => s === 200)).toBe(true);
+      const real = [(await qpayGet(a, '203.0.113.1')).status, (await qpayPost(b, '203.0.113.2')).status, (await qpayGet(a, '203.0.113.3')).status, (await qpayGet(b, '203.0.113.4')).status];
+      expect(real).toEqual([200, 200, 200, 429]); // the whole bucket (3) is still there for the real provider
+    });
+
+    it('untrusted traffic shares its own small bucket: once it is exhausted, untrusted callers get 429 but trusted callbacks still pass', async () => {
+      const [a, b] = await pods(1000, 1000, { PAYMENT_CALLBACK_UNTRUSTED_IP_RATE_LIMIT: '1000', PAYMENT_CALLBACK_UNTRUSTED_RATE_LIMIT: '5' });
+      const flood = [];
+      for (let i = 0; i < 8; i++) flood.push((await qpayGet(i % 2 ? a : b, `100.64.1.${i + 1}`)).status);
+      expect(flood).toEqual([200, 200, 200, 200, 200, 429, 429, 429]);
+      expect((await qpayGet(a, '203.0.113.20')).status).toBe(200);
+      expect((await social(b, '198.51.100.20')).status).toBe(200);
+    });
+
+    it('untrusted per-IP limit (PAYMENT_CALLBACK_UNTRUSTED_IP_RATE_LIMIT) is small and shared across pods; trusted IPs are not bound by it', async () => {
+      const [a, b] = await pods(1000, 1000, { PAYMENT_CALLBACK_UNTRUSTED_IP_RATE_LIMIT: '2' });
+      const one = [];
+      for (const p of [a, b, a]) one.push(await qpayGet(p, '100.64.2.1'));
+      expect(one.map((r) => r.status)).toEqual([200, 200, 429]);
+      expect(Number(one[2]!.headers['retry-after'])).toBeGreaterThan(0);
+      expect(one[2]!.body.code).toBe('RATE_LIMITED');
+      expect((await qpayGet(b, '100.64.2.2')).status).toBe(200);
+      const trusted = [];
+      for (let i = 0; i < 5; i++) trusted.push((await qpayGet(i % 2 ? a : b, '203.0.113.30')).status);
+      expect(trusted).toEqual([200, 200, 200, 200, 200]);
+    });
+
+    it('IPv6 trusted range: a provider calling from 2001:db8::/32 uses the provider bucket', async () => {
+      const [a] = await pods(1000, 1000, { PAYMENT_CALLBACK_UNTRUSTED_IP_RATE_LIMIT: '1' });
+      const s = [];
+      for (let i = 0; i < 3; i++) s.push((await qpayGet(a, '2001:db8::10')).status);
+      expect(s).toEqual([200, 200, 200]);
+    });
+
+    it('without TRUST_PROXY a spoofed X-Forwarded-For from a trusted range does not grant trusted status', async () => {
+      const [a] = await pods(1000, 1000, { PAYMENT_CALLBACK_UNTRUSTED_IP_RATE_LIMIT: '2', TRUST_PROXY: undefined });
+      const s = [];
+      for (let i = 0; i < 3; i++) s.push((await qpayGet(a, '203.0.113.5')).status);
+      expect(s).toEqual([200, 200, 429]);
+    });
+
+    it('with TRUST_PROXY=1 a trusted address prepended by the client to X-Forwarded-For does not grant trusted status', async () => {
+      const [a] = await pods(1000, 1000, { PAYMENT_CALLBACK_UNTRUSTED_IP_RATE_LIMIT: '2' });
+      const s = [];
+      for (let i = 0; i < 3; i++) s.push((await qpayGet(a, '203.0.113.5, 100.64.3.3')).status);
+      expect(s).toEqual([200, 200, 429]);
+    });
+
+    it('a malformed trusted CIDR fails gateway startup', async () => {
+      process.env.PAYMENT_CALLBACK_TRUSTED_CIDRS_SOCIALPAY = '203.0.113.0/24,10.0.0.0/33';
+      await expect(createGateway()).rejects.toThrow(/PAYMENT_CALLBACK_TRUSTED_CIDRS_SOCIALPAY/);
     });
   });
 });

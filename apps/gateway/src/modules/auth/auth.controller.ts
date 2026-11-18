@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, HttpCode, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ChangePasswordBody, LoginRequest, type MeResponse, type AuthResponse, type SessionUser } from '@los/contracts';
 import { Public, ZodValidationPipe, contextOf } from '@los/nest-common';
@@ -39,14 +39,8 @@ export class AuthController {
   @Public() @Throttle({ default: { limit: () => loginIpLimit(), ttl: 60_000 } }) @Post('login') @HttpCode(200)
   async login(@Body(new ZodValidationPipe(LoginRequest)) body: LoginRequest, @Req() req: Req_, @Res({ passthrough: true }) res: Res_): Promise<AuthResponse> {
     const key = this.limiter.keyFor(body.username, resolveClientIp(req as never));
-    await this.limiter.assertAllowed(key, (n, v) => res.setHeader(n, v));
-    let issued: Issued;
-    try {
-      issued = await this.auth.login(body.username, body.password, this.meta(req));
-    } catch (e) {
-      if (e instanceof UnauthorizedException) await this.limiter.recordFailure(key);
-      throw e;
-    }
+    await this.limiter.reserve(key, (n, v) => res.setHeader(n, v)); // нууц үг шалгахаас өмнө (TOCTOU-гүй)
+    const issued = await this.auth.login(body.username, body.password, this.meta(req));
     await this.limiter.reset(key);
     return this.send(res, issued);
   }

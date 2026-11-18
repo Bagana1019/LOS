@@ -80,7 +80,8 @@ export class PaymentCallbackForwarder {
 
 /**
  * H9 — QPay/SocialPay callback: ажилтны JWT-гүй (@Public). Глобал IP тутмын ThrottlerGuard-ыг алгасаж (@SkipThrottle), оронд нь
- * провайдер тус бүрийн нийт хувин + IP-ийн халдлагын дээд хязгаар (PaymentCallbackRateLimitGuard). Зам: route-policy PUBLIC_PAYMENT_CALLBACKS.
+ * PaymentCallbackRateLimitGuard: итгэмжлэгдсэн хүрээ (PAYMENT_CALLBACK_TRUSTED_CIDRS_*) → провайдерын хувин + IP-ийн дээд хязгаар;
+ * бусад IP → тусдаа жижиг IP хязгаар + «итгэмжлэгдээгүй» хувин (провайдерын хувинд хүрэхгүй). Зам: route-policy PUBLIC_PAYMENT_CALLBACKS.
  */
 @Public()
 @SkipThrottle()

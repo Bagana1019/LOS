@@ -2,7 +2,8 @@
 import { randomUUID } from 'node:crypto';
 import { type INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AuthService } from '../src/modules/auth/auth.service';
 import type { PrismaService } from '../src/prisma.service';
 import { HAS_DB, PASSWORD, createGateway } from './app';
 
@@ -92,6 +93,64 @@ describe.skipIf(!HAS_DB)('login rate limits (M7) across pods (M9)', () => {
     await login(a, 'ghost.multi', 'wrong-password');
     expect((await login(b, 'ghost.multi', 'wrong-password')).status).toBe(429);
     expect((await login(a, 'officer.b')).status).toBe(200);
+  });
+
+  describe('parallel bursts (reserve before the password check)', () => {
+    const burst = (app: INestApplication, n: number, user: (i: number) => string, password = 'wrong-password') =>
+      Promise.all(Array.from({ length: n }, (_, i) => login(app, user(i), password))).then((rs) => rs.map((r) => r.status));
+    const spyLogin = (app: INestApplication) => vi.spyOn(app.get(AuthService), 'login');
+
+    it('N parallel wrong passwords for one (user, IP): at most LOGIN_RATE_LIMIT reach password verification, the rest 429', async () => {
+      const app = await pod();
+      const spy = spyLogin(app);
+      const statuses = await burst(app, 12, () => 'ghost.burst');
+      expect(spy).toHaveBeenCalledTimes(3);
+      expect(statuses.filter((s) => s === 401)).toHaveLength(3);
+      expect(statuses.filter((s) => s === 429)).toHaveLength(9);
+    });
+
+    it('the (user, IP) reservation is shared by two pods under a parallel burst', async () => {
+      const [a, b] = [await pod(), await pod()];
+      const [sa, sb] = [spyLogin(a), spyLogin(b)];
+      const statuses = await Promise.all(Array.from({ length: 10 }, (_, i) => login(i % 2 ? a : b, 'ghost.burst2', 'wrong-password'))).then((rs) => rs.map((r) => r.status));
+      expect(sa.mock.calls.length + sb.mock.calls.length).toBe(3);
+      expect(statuses.filter((s) => s === 429)).toHaveLength(7);
+    });
+
+    it('a successful login clears the reservation so the legitimate user is not penalised', async () => {
+      const app = await pod();
+      expect((await login(app, 'approver', 'wrong-password')).status).toBe(401);
+      expect((await login(app, 'approver')).status).toBe(200);
+      expect((await login(app, 'approver')).status).toBe(200);
+      expect(await burst(app, 3, () => 'approver', PASSWORD)).toEqual([200, 200, 200]);
+      expect((await login(app, 'approver', 'wrong-password')).status).toBe(401);
+    });
+
+    it('per-IP ceiling holds under a parallel spray across usernames', async () => {
+      process.env.LOGIN_IP_RATE_LIMIT = '4';
+      process.env.LOGIN_RATE_LIMIT = '1000';
+      const app = await pod();
+      const spy = spyLogin(app);
+      const statuses = await burst(app, 12, (i) => `spray.p${i}`);
+      expect(spy).toHaveBeenCalledTimes(4);
+      expect(statuses.filter((s) => s === 429)).toHaveLength(8);
+    });
+
+    it('per-account lockout (LOGIN_MAX_FAILURES=5) holds under a parallel burst: <= 5 password checks, account locked', async () => {
+      process.env.LOGIN_RATE_LIMIT = '1000';
+      const app = await pod();
+      const user = await prisma.user.findUniqueOrThrow({ where: { username: 'compliance' } });
+      const since = new Date();
+      const statuses = await burst(app, 15, () => 'compliance');
+      expect(statuses.every((s) => s === 401)).toBe(true);
+      const rows = await prisma.auditLog.findMany({ where: { entityId: user.id, at: { gte: since } } });
+      const reasons = rows.map((r) => (r.afterJson as { reason?: string } | null)?.reason);
+      expect(reasons.filter((r) => r === 'BAD_PASSWORD')).toHaveLength(5);
+      expect(reasons.filter((r) => r === 'LOCKED')).toHaveLength(10);
+      const after = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+      expect(after.lockedUntil!.getTime()).toBeGreaterThan(Date.now());
+      expect((await login(app, 'compliance')).status).toBe(401); // right password, still locked
+    });
   });
 
   it('two gateway pods share the per-IP ceiling (Redis throttler storage)', async () => {
