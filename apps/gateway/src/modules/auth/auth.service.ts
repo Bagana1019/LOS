@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { type AccessTokenClaims, type AuthResponse, menuFor, permissionsFor, type SessionUser, type UserRole, UserRole as UserRoles } from '@los/contracts';
 import { Clock } from '@los/nest-common';
+import { normalizeUsername } from './login-limiter';
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AUTH_CONFIG, type AuthConfig } from './auth.config';
@@ -28,7 +29,7 @@ export class AuthService {
 
   /** AC: 5 хэрэглэгчээр нэвтэрнэ; нэвтрэлт бүр iam.audit_log-д бичигдэнэ. Тохиолдол бүр ижил алдаа (username enumeration-гүй). */
   async login(usernameRaw: string, password: string, meta: ClientMeta): Promise<Issued> {
-    const username = usernameRaw.trim().toLowerCase();
+    const username = normalizeUsername(usernameRaw);
     const now = this.clock.now();
     const user = await this.prisma.user.findUnique({ where: { username } });
     // Хэрэглэгч байхгүй ч ижил хугацаа зарцуулна

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isAmbiguousPath, isInternalOnly, requiredPermission } from './route-policy';
+import { PUBLIC_PAYMENT_CALLBACKS, isAmbiguousPath, isInternalOnly, requiredPermission } from './route-policy';
 
 describe('requiredPermission (FR-5.5 pricing tiers)', () => {
   const tiers = '/api/origination/loan-terms/pricing/tiers';
@@ -90,5 +90,15 @@ describe('requiredPermission (M13 админ)', () => {
   });
   it('аудит лог унших нь audit:read', () => {
     expect(requiredPermission('GET', '/api/origination/audit-logs')).toBe('audit:read');
+  });
+});
+
+describe('PUBLIC_PAYMENT_CALLBACKS (H9)', () => {
+  it('opens exactly the three provider callback routes and nothing else', () => {
+    expect(PUBLIC_PAYMENT_CALLBACKS.map((r) => `${r.method} ${r.path} -> ${r.upstreamPath}`)).toEqual([
+      'GET /api/origination/payments/callbacks/qpay -> /api/payments/callbacks/qpay',
+      'POST /api/origination/payments/callbacks/qpay -> /api/payments/callbacks/qpay',
+      'POST /api/origination/payments/callbacks/socialpay -> /api/payments/callbacks/socialpay',
+    ]);
   });
 });

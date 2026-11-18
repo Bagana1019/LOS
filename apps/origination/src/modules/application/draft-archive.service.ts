@@ -1,7 +1,11 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { Clock } from '@los/nest-common';
+import { runExclusive } from '@los/database';
 import { PrismaService } from '../../prisma.service';
 import { OrgSettings } from '../../shared/org-settings';
+
+/** M9: cross-pod advisory lock key — only one pod runs a tick. */
+export const DRAFT_ARCHIVE_LOCK = 'origination:draft-archive-sweeper';
 
 export interface ArchiveResult { archived: number; days: number }
 
@@ -26,13 +30,22 @@ export class DraftArchiveService implements OnModuleInit, OnModuleDestroy {
   }
   onModuleDestroy() { if (this.timer) clearInterval(this.timer); }
 
-  private async tick() {
-    if (this.running) return;
+  /** Нэг tick: өөр pod ажиллаж байвал алгасна (0). Буцаах утга — архивласан ноорог. */
+  async tick(): Promise<number> {
+    if (this.running) return 0;
     this.running = true;
     try {
-      const orgs = await this.prisma.loanApplication.findMany({ where: { status: 'DRAFT', archivedAt: null }, distinct: ['orgId'], select: { orgId: true } });
-      for (const { orgId } of orgs) await this.archiveStale(orgId);
-    } catch (e) { this.log.error(`draft archive failed: ${e instanceof Error ? e.message : String(e)}`); } finally { this.running = false; }
+      const r = await runExclusive(this.prisma, DRAFT_ARCHIVE_LOCK, () => this.sweepAll());
+      return r.ran ? r.value : 0;
+    } catch (e) { this.log.error(`draft archive failed: ${e instanceof Error ? e.message : String(e)}`); return 0; } finally { this.running = false; }
+  }
+
+  /** Бүх байгууллагын хуучирсан ноорогийг архивлана (idempotent: `archivedAt: null` нөхцөлтэй). */
+  async sweepAll(): Promise<number> {
+    const orgs = await this.prisma.loanApplication.findMany({ where: { status: 'DRAFT', archivedAt: null }, distinct: ['orgId'], select: { orgId: true } });
+    let total = 0;
+    for (const { orgId } of orgs) total += (await this.archiveStale(orgId)).archived;
+    return total;
   }
 
   async archiveStale(orgId: string, actorId: string | null = null): Promise<ArchiveResult> {

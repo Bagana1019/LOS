@@ -48,6 +48,7 @@ export const INTERNAL_ONLY_PREFIXES: readonly string[] = [
   '/api/dms/esign', '/api/dms/public', '/api/dms/dev', '/api/dms/documents', '/api/dms/templates/render', '/api/valuation/valuate/collateral',
   '/api/kyc/xyp/assets', '/api/kyc/xyp/property', '/api/kyc/collateral-checks', '/api/valuation/valuate/vehicle-lookup',
   '/api/scoring/underwrite', '/api/scoring/sosco/score', '/api/scoring/sosco/results',
+  '/api/origination/internal', // H8: portal-bff → origination дотоод API (`/api/internal/portal/*`) — ажилтны proxy-гоор хэзээ ч биш
 ];
 
 export function isInternalOnly(path: string): boolean {
@@ -68,3 +69,14 @@ export function isAmbiguousPath(path: string): boolean {
   if (/%(?:5c|2f|2e|3b|00)/i.test(path) || /\/{2,}/.test(path)) return true;
   return path.split('/').some((seg) => seg === '.' || seg === '..');
 }
+
+// ── H9 · Төлбөрийн провайдерын callback — ажилтны JWT-гүй нээлттэй ЦОРЫН ГАНЦ proxy замууд ────────────────────────────
+// Эдгээрийг зөвхөн modules/payment-callbacks (тусдаа @Public controller) эзэмшинэ: тогтмол upstream зам, identity толгойгүй, rate limit, аудит.
+// Агуулгад итгэхгүй — origination `invoice`-ийг л авч провайдерын API-аас (checkInvoice) баталгаажуулдаг (docs/DECISIONS.md H9).
+// Шинэ мөр нэмэх нь нэвтрэлтгүй зам нээх гэсэн үг — security review шаардлагатай.
+export interface PublicCallbackRoute { provider: 'QPAY' | 'SOCIALPAY'; method: 'GET' | 'POST'; path: string; upstreamPath: string }
+export const PUBLIC_PAYMENT_CALLBACKS: readonly PublicCallbackRoute[] = [
+  { provider: 'QPAY', method: 'GET', path: '/api/origination/payments/callbacks/qpay', upstreamPath: '/api/payments/callbacks/qpay' },
+  { provider: 'QPAY', method: 'POST', path: '/api/origination/payments/callbacks/qpay', upstreamPath: '/api/payments/callbacks/qpay' },
+  { provider: 'SOCIALPAY', method: 'POST', path: '/api/origination/payments/callbacks/socialpay', upstreamPath: '/api/payments/callbacks/socialpay' },
+];

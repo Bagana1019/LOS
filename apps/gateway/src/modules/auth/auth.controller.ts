@@ -1,17 +1,19 @@
-import { Body, Controller, ForbiddenException, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, HttpCode, Post, Req, Res, UnauthorizedException } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ChangePasswordBody, LoginRequest, type MeResponse, type AuthResponse, type SessionUser } from '@los/contracts';
 import { Public, ZodValidationPipe, contextOf } from '@los/nest-common';
 import { Inject } from '@nestjs/common';
-import { AUTH_CONFIG, REFRESH_COOKIE, type AuthConfig } from './auth.config';
+import { AUTH_CONFIG, REFRESH_COOKIE, loginIpLimit, type AuthConfig } from './auth.config';
+import { LoginAttemptLimiter } from './login-limiter';
 import { AuthService, type ClientMeta, type Issued } from './auth.service';
+import { resolveClientIp } from '../public-esign/client-ip';
 
 type Req_ = { headers: Record<string, string | string[] | undefined>; cookies?: Record<string, string>; ip?: string; user?: SessionUser; mustChangePassword?: boolean };
-type Res_ = { cookie(n: string, v: string, o: object): void; clearCookie(n: string, o: object): void };
+type Res_ = { cookie(n: string, v: string, o: object): void; clearCookie(n: string, o: object): void; setHeader(n: string, v: string): void };
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService, @Inject(AUTH_CONFIG) private readonly cfg: AuthConfig) {}
+  constructor(private readonly auth: AuthService, @Inject(AUTH_CONFIG) private readonly cfg: AuthConfig, private readonly limiter: LoginAttemptLimiter) {}
 
   private meta(req: Req_): ClientMeta {
     const ua = req.headers['user-agent'];
@@ -30,9 +32,23 @@ export class AuthController {
     if (typeof origin === 'string' && !this.cfg.webOrigins.includes(origin)) throw new ForbiddenException({ code: 'BAD_ORIGIN', message: 'Зөвшөөрөгдөөгүй origin' });
   }
 
-  @Public() @Throttle({ default: { limit: () => Number(process.env.LOGIN_RATE_LIMIT ?? 10), ttl: 60_000 } }) @Post('login') @HttpCode(200)
+  /**
+   * M7: IP-ийн нийт дээд хязгаар (@Throttle, LOGIN_IP_RATE_LIMIT/мин) + (хэрэглэгчийн нэр, IP) хосын амжилтгүй оролдлогын хязгаар (LoginAttemptLimiter).
+   * IP нь `req.ip` — TRUST_PROXY тохиргоогоор л X-Forwarded-For-д итгэнэ.
+   */
+  @Public() @Throttle({ default: { limit: () => loginIpLimit(), ttl: 60_000 } }) @Post('login') @HttpCode(200)
   async login(@Body(new ZodValidationPipe(LoginRequest)) body: LoginRequest, @Req() req: Req_, @Res({ passthrough: true }) res: Res_): Promise<AuthResponse> {
-    return this.send(res, await this.auth.login(body.username, body.password, this.meta(req)));
+    const key = this.limiter.keyFor(body.username, resolveClientIp(req as never));
+    await this.limiter.assertAllowed(key, (n, v) => res.setHeader(n, v));
+    let issued: Issued;
+    try {
+      issued = await this.auth.login(body.username, body.password, this.meta(req));
+    } catch (e) {
+      if (e instanceof UnauthorizedException) await this.limiter.recordFailure(key);
+      throw e;
+    }
+    await this.limiter.reset(key);
+    return this.send(res, issued);
   }
 
   @Public() @Throttle({ default: { limit: 30, ttl: 60_000 } }) @Post('refresh') @HttpCode(200)
