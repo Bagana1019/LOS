@@ -1,6 +1,7 @@
 // AmlRepository-ийн in-memory хэрэгжүүлэлт: бусад suite-ийн test double. Prisma хэрэгжүүлэлттэй ижил төрхтэй
 // байх нь aml-repository.contract.ts-ээр баталгаажна. Хадгалах/унших бүрт clone хийнэ (дуудагч дотоод төлөвийг өөрчилж чадахгүй).
 import type { AmlHit, DomainEvent } from '@los/contracts';
+import { sanitizeForAudit, type AuditInput } from '@los/database';
 import {
   ScreeningRaceError, type AmlRepository, type ApplyHitReviewResult, type BlacklistProjection, type HitReviewCommand, type ProjectionResult,
   type SaveScreeningOptions, type StoredScreening,
@@ -18,6 +19,12 @@ export class InMemoryAmlRepository implements AmlRepository {
   private readonly outbox = new Map<string, DomainEvent>();
   private readonly blacklist = new Map<string, BlacklistProjection>();
   private readonly processedEvents = new Set<string>();
+  private readonly auditLog: (AuditInput & { at: string })[] = [];
+
+  /** `audit_log` мөрүүд, бичигдсэн дарааллаар (тестэд шалгахад; prisma-гийн `sanitizeForAudit`-тэй ижил). */
+  getAuditLog(): (AuditInput & { at: string })[] {
+    return structuredClone(this.auditLog);
+  }
 
   /** Outbox-д бичигдсэн event-үүд, бичигдсэн дарааллаар (тестэд шалгахад). */
   getOutbox(): DomainEvent[] {
@@ -81,6 +88,13 @@ export class InMemoryAmlRepository implements AmlRepository {
       status: derived.status, blocking: derived.blocking, riskScore: derived.riskScore, riskLevel: derived.riskLevel, riskFactors: structuredClone(derived.riskFactors),
     });
     this.outbox.set(derived.event.eventId, structuredClone(derived.event));
+    if (derived.audit) {
+      const a = derived.audit;
+      this.auditLog.push({
+        ...structuredClone(a), beforeJson: sanitizeForAudit(a.beforeJson ?? null), afterJson: sanitizeForAudit(a.afterJson ?? null),
+        applicationId: a.applicationId ?? null, correlationId: a.correlationId ?? null, at: cmd.reviewedAt.toISOString(),
+      });
+    }
     return { outcome: 'applied', screening: structuredClone(found.screening) };
   }
 

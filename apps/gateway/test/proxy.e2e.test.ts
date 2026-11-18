@@ -124,6 +124,20 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
     expect((await api().post('/api/origination/blacklist').set(bearer('officer.a')).send({})).status).toBe(403);
   });
 
+  it('route policy: the AML review queue and hit decisions are COMPLIANCE only (aml:review); screening detail stays open', async () => {
+    const hit = '/api/kyc/aml/hits/00000000-0000-4000-8000-0000000000aa/review';
+    for (const u of ['officer.a', 'manager', 'approver', 'admin']) {
+      expect((await api().get('/api/kyc/aml/hits?status=OPEN').set(bearer(u))).status, `GET ${u}`).toBe(403);
+      expect((await api().post(hit).set(bearer(u)).send({ decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' })).status, `POST ${u}`).toBe(403);
+    }
+    expect(seen).toHaveLength(0);
+    expect((await api().get('/api/kyc/aml/hits?status=OPEN').set(bearer('compliance'))).status).toBe(200);
+    expect((await api().post(hit).set(bearer('compliance')).send({ decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' })).status).toBe(200);
+    expect(seen.map((s) => `${s.method} ${s.url}`)).toEqual(['GET /api/aml/hits?status=OPEN', 'POST /api/aml/hits/00000000-0000-4000-8000-0000000000aa/review']);
+    expect(seen[1]!.headers['x-roles']).toBe('COMPLIANCE');
+    expect((await api().get('/api/kyc/aml/screenings/s-1').set(bearer('officer.a'))).status).toBe(200);
+  });
+
   it('unknown service prefixes are 404 and never proxied', async () => {
     const res = await api().get('/api/secret-service/x').set(bearer('admin'));
     expect(res.status).toBe(404);

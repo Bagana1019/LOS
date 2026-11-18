@@ -13,6 +13,19 @@ describe('requiredPermission (FR-5.5 pricing tiers)', () => {
   });
 });
 
+describe('requiredPermission (AML hit review — docs/05-compliance-aml.md §7)', () => {
+  it('the review queue and hit decisions need aml:review (COMPLIANCE), read and write alike', () => {
+    expect(requiredPermission('GET', '/api/kyc/aml/hits')).toBe('aml:review');
+    expect(requiredPermission('GET', '/api/KYC/aml/hits')).toBe('aml:review');
+    expect(requiredPermission('POST', '/api/kyc/aml/hits/00000000-0000-4000-8000-000000000001/review')).toBe('aml:review');
+  });
+  it('screening, its detail and the per-customer latest result stay open to any signed-in user (kyc checks roles)', () => {
+    expect(requiredPermission('POST', '/api/kyc/aml/screen')).toBeNull();
+    expect(requiredPermission('GET', '/api/kyc/aml/screenings/s-1')).toBeNull();
+    expect(requiredPermission('GET', '/api/kyc/aml/hitsx')).toBeNull();
+  });
+});
+
 describe('isInternalOnly (FR-8 scoring: хүрээг origination шалгана)', () => {
   const hidden = [
     '/api/scoring/underwrite', '/api/scoring/underwrite/preview', '/api/scoring/underwrite/applications/app-1/latest', '/api/scoring/underwrite/applications/app-1/selection',

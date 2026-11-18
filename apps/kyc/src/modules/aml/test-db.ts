@@ -1,7 +1,7 @@
 // Postgres-тэй тестийн нийтлэг helper (aml.e2e.test.ts, prisma-aml.repository.int.test.ts). Production код үүнийг импортлохгүй.
 
 /** Тестэд TRUNCATE хийдэг хүснэгтүүд (kyc schema). */
-export const KYC_TEST_TABLES = ['kyc.aml_hit', 'kyc.aml_check', 'kyc.blacklist_projection', 'kyc.processed_events', 'kyc.outbox'] as const;
+export const KYC_TEST_TABLES = ['kyc.aml_hit', 'kyc.aml_check', 'kyc.blacklist_projection', 'kyc.processed_events', 'kyc.outbox', 'kyc.audit_log'] as const;
 
 /** DATABASE_URL-ийн өгөгдлийн сангийн нэр. Задлах боломжгүй бол null. */
 export function databaseNameOf(url: string | undefined): string | null {

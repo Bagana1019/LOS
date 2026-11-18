@@ -18,6 +18,8 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { service: 'origination', prefix: '/api/origination/maker-checker/policies', writeOnly: true, permission: 'settings:manage' },
   // ERP синкийн ops API (FIN-SYNC): унших/бичих бүгд ADMIN. Service давхар шалгана (@Permissions('erp-sync:manage'))
   { service: 'origination', prefix: '/api/origination/erp-sync', permission: 'erp-sync:manage' },
+  // AML hit шийдвэрлэх дараалал ба шийдвэр (docs/05-compliance-aml.md §5, §7; DECISIONS P4C-1): унших/бичих — COMPLIANCE. kyc AmlAccessGuard давхар шалгана.
+  { service: 'kyc', prefix: '/api/kyc/aml/hits', permission: 'aml:review' },
   { service: 'dms', prefix: '/api/dms/templates', writeOnly: true, permission: 'settings:manage' }, // FR-11.2 загвар засварлагч
   { service: 'scoring', prefix: '/api/scoring/sosco/models', writeOnly: true, permission: 'settings:manage' },
   { service: 'scoring', prefix: '/api/scoring/bsa/categories', writeOnly: true, permission: 'settings:manage' },
