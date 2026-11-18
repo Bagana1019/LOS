@@ -740,6 +740,12 @@ model DisbursementRequest {
   coreLoanId         String?   @map("core_loan_id")
   /// H1: Core openLoan lease эхэлсэн хугацаа (APPROVED үед). Сэргээлтийн fencing token.
   coreRequestedAt    DateTime? @map("core_requested_at")
+  /// H1: Core үр дүн тодорхойгүй болсон хугацаа (timeout/сүлжээ/5xx эсвэл унасан lease эзэмшигчийг орлосон). Settle цонх эндээс тоологдоно.
+  coreUnknownAt      DateTime? @map("core_unknown_at")
+  /// H1: settle цонхны дараах, хоорондоо зайтай "Core-д олдсонгүй" лавлагааны тоо (дараалсан).
+  coreNotFoundCount  Int       @default(0) @map("core_not_found_count")
+  /// H1: сүүлд тоологдсон "олдсонгүй" лавлагааны хугацаа (лавлагаа хоорондын зайг шалгана).
+  coreNotFoundAt     DateTime? @map("core_not_found_at")
   historyJson        Json?     @map("history_json")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")

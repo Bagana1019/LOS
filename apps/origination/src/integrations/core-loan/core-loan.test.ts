@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { createCoreLoanPort } from './core-loan.provider';
 import { CoreLoanError, type OpenLoanRequest } from './core-loan.port';
+import { MockCoreLoanPort } from './core-loan.mock';
 
 const req = (accountNo = '5012345678'): OpenLoanRequest => ({ idempotencyKey: 'd-1', applicationId: 'a', contractNo: 'C-1', customerId: 'c', amount: 1, currency: 'MNT', termMonths: 12, interestRate: 20, repaymentType: 'ANNUITY', disburseDate: '2026-11-03', firstPaymentDate: null, account: { bankCode: 'KHAN', accountNo, holderName: 'X' } });
 
 describe('core-loan integration', () => {
+  it('H1 test hook: delayed open times out, is invisible to findLoan until flushed, then the same key yields one loan', async () => {
+    const m = new MockCoreLoanPort();
+    m.delayOpens = true;
+    await expect(m.openLoan(req())).rejects.toMatchObject({ code: 'CORE_UNAVAILABLE' });
+    expect(await m.findLoan('d-1')).toBeNull();
+    m.flushLateOpens();
+    const found = await m.findLoan('d-1');
+    expect(found?.coreLoanId).toMatch(/^CL-/);
+    expect((await m.openLoan(req())).coreLoanId).toBe(found!.coreLoanId);
+  });
   it('mock is deterministic and idempotent per key', async () => {
     const p = createCoreLoanPort({ INTEGRATION_MODE: 'mock' });
     const a = await p.openLoan(req());

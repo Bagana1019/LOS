@@ -29,6 +29,8 @@ export class CoreLoanError extends Error {
  * - `findLoan(idempotencyKey)` нь тухайн лавлагаагаар нээгдсэн дансыг буцаана, байхгүй бол `null`. Үр дүн тодорхойгүй (сүлжээ/5xx) бол
  *   `null` БИШ, `CoreLoanError('CORE_UNAVAILABLE')` шиднэ — `null` нь "Core-д байхгүй нь баталгаатай" гэсэн утгатай.
  * Origination нь `openLoan`-оос өмнө үргэлж `findLoan` дуудна (DB lease дор), тиймээс Core idempotency алдагдсан ч давхар нээхгүй.
+ * `openLoan` timeout болсны дараа Core хүсэлтийг хожуу боловсруулж болно — тиймээс origination `null`-г шууд баталгаа гэж үзэхгүй,
+ *   settle цонх (DISBURSEMENT_CORE_SETTLE_SECONDS) + 2 лавлагааны дараа л (H1). Real adapter: Core-ийн хамгийн урт боловсруулалт < settle цонх байх ёстой.
  */
 export interface CoreLoanPort {
   readonly mode: IntegrationMode;

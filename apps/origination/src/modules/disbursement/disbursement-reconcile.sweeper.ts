@@ -14,6 +14,7 @@ export function parseReconcileSeconds(raw: string | undefined): number {
 /**
  * H1 (FR-12.5): Core-д данс нээгдээд LOS-д бүртгэгдээгүй (APPROVED, lease хугацаа хэтэрсэн) олголтыг дуусгана.
  * Олон pod-д аюулгүй: `reconcileStale` мөр бүрийг CAS lease-ээр авдаг тул нэг мөрийг нэг л pod боловсруулна. Sweeper хэзээ ч `openLoan` дуудахгүй.
+ * Тодорхойгүй үр дүнтэй мөрт "олдсонгүй"-г settle дүрмээр (`isNotFoundDefinitive`) л FAILED болгоно; өмнө нь лавлагааг тоолж APPROVED үлдээнэ.
  */
 @Injectable()
 export class DisbursementReconcileSweeper implements OnModuleInit, OnModuleDestroy {
