@@ -310,16 +310,25 @@ describe.skipIf(!hasTestDb)('application documents API (DB, fake dms)', () => {
       expect((await step(app.id)).status).toBe('COMPLETED');
     });
 
-    it('checklist JSON буруу хэлбэртэй → хоосон checklist гэж үзнэ (алдаа биш); null → мөн хоосон', async () => {
-      for (const bad of ['id_card', { key: 'a' }, [{ key: '' }], null]) {
+    it('checklist JSON буруу хэлбэртэй (тохиргооны алдаа) → мөр хоосон ч complete=false, алхам бүрдэхгүй (FR-9.2 fail-closed)', async () => {
+      for (const bad of ['id_card', { key: 'a' }, [{ key: '' }]]) {
         await resetDb(t.prisma);
         const { app } = await scenario({ checklist: bad });
         const out = await listOk(app.id);
         expect(out.checklist, JSON.stringify(bad)).toEqual([]);
-        expect(out.summary).toEqual({ productMissing: false, required: 0, satisfied: 0, complete: true, missing: [] });
+        expect(out.summary).toEqual({ productMissing: false, required: 0, satisfied: 0, complete: false, missing: [] });
         await attachOk(app.id, { type: 'other' }); // түлхүүргүйгээр хавсаргаж болно
-        expect((await step(app.id)).status).toBe('COMPLETED'); // шаардлагагүй бүтээгдэхүүн: алхам хаагдана
+        expect((await step(app.id)).status, JSON.stringify(bad)).toBe('PENDING'); // буруу тохиргоо хоосон checklist биш — алхам хаагдахгүй
       }
+    });
+
+    it('checklist null (тохируулаагүй) → хүчинтэй хоосон checklist: complete=true, алхам COMPLETED', async () => {
+      await resetDb(t.prisma);
+      const { app } = await scenario({ checklist: null });
+      const out = await listOk(app.id);
+      expect(out.summary).toEqual({ productMissing: false, required: 0, satisfied: 0, complete: true, missing: [] });
+      await attachOk(app.id, { type: 'other' });
+      expect((await step(app.id)).status).toBe('COMPLETED');
     });
 
     it('бүтээгдэхүүн DB-д алга (productId өлгөөтэй) → productMissing', async () => {

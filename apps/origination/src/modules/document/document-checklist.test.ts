@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApplicationDocumentsResponse, type DocumentView } from '@los/contracts';
-import { buildApplicationDocuments, findChecklistItem, normalizeKey, parseProductChecklist, planDocumentStep, sameDocuments } from './document-checklist';
+import { buildApplicationDocuments, findChecklistItem, missingRequiredDocuments, normalizeKey, parseProductChecklist, planDocumentStep, sameDocuments } from './document-checklist';
 
 const CHECKLIST = [
   { key: 'id_card', name: 'Иргэний үнэмлэхний хуулбар', required: true },
@@ -165,5 +165,35 @@ describe('sameDocuments', () => {
     expect(sameDocuments([a], [{ ...a, checklistKey: 'x' }])).toBe(false);
     expect(sameDocuments([], [])).toBe(true);
     expect(sameDocuments([a], [doc('id_card')])).toBe(false);
+  });
+});
+
+describe('missingRequiredDocuments (FR-9.2 submit gate)', () => {
+  const view = (documents: DocumentView[], productPresent = true, checklist = CHECKLIST) => buildApplicationDocuments({ productPresent, checklist, documents });
+  it('lists every unsatisfied REQUIRED item with its display name, in checklist order', () => {
+    expect(missingRequiredDocuments(view([doc('salary_statement')]))).toEqual([
+      { key: 'id_card', name: 'Иргэний үнэмлэхний хуулбар' },
+      { key: 'application_form', name: 'Зээлийн хүсэлтийн маягт' },
+    ]);
+  });
+  it('is empty when every required item has at least one document', () => {
+    expect(missingRequiredDocuments(view([doc('id_card'), doc('salary_statement'), doc('application_form')]))).toEqual([]);
+  });
+  it('ignores optional items', () => {
+    expect(missingRequiredDocuments(view([], true, [{ key: 'photo', name: 'Зураг', required: false }]))).toEqual([]);
+  });
+  it('is empty for a product with no checklist (nothing is required)', () => {
+    expect(missingRequiredDocuments(view([], true, []))).toEqual([]);
+  });
+});
+
+describe('buildApplicationDocuments — invalid product checklist (fail-closed)', () => {
+  it('checklistInvalid → summary.complete=false even with no required items (invalid config is NOT an empty checklist)', () => {
+    const v = buildApplicationDocuments({ productPresent: true, checklist: [], documents: [], checklistInvalid: true });
+    expect(v.summary.complete).toBe(false);
+    expect(v.summary.missing).toEqual([]);
+  });
+  it('valid empty checklist stays complete', () => {
+    expect(buildApplicationDocuments({ productPresent: true, checklist: [], documents: [] }).summary.complete).toBe(true);
   });
 });

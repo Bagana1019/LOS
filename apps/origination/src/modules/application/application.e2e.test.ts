@@ -3,7 +3,11 @@ import type { AddressInfo } from 'node:net';
 import request from 'supertest';
 import { ApplicationDetail, ApplicationListResponse, ApplicationStatusChanged, ApplicationSubmitted, StepKey } from '@los/contracts';
 import { createTestApp, TestApp } from '../../test-utils/test-app';
-import { actors, BRANCH, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
+import { actors, BRANCH, createBorrower, createCustomer, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
+import { KYC_AML_PORT } from '../aml/ports/kyc-aml.port';
+import { FakeKycAml } from '../aml/testing/fake-kyc-aml.port';
+import { DMS_DOCUMENTS } from '../document/dms-documents.port';
+import { FakeDmsDocuments } from '../document/testing/fake-dms-documents';
 import { ApplicationStateMachine } from './application-state-machine';
 import { ApplicationModule } from './application.module';
 
@@ -13,13 +17,15 @@ describe.skipIf(!hasTestDb)('application API (DB)', () => {
   let baseUrl: string;
   const officerA = actors.officer('officer-a');
   const officerB = actors.officer('officer-b');
+  const aml = new FakeKycAml(() => t.clock.now());
+  const dms = new FakeDmsDocuments();
   beforeAll(async () => {
-    t = await createTestApp([ApplicationModule]);
+    t = await createTestApp([ApplicationModule], (b) => b.overrideProvider(KYC_AML_PORT).useValue(aml).overrideProvider(DMS_DOCUMENTS).useValue(dms));
     await t.app.listen(0, '127.0.0.1');
     baseUrl = `http://127.0.0.1:${(t.app.getHttpServer().address() as AddressInfo).port}`;
   });
   afterAll(async () => { await t.close(); });
-  beforeEach(async () => { await resetDb(t.prisma); });
+  beforeEach(async () => { await resetDb(t.prisma); aml.reset(); dms.reset(); });
 
   const http = () => request(baseUrl);
   async function create(actor: Record<string, string> = officerA, body: Record<string, unknown> = {}) {
@@ -28,7 +34,14 @@ describe.skipIf(!hasTestDb)('application API (DB)', () => {
     return ApplicationDetail.parse(res.body);
   }
   const completeSteps = (appId: string, keys: readonly string[]) => t.prisma.loanApplicationStep.updateMany({ where: { applicationId: appId, stepKey: { in: [...keys] } }, data: { status: 'COMPLETED', completedAt: new Date() } });
-  const REQUIRED = ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score'];
+  const REQUIRED = ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score', 'document']; // BR-7 + FR-9.2
+  /** G1 AML: үндсэн зээлдэгч (харилцагчийн updated_at-ийг тестийн цагаас өмнө — шалгалт «хуучирсан» гэж үзэгдэхгүй). */
+  async function primaryBorrower(appId: string) {
+    const c = await createCustomer(t.prisma);
+    await createBorrower(t.prisma, appId, c.id, 'PRIMARY');
+    await t.prisma.customer.update({ where: { id: c.id }, data: { updatedAt: new Date(t.clock.now().getTime() - 86_400_000) } });
+    return c;
+  }
   async function product() {
     return t.prisma.product.create({ data: { orgId: ORG, code: 'P1', name: 'Хэрэглээний', productType: 'CONSUMER', minAmount: 100_000, maxAmount: 50_000_000, minTerm: 1, maxTerm: 36, minRate: 10, maxRate: 40 } });
   }
@@ -107,6 +120,7 @@ describe.skipIf(!hasTestDb)('application API (DB)', () => {
   it('илгээх (G1): заавал алхам дутуу бол 422 + дутуу жагсаалт; бүрдвэл SUBMITTED, audit, 2 event', async () => {
     const p = await product();
     const a = await create(officerA, { productId: p.id });
+    const c = await primaryBorrower(a.id);
     await completeSteps(a.id, REQUIRED.slice(0, 5));
     const blocked = await http().post(`/api/applications/${a.id}/transition`).set(officerA).send({ to: 'SUBMITTED' });
     expect(blocked.status).toBe(422);
@@ -134,19 +148,34 @@ describe.skipIf(!hasTestDb)('application API (DB)', () => {
     expect(changed).toMatchObject([{ applicationId: a.id, from: 'DRAFT', to: 'SUBMITTED' }]);
     const sub = outbox.filter((o) => o.type === 'ApplicationSubmitted').map((o) => ApplicationSubmitted.parse(o.payload));
     expect(sub).toMatchObject([{ applicationId: a.id, amount: 5_000_000, productId: p.id }]);
+    // G1 AML (FR-3.4): үндсэн зээлдэгчийг kyc-ээр шалгасан, лавлагаа хадгалагдсан
+    expect(aml.screenCalls()).toEqual([c.id]);
+    expect(await t.prisma.applicationAmlScreening.count({ where: { applicationId: a.id, customerId: c.id, status: 'CLEAR' } })).toBe(1);
   });
 
-  it('илгээх: бүтээгдэхүүн/дүн байхгүй бол 422 LOAN_TERMS_MISSING', async () => {
-    const a = await create();
+  it('илгээх: дүн байхгүй бол 422 LOAN_TERMS_MISSING (AML дуудагдахгүй)', async () => {
+    const p = await product();
+    const a = await create(officerA, { productId: p.id });
     await completeSteps(a.id, REQUIRED);
     const res = await http().post(`/api/applications/${a.id}/transition`).set(officerA).send({ to: 'SUBMITTED' });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe('LOAN_TERMS_MISSING');
+    expect(aml.calls).toHaveLength(0);
+  });
+
+  it('илгээх: бүтээгдэхүүнгүй бол баримтын checklist тодорхойгүй → 422 DOCUMENTS_INCOMPLETE (FR-9.2)', async () => {
+    const a = await create();
+    await completeSteps(a.id, REQUIRED);
+    const res = await http().post(`/api/applications/${a.id}/transition`).set(officerA).send({ to: 'SUBMITTED' });
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('DOCUMENTS_INCOMPLETE');
+    expect(res.body.message).toContain('бүтээгдэхүүн сонгогдоогүй');
   });
 
   it('системийн шилжилт: IN_APPROVAL→APPROVED үед 2-р үе шат нээгдэнэ; RETURNED→дахин илгээхэд version+1', async () => {
     const p = await product();
     const a = await create(officerA, { productId: p.id });
+    await primaryBorrower(a.id);
     await completeSteps(a.id, REQUIRED);
     await t.prisma.loanApplication.update({ where: { id: a.id }, data: { amount: 1_000_000 } });
     await http().post(`/api/applications/${a.id}/transition`).set(officerA).send({ to: 'SUBMITTED' }).expect(200);
