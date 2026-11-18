@@ -19,6 +19,12 @@ export interface OpenLoanRequest {
 }
 export interface OpenLoanResult { coreLoanId: string }
 
+/**
+ * Core дуудлага бүрийн (findLoan, openLoan) дээд хугацаа (CLAUDE.md §3.1: гадаад 15с). Adapter бүр үүнийг хэрэгжүүлэх ЁСТОЙ —
+ * origination-ий lease (CORE_LEASE_MS) ба send deadline үүн дээр тулгуурладаг (H1; `assertCoreTiming` модуль ачаалахад шалгана).
+ */
+export const CORE_CALL_TIMEOUT_MS = 15_000;
+
 export class CoreLoanError extends Error {
   constructor(readonly code: 'CORE_REJECTED' | 'CORE_UNAVAILABLE' | 'NOT_IMPLEMENTED', message: string) { super(message); this.name = 'CoreLoanError'; }
 }

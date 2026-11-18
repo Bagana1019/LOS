@@ -70,6 +70,31 @@ const MAX_SETTLE_SECONDS = 86_400;
  */
 export const NOT_FOUND_MIN_LOOKUPS = 2;
 
+/**
+ * H1 инвариант: lease нь findLoan + openLoan (тус бүр ≤ callTimeout) + зайг багтаах ёстой (lease ≥ 3 × timeout).
+ * Буцаах утга = send deadline: lease эхэлснээс хойш openLoan-ийг ЭХЛҮҮЛЖ болох сүүлийн мөч = lease − timeout, тиймээс илгээсэн хүсэлт
+ * (клиентийн талаас) lease дуусахаас өмнө дуусна. Зөрчвөл модуль ачаалахад унана.
+ */
+export function assertCoreTiming(leaseMs: number, callTimeoutMs: number): number {
+  if (!(callTimeoutMs > 0) || leaseMs < 3 * callTimeoutMs) throw new Error(`H1: CORE_LEASE_MS (${leaseMs}) must be >= 3 × Core call timeout (${callTimeoutMs})`);
+  return leaseMs - callTimeoutMs;
+}
+
+/**
+ * claimStale-ийн settle эхлэл. Илгээх тамга (`core_unknown_at`) нь openLoan-оос өмнө fenced-ээр бичигддэг тул
+ * `unknownAt ≥ expiredLease` ⇔ тухайн lease дор openLoan илгээгдэж болсон. Тэгвэл илгээлт lease дуустал эхэлж болох байсан тул
+ * эхлэл = max(unknownAt, expiredLease + lease). Lookup-only lease (reconcile/sweeper claim) нь өөрийн lease-ээс өмнөх тамгатай
+ * (claim-ийн эхлэл ≤ өмнөх lease төгсгөл < шинэ lease) тул эхлэл хөдлөхгүй — sweeper цонхыг үүрд хойшлуулахгүй.
+ * Тамгагүй мөр (илгээгээгүй) → lease төгсгөл (консерватив); lease-гүй → одоо.
+ */
+export function settleAnchor(unknownAt: Date | null, expiredLease: Date | null, now: Date, leaseMs: number): Date {
+  if (!expiredLease) return unknownAt ?? now;
+  const leaseEnd = new Date(expiredLease.getTime() + leaseMs);
+  if (!unknownAt) return leaseEnd;
+  if (unknownAt.getTime() < expiredLease.getTime()) return unknownAt;
+  return unknownAt.getTime() > leaseEnd.getTime() ? unknownAt : leaseEnd;
+}
+
 export interface CoreSettlePolicy { settleMs: number; minLookups: number; lookupSpacingMs: number }
 /** `unknownAt` null = мөр тодорхойгүй үр дүнгүй (өмнөх зан төлөв: нэг "олдсонгүй" баталгаатай). */
 export interface NotFoundEvidence { unknownAt: Date | null; notFoundCount: number; lastNotFoundAt: Date | null }

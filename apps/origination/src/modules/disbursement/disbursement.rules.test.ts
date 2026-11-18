@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { amountWithinApproved, evaluateGate, isNotFoundDefinitive, maskAccount, parseSettleSeconds, reconcile, recordNotFound, type CoreSettlePolicy, type NotFoundEvidence, type GateInput } from './disbursement.rules';
+import { amountWithinApproved, assertCoreTiming, evaluateGate, isNotFoundDefinitive, settleAnchor, maskAccount, parseSettleSeconds, reconcile, recordNotFound, type CoreSettlePolicy, type NotFoundEvidence, type GateInput } from './disbursement.rules';
 
 const base: GateInput = {
   applicationStatus: 'APPROVED', disburseAmount: 30_000_000, approvedAmount: 30_000_000, disburseDate: '2026-11-05', contractSigned: true, hasDecision: true, hasLetter: true,
@@ -81,4 +81,29 @@ describe('H1 settle rule (isNotFoundDefinitive / recordNotFound)', () => {
   it.each<[string | undefined, number]>([
     [undefined, 900], ['', 900], ['abc', 900], ['-5', 900], ['0', 120], ['60', 120], ['1800', 1800], ['999999', 86_400],
   ])('DISBURSEMENT_CORE_SETTLE_SECONDS=%s → %i', (raw, want) => expect(parseSettleSeconds(raw)).toBe(want));
+});
+
+// H1 review-3: claimStale-ийн settle эхлэл ба Core хугацааны инвариант.
+describe('H1 settleAnchor (claimStale)', () => {
+  const L = 120_000;
+  const R = new Date('2026-11-18T00:00:00Z');
+  const ms = (n: number) => new Date(R.getTime() + n);
+  const NOW = ms(L + 5_000);
+  it.each<[string, Date | null, Date | null, Date]>([
+    ['open sent under the expired lease → lease end (send could have started until expiry)', ms(5_000), R, ms(L)],
+    ['open stamp later than lease end (late markUnknown) → keep the later stamp', ms(L + 1_000), R, ms(L + 1_000)],
+    ['lookup-only lease (stamp older than the lease) → unchanged, never moved by sweeps', ms(-60_000), R, ms(-60_000)],
+    ['unstamped row with an expired lease → lease end', null, R, ms(L)],
+    ['no lease and no stamp → now', null, null, NOW],
+    ['no lease, stamped → unchanged', ms(-60_000), null, ms(-60_000)],
+  ])('%s', (_n, unknownAt, lease, want) => expect(settleAnchor(unknownAt, lease, NOW, L)).toEqual(want));
+  it('a lookup-only claim never moves the anchor twice (claim → claim)', () => {
+    const a1 = settleAnchor(ms(5_000), R, NOW, L); // 1st claim of an open-capable lease
+    const claim2 = new Date(NOW.getTime() + L + 1_000);
+    expect(settleAnchor(a1, NOW, claim2, L)).toEqual(a1); // 2nd claim: lease = 1st claim (lookup-only)
+  });
+  it('Core call timeout fits the lease with room for findLoan + openLoan; returns the send deadline', () => {
+    expect(assertCoreTiming(120_000, 15_000)).toBe(105_000);
+    expect(() => assertCoreTiming(40_000, 15_000)).toThrow(/CORE_LEASE_MS/);
+  });
 });

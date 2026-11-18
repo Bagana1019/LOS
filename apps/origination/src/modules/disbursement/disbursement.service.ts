@@ -6,14 +6,14 @@ import type { DisbursementRequest, LoanApplication, Prisma } from '.prisma/clien
 import { BANK_GATEWAY } from '../../integrations/bank-transfer/bank-transfer.provider';
 import type { BankGatewayPort } from '../../integrations/bank-transfer/bank-transfer.client';
 import { CORE_LOAN_PORT } from '../../integrations/core-loan/core-loan.provider';
-import { CoreLoanError, type CoreLoanPort } from '../../integrations/core-loan/core-loan.port';
+import { CORE_CALL_TIMEOUT_MS, CoreLoanError, type CoreLoanPort } from '../../integrations/core-loan/core-loan.port';
 import { PrismaService, type Tx } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
 import { DomainEvents } from '../../shared/domain-events';
 import { ApplicationStateMachine } from '../application/application-state-machine';
 import { ErpSyncService } from '../erp-sync/erp-sync.service';
 import {
-  amountWithinApproved, evaluateGate, isNotFoundDefinitive, maskAccount, NOT_FOUND_MIN_LOOKUPS, parseSettleSeconds, reconcile, recordNotFound,
+  amountWithinApproved, assertCoreTiming, evaluateGate, isNotFoundDefinitive, maskAccount, NOT_FOUND_MIN_LOOKUPS, parseSettleSeconds, reconcile, recordNotFound, settleAnchor,
   type CoreSettlePolicy, type DecisionTerms, type NotFoundEvidence, type ReconDiff,
 } from './disbursement.rules';
 
@@ -24,6 +24,8 @@ const TX = { timeout: 20_000, maxWait: 10_000 };
  * 120с нь үүнээс дээш тул хүчинтэй lease-тэй мөрийг өөр pod/sweeper авахгүй. Бизнесийн утга биш — техникийн хязгаар.
  */
 export const CORE_LEASE_MS = 120_000;
+/** H1: lease эхэлснээс хойш openLoan-ийг эхлүүлж болох сүүлийн мөч (105с). Модуль ачаалахад инвариантыг шалгана. */
+export const CORE_SEND_DEADLINE_MS = assertCoreTiming(CORE_LEASE_MS, CORE_CALL_TIMEOUT_MS);
 /** Үр дүн нь тодорхой Core алдаа (данс нээгдээгүй нь баталгаатай) → FAILED. Бусад (timeout, сүлжээ, 5xx) → тодорхойгүй: APPROVED хэвээр. */
 const DEFINITIVE_CORE_ERRORS = new Set(['CORE_REJECTED', 'NOT_IMPLEMENTED']);
 /**
@@ -173,8 +175,9 @@ export class DisbursementService {
       const lease = this.clock.now();
       const res = await tx.disbursementRequest.updateMany({
         where: { id: row.id, status: row.status, ...(recovering ? { coreRequestedAt: row.coreRequestedAt } : {}) },
-        // H1: openLoan дуудагдаж болох тул ижил CAS-д шинэ үе эхэлнэ — settle цонх энэ lease-ээс; хуучин нотолгоо шилжихгүй.
-        data: { status: 'APPROVED', coreRequestedAt: lease, ...this.newEpisode(lease), updatedBy: ctx.userId, historyJson: this.history(row, ctx, recovering ? 'APPROVE_RETRY' : 'APPROVED', comment ?? null) as never },
+        // H1: шинэ нотолгооны үе openLoan-ийг бодитоор илгээхийн өмнөх fenced тамгаар (`stampSend`) эхэлнэ — claim-аар биш.
+        // Хугацаа хэтэрсэн lease-ийг орлох нь claimStale-тэй ижил: тэр lease дор илгээгдэж болсон openLoan-ийн settle эхлэлийг хадгална.
+        data: { status: 'APPROVED', coreRequestedAt: lease, ...(recovering ? { coreUnknownAt: settleAnchor(row.coreUnknownAt, row.coreRequestedAt, lease, CORE_LEASE_MS) } : {}), updatedBy: ctx.userId, historyJson: this.history(row, ctx, recovering ? 'APPROVE_RETRY' : 'APPROVED', comment ?? null) as never },
       });
       if (res.count !== 1) throw new ConflictException({ code: 'STALE_STATE', message: 'Олголтын төлөв өөрчлөгдсөн байна, дахин ачаална уу' });
       return { row, app, lease };
@@ -264,13 +267,20 @@ export class DisbursementService {
   }
 
   /**
-   * claimStale-ийн settle эхлэл = openLoan илгээгдэж болох хамгийн сүүлийн мөч. Инвариант: openLoan дуудаж болох lease бүрийг approve-ийн CAS
-   * `core_unknown_at = core_requested_at` гэж нэг транзакцид тамгална (markUnknown нь түүнээс хойш), тиймээс max(core_unknown_at, хэтэрсэн
-   * core_requested_at) = core_unknown_at. Lookup-only lease (reconcile/sweeper) openLoan илгээдэггүй — max() авбал sweeper цонхыг үүрд хойшлуулна.
-   * Тамгагүй (хуучин) мөр → одоо (хэтэрсэн lease-ээс хойш, консерватив).
+   * H1: openLoan-ийн өмнөх сүүлийн алхам. Lease-ийн хугацаа send deadline-аас хэтэрсэн, эсвэл lease алдсан (fenced update 0 мөр) бол
+   * ИЛГЭЭХГҮЙ (409 in-progress). Амжилттай бол шинэ нотолгооны үе = илгээх мөч. DB бичилт удааширч болох тул deadline-ийг дахин шалгана.
    */
-  private unknownSince(row: Pick<DisbursementRequest, 'coreUnknownAt'>, now: Date): Date {
-    return row.coreUnknownAt ?? now;
+  private async stampSend(id: string, lease: Date): Promise<void> {
+    const late = () => this.clock.now().getTime() - lease.getTime() > CORE_SEND_DEADLINE_MS;
+    if (late()) throw this.sendAborted(id, 'deadline');
+    const res = await this.prisma.disbursementRequest.updateMany({ where: { id, status: 'APPROVED', coreRequestedAt: lease }, data: this.newEpisode(this.clock.now()) });
+    if (res.count !== 1) throw this.sendAborted(id, 'lease_lost');
+    if (late()) throw this.sendAborted(id, 'deadline'); // тамга бичсэн ч илгээгээгүй — консерватив, хор хөнөөлгүй
+  }
+
+  private sendAborted(id: string, reason: 'deadline' | 'lease_lost'): ConflictException {
+    this.logger.warn({ event: 'disbursement.core_send_aborted', disbursementId: id, reason });
+    return this.inProgress();
   }
 
   private evidence(row: Pick<DisbursementRequest, 'coreUnknownAt' | 'coreNotFoundCount' | 'coreNotFoundAt'>): NotFoundEvidence {
@@ -279,11 +289,11 @@ export class DisbursementService {
 
   /**
    * Хугацаа хэтэрсэн APPROVED мөрийн lease-ийг CAS-аар авна (fencing: хуучин core_requested_at). Ялагдвал null.
-   * Өмнөх эзэмшигч openLoan илгээгээд унасан байж болох тул үр дүн тодорхойгүй — `unknownSince`. Нотолгооны тоолуурыг ХЭЗЭЭ Ч тэглэхгүй (lookup-only).
+   * Өмнөх эзэмшигч openLoan илгээгээд унасан/хөлдсөн байж болох тул settle эхлэл = `settleAnchor`. Нотолгооны тоолуурыг ХЭЗЭЭ Ч тэглэхгүй (lookup-only).
    */
   private async claimStale(row: DisbursementRequest, actorId: string | null): Promise<Date | null> {
     const lease = this.clock.now();
-    const res = await this.prisma.disbursementRequest.updateMany({ where: { id: row.id, status: 'APPROVED', coreRequestedAt: row.coreRequestedAt }, data: { coreRequestedAt: lease, coreUnknownAt: this.unknownSince(row, lease), updatedBy: actorId } });
+    const res = await this.prisma.disbursementRequest.updateMany({ where: { id: row.id, status: 'APPROVED', coreRequestedAt: row.coreRequestedAt }, data: { coreRequestedAt: lease, coreUnknownAt: settleAnchor(row.coreUnknownAt, row.coreRequestedAt, lease, CORE_LEASE_MS), updatedBy: actorId } });
     return res.count === 1 ? lease : null;
   }
 
@@ -355,8 +365,13 @@ export class DisbursementService {
     let opened = false;
     try {
       coreLoanId = (await this.core.findLoan(coreKey(row)))?.coreLoanId ?? null;
-      if (!coreLoanId && o.allowOpen) { opened = true; coreLoanId = (await this.core.openLoan(this.openRequest(row, app, customerId))).coreLoanId; }
+      if (!coreLoanId && o.allowOpen) {
+        await this.stampSend(row.id, lease);
+        opened = true;
+        coreLoanId = (await this.core.openLoan(this.openRequest(row, app, customerId))).coreLoanId;
+      }
     } catch (e) {
+      if (e instanceof ConflictException) throw e; // илгээгээгүй (stampSend) — төлөв өөрчлөхгүй
       const code = e instanceof CoreLoanError ? e.code : 'CORE_UNAVAILABLE';
       this.logger.warn({ event: 'disbursement.core_failed', applicationId: app.id, disbursementId: row.id, code, correlationId: ctx.correlationId });
       // Энэ оролдлогын openLoan-ийн тодорхой татгалзалт = данс байхгүй нь баталгаатай → нотолгоо цэвэрлэнэ. Lookup-ийн "тодорхой" алдаа данс байгаа эсэхийг хэлэхгүй → хадгална.

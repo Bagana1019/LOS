@@ -5,7 +5,7 @@ import { ContractView, DisbursementView, OfficialLetterView } from '@los/contrac
 import { createTestApp, type TestApp } from '../../test-utils/test-app';
 import { actors, createApplication, createBorrower, createCustomer, createSchedule, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
 import { CORE_LOAN_PORT } from '../../integrations/core-loan/core-loan.provider';
-import { CoreLoanError, type CoreLoanPort } from '../../integrations/core-loan/core-loan.port';
+import { CORE_CALL_TIMEOUT_MS, CoreLoanError, type CoreLoanPort } from '../../integrations/core-loan/core-loan.port';
 import { MockCoreLoanPort } from '../../integrations/core-loan/core-loan.mock';
 import { ApplicationModule } from '../application/application.module';
 import { ContractModule } from '../contract/contract.module';
@@ -557,6 +557,68 @@ describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
     core = mock;
     expect((await disb(app.id)).status).toBe('FAILED');
     expect((await http().post(`${base(app.id)}/disbursement/reject`).set(approver).send({ comment: 'буцаая' })).status).toBe(200);
+  });
+
+  // ── H1 review-3: settle эхлэл = openLoan-ийг бодитоор илгээх мөч; lease алдсан / хугацаа дөхсөн эзэмшигч илгээхгүй ──
+  it('H1 review-3 (a): findLoan-ийн дараа эзэмшигч send deadline-аас хэтэртэл "хөлдсөн" → openLoan ИЛГЭЭХГҮЙ, 409', async () => {
+    const app = await submitted();
+    core = { mode: 'mock', findLoan: async (k) => { t.clock.advanceMs(CORE_LEASE_MS - CORE_CALL_TIMEOUT_MS + 1_000); return mock.findLoan(k); }, openLoan: (r) => mock.openLoan(r) };
+    const r = await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({});
+    expect(r.status, JSON.stringify(r.body)).toBe(409);
+    expect(r.body.code).toBe('DISBURSEMENT_CORE_IN_PROGRESS');
+    expect(mock.calls).toHaveLength(0);
+    expect((await disb(app.id)).status).toBe('APPROVED');
+  });
+
+  it('H1 review-3 (b): claim ба илгээх хооронд lease-ийг өөр процесс авсан → openLoan ИЛГЭЭХГҮЙ, 409', async () => {
+    const app = await submitted();
+    core = { mode: 'mock', findLoan: async (k) => {
+      await t.prisma.disbursementRequest.update({ where: { applicationId: app.id }, data: { coreRequestedAt: new Date(t.clock.now().getTime() + 1) } });
+      return mock.findLoan(k);
+    }, openLoan: (r) => mock.openLoan(r) };
+    const r = await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({});
+    expect(r.status, JSON.stringify(r.body)).toBe(409);
+    expect(mock.calls).toHaveLength(0);
+  });
+
+  it('H1 review-3 (c): core_unknown_at = openLoan илгээсэн мөч (claim биш) — findLoan удаан байсан ч', async () => {
+    const app = await submitted();
+    const claimedAt = t.clock.now().getTime();
+    let seen: { stamp: number | undefined; sentAt: number } | null = null;
+    core = {
+      mode: 'mock',
+      findLoan: async (k) => { t.clock.advanceMs(5_000); return mock.findLoan(k); },
+      openLoan: async (r) => { seen = { stamp: (await disb(app.id)).coreUnknownAt?.getTime(), sentAt: t.clock.now().getTime() }; return mock.openLoan(r); },
+    };
+    const r = await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({});
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect(seen).toEqual({ stamp: claimedAt + 5_000, sentAt: claimedAt + 5_000 });
+    expect((await disb(app.id)).coreUnknownAt).toBeNull(); // амжилт → цэвэрлэгдэнэ
+  });
+
+  it('H1 review-3 (d): claimStale — илгээсэн lease → эхлэл = lease төгсгөл; дараагийн lookup-only claim эхлэлийг хөдөлгөхгүй', async () => {
+    const svc = t.app.get(DisbursementService);
+    const app = await submitted();
+    const R = t.clock.now().getTime();
+    await t.prisma.disbursementRequest.update({ where: { applicationId: app.id }, data: { status: 'APPROVED', coreRequestedAt: new Date(R), coreUnknownAt: new Date(R + 5_000) } });
+    expireLease(app.id);
+    expect(await svc.reconcileStale()).toBe(1);
+    expect((await disb(app.id)).coreUnknownAt?.getTime()).toBe(R + CORE_LEASE_MS);
+    expireLease(app.id);
+    expect(await svc.reconcileStale()).toBe(1);
+    expect((await disb(app.id)).coreUnknownAt?.getTime()).toBe(R + CORE_LEASE_MS);
+    expect((await disb(app.id)).status).toBe('APPROVED');
+  });
+
+  it('H1 review-3 (d): хугацаа хэтэрсэн lease-ийг дахин зөвшөөрөх авч, илгээхгүй зогсвол эхлэл = хуучин lease төгсгөл (хуучин тамга биш)', async () => {
+    const app = await submitted();
+    const R = t.clock.now().getTime();
+    await t.prisma.disbursementRequest.update({ where: { applicationId: app.id }, data: { status: 'APPROVED', coreRequestedAt: new Date(R), coreUnknownAt: new Date(R + 5_000) } });
+    expireLease(app.id);
+    core = { mode: 'mock', findLoan: async (k) => { t.clock.advanceMs(CORE_LEASE_MS); return mock.findLoan(k); }, openLoan: (r) => mock.openLoan(r) };
+    expect((await http().post(`${base(app.id)}/disbursement/approve`).set(approver).send({})).status).toBe(409);
+    expect(mock.calls).toHaveLength(0);
+    expect((await disb(app.id)).coreUnknownAt?.getTime()).toBe(R + CORE_LEASE_MS);
   });
 
   it('H1: тодорхойгүй үр дүнгүй мөр — Core татгалзвал шууд FAILED, буцаах шууд зөвшөөрөгдөнө (өмнөх зан төлөв)', async () => {

@@ -6,7 +6,7 @@ export const CORE_LOAN_REQUIRED_ENV = ['CORE_LOAN_API_URL', 'CORE_LOAN_API_KEY']
 /**
  * Core-ийн зээлийн данс нээх жинхэнэ холболт.
  * TODO(docs/04 "Хүний оролцоо" #1): Core API-ийн баримт, credential (CORE_LOAN_API_URL, CORE_LOAN_API_KEY) гараагүй тул protocol-ыг таамаглаж зохиогоогүй.
- * Хэрэгжүүлэхдээ: timeout 15с (CLAUDE.md §3.1), `idempotencyKey`-г Idempotency-Key толгойгоор, 5xx/сүлжээнд CORE_UNAVAILABLE.
+ * Хэрэгжүүлэхдээ: timeout = `CORE_CALL_TIMEOUT_MS` (15с, CLAUDE.md §3.1; H1 lease-ийн инвариант), `idempotencyKey`-г Idempotency-Key толгойгоор, 5xx/сүлжээнд CORE_UNAVAILABLE.
  * H1: `findLoan` = Core-оос гадаад лавлагаагаар (idempotencyKey) данс хайх; 404 → null, бусад тодорхойгүй хариу → CORE_UNAVAILABLE (port.ts-ийн гэрээ).
  */
 export class RealCoreLoanPort implements CoreLoanPort {
