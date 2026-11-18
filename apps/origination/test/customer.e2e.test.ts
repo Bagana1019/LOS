@@ -394,6 +394,69 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
     });
   });
 
+  // NFR-3 салбарын хязгаарлалт — эзэмшигчийн шийдвэр (2026-11-18, хувилбар A): бүх салбар харж/хүсэлтэд холбоно, зөвхөн эзэмшигч салбар засна.
+  describe('салбарын эзэмшил (NFR-3)', () => {
+    const headOfficer2 = () => ({ ...as('officerA'), 'x-user-id': '00000000-0000-4000-8000-0000000002aa' });
+    const put = (id: string, body: object, headers: Record<string, string>) => http().put(`/api/customers/${id}`).set(headers).send(body);
+    const updatedAudits = (id: string) => db.auditLog.count({ where: { entity: 'CUSTOMER', entityId: id, action: 'CUSTOMER_UPDATED' } });
+
+    it('another branch views, searches, re-finds (409) and attaches the customer to its own application', async () => {
+      const made = (await create(full())).body;
+      expect(made.branchId).toBe(SEED.branches.head.id);
+      expect((await http().get(`/api/customers/${made.id}`).set(as('officerB'))).status).toBe(200);
+      expect((await http().get('/api/customers').query({ registerNo: REGISTER }).set(as('officerB'))).body.total).toBe(1);
+      expect((await http().get('/api/customers/lookup').query({ registerNo: REGISTER }).set(as('officerB'))).body).toMatchObject({ exists: true, customer: { id: made.id } });
+      const dup = await create(full(), 'officerB');
+      expect(dup.status).toBe(409);
+      expect(dup.body).toMatchObject({ code: 'CUSTOMER_EXISTS', details: { customerId: made.id } });
+
+      const appRes = await http().post('/api/applications').set(as('officerB')).send({});
+      expect(appRes.status).toBe(201);
+      const attach = await http().post(`/api/applications/${appRes.body.id}/borrowers`).set(as('officerB')).send({ customerId: made.id, role: 'PRIMARY' });
+      expect(attach.status).toBe(201);
+    });
+
+    it('a non-owning branch officer cannot edit: 403 CUSTOMER_BRANCH_FORBIDDEN, nothing changes, nothing audited', async () => {
+      const made = (await create(full())).body;
+      for (const body of [{ firstName: 'Хулгайч' }, { email: '' }, { contacts: [{ relation: 'PARENT', firstName: 'Эх', phone: '88112233' }] }, {}]) {
+        const res = await put(made.id, body, as('officerB'));
+        expect(res.status, JSON.stringify(body)).toBe(403);
+        expect(res.body.code).toBe('CUSTOMER_BRANCH_FORBIDDEN');
+        expect(res.body.message).toMatch(/салбар/);
+      }
+      const after = (await http().get(`/api/customers/${made.id}`).set(as('officerA'))).body;
+      expect(after).toMatchObject({ firstName: 'Бат-Эрдэнэ', email: 'bat@example.mn', contacts: [expect.objectContaining({ firstName: 'Сараа' })] });
+      expect(await updatedAudits(made.id)).toBe(0);
+    });
+
+    it('the owning branch edits, whichever of its officers registered the customer', async () => {
+      const made = (await create(full())).body;
+      const res = await put(made.id, { phone: '88001122' }, headOfficer2());
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ phone: '88001122', branchId: SEED.branches.head.id });
+    });
+
+    it('an officer without a branch cannot edit a branch-owned customer (fail closed)', async () => {
+      const made = (await create(full())).body;
+      const { 'x-branch-id': _omit, ...noBranch } = as('officerB') as Record<string, string>;
+      const res = await put(made.id, { phone: '88001122' }, noBranch);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('CUSTOMER_BRANCH_FORBIDDEN');
+    });
+
+    it('a legacy customer without an owning branch stays editable by any officer and is not silently re-assigned', async () => {
+      const made = (await create(full())).body;
+      await db.customer.update({ where: { id: made.id }, data: { branchId: null } });
+      const res = await put(made.id, { phone: '88001122' }, as('officerB'));
+      expect(res.status).toBe(200);
+      expect((await db.customer.findUniqueOrThrow({ where: { id: made.id } })).branchId).toBeNull();
+    });
+
+    it('404 (not 403) for an unknown customer, so existence checks do not depend on branch', async () => {
+      expect((await put('00000000-0000-4000-8000-0000000000aa', { phone: '88001122' }, as('officerB'))).status).toBe(404);
+    });
+  });
+
   describe('эрх (RBAC)', () => {
     it('only the loan officer writes; manager, approver and admin read; anonymous is 401', async () => {
       const made = (await create(full())).body;

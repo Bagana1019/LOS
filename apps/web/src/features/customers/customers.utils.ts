@@ -71,3 +71,18 @@ export function buildPayload(values: Record<string, unknown>, fixed: { customerT
   if (out.residenceSameAsOfficial) delete out.residenceAddress;
   return out;
 }
+
+export type CustomerEditability = { editable: true; reason: null } | { editable: false; reason: 'NO_PERMISSION' | 'OTHER_BRANCH' };
+
+/**
+ * NFR-3 (эзэмшигчийн шийдвэр 2026-11-18, A): зөвхөн бүртгэсэн салбар засна; `branchId = null` (хуучин) бол эзэмшигчгүй.
+ * Сервер (`CUSTOMER_BRANCH_FORBIDDEN`) эх сурвалж — энэ нь зөвхөн UI-д урьдчилан тайлбарлах зориулалттай.
+ */
+export function canEditCustomer(
+  me: { user: { branchId: string | null }; permissions: readonly string[] } | null | undefined,
+  customer: { branchId: string | null },
+): CustomerEditability {
+  if (!me || !me.permissions.includes('customer:write')) return { editable: false, reason: 'NO_PERMISSION' };
+  if (customer.branchId !== null && customer.branchId !== me.user.branchId) return { editable: false, reason: 'OTHER_BRANCH' };
+  return { editable: true, reason: null };
+}

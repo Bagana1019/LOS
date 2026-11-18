@@ -30,3 +30,19 @@ export function describeApplicationError(e: unknown, fallbackKey: string): strin
 
 /** "Мэдээлэл оруулах": хүсэлтийн эхний бүрдээгүй алхам руу. Серверийн алхамгүйгээр: `/los/loan-application/:id` нь redirect хийнэ. */
 export const resumeHref = (id: string): string => applicationHref(id);
+
+/**
+ * Давхар илгээлтээс хамгаалах (FR-1 «Үүсгэх» давхар дарах): гүйцэтгэж буй үед дахин дуудвал шинээр ажиллуулахгүй, ижил promise буцаана.
+ * React-ийн `isPending` нь дараагийн render хүртэл шинэчлэгддэггүй тул `confirmLoading` дангаараа 53 мс-ийн давхар дарахыг хаахгүй.
+ */
+export function singleFlight<T>(task: () => Promise<T>): () => Promise<T> {
+  let inFlight: Promise<T> | null = null;
+  return () => {
+    if (inFlight) return inFlight;
+    let started: Promise<T>;
+    try { started = Promise.resolve(task()); } catch (e) { started = Promise.reject(e); }
+    const tracked = started.finally(() => { inFlight = null; });
+    inFlight = tracked;
+    return tracked;
+  };
+}

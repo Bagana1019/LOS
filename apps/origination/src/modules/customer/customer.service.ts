@@ -16,6 +16,15 @@ import { citizenPrefill, leafPaths, mergeXyp } from './xyp-mapper';
 export interface ListQuery { q?: string; registerNo?: string; customerType?: 'INDIVIDUAL' | 'LEGAL_ENTITY'; page: number; pageSize: number }
 
 const WITH_CONTACTS = { contacts: true } as const;
+/**
+ * NFR-3 салбарын хязгаарлалт (эзэмшигчийн шийдвэр 2026-11-18, хувилбар A): харилцагчийг бүх салбар харж, хүсэлтэд холбоно;
+ * өгөгдлийг нь зөвхөн бүртгэсэн (эзэмшигч) салбар засна. `branchId = null` (хуучин/шилжүүлсэн) бол эзэмшигчгүй — `customer:write`-тэй хэн ч засна.
+ * Салбаргүй хэрэглэгч эзэмшигчтэй харилцагчийг засахгүй (fail-closed).
+ */
+export function assertOwningBranch(ctx: Pick<RequestContext, 'branchId'>, ownerBranchId: string | null): void {
+  if (ownerBranchId === null || ownerBranchId === ctx.branchId) return;
+  throw new DomainError('CUSTOMER_BRANCH_FORBIDDEN', 'Энэ харилцагчийг өөр салбар бүртгэсэн тул зөвхөн тухайн салбар засах боломжтой', 403, { ownerBranchId });
+}
 const invalidRegister = () => new DomainError('INVALID_REGISTER_NO', 'Регистрийн дугаар буруу (иргэн УБ12345678, байгууллага 7 орон)', 400);
 
 /**
@@ -139,6 +148,7 @@ export class CustomerService {
       const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM origination.customer WHERE id = ${id} AND org_id = ${ctx.orgId} FOR UPDATE`;
       if (!locked.length) throw notFound('Харилцагч', id);
       const row = await tx.customer.findUniqueOrThrow({ where: { id }, include: WITH_CONTACTS });
+      assertOwningBranch(ctx, row.branchId);
       const before = toRawInput(toView(row, []));
       const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
       const merged: Record<string, unknown> = { ...before, ...changes };

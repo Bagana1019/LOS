@@ -6,7 +6,7 @@ import { ApplicationStatus, StepKey, type ApplicationStepView } from '@los/contr
 import { API } from '../../lib/api';
 import { hasMessage } from '../../lib/i18n';
 import * as api from './applications.api';
-import { describeApplicationError, isStepOpen, resumeStep, STATUS_TABS, stepHref } from './applications.utils';
+import { describeApplicationError, isStepOpen, resumeStep, singleFlight, STATUS_TABS, stepHref } from './applications.utils';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 
@@ -65,5 +65,45 @@ describe('эх кодонд бичсэн application.* түлхүүр бүр т�
     const missing: string[] = [];
     for (const f of files) for (const m of readFileSync(join(here, f), 'utf8').matchAll(/['"`](application\.[A-Za-z0-9_.]*[A-Za-z0-9_])['"`]/g)) if (!hasMessage(m[1] as string)) missing.push(`${f}: ${m[1]}`);
     expect(missing).toEqual([]);
+  });
+});
+
+// FR-1 "Нэмэх": «Үүсгэх» дээр давхар дарвал (53 мс) хоёр ноорог үүсч байсан — нэг дарах цуврал = нэг хүсэлт.
+describe('singleFlight (create modal double-submit guard)', () => {
+  const deferred = () => { let resolve!: () => void; let reject!: (e: unknown) => void; const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; }); return { promise, resolve, reject }; };
+
+  it('a burst of calls while one is in flight runs the task exactly once and shares its promise', async () => {
+    const d = deferred();
+    const task = vi.fn(() => d.promise);
+    const run = singleFlight(task);
+    const first = run(); const second = run(); const third = run();
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+    d.resolve();
+    await first;
+  });
+
+  it('after success a new, deliberate submit runs again', async () => {
+    const task = vi.fn(() => Promise.resolve());
+    const run = singleFlight(task);
+    await run();
+    await run();
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it('after a failure the user can retry (guard is released) and the error still reaches the caller', async () => {
+    const task = vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(undefined);
+    const run = singleFlight(task);
+    await expect(run()).rejects.toThrow('network');
+    await expect(run()).resolves.toBeUndefined();
+    expect(task).toHaveBeenCalledTimes(2);
+  });
+
+  it('a task that throws synchronously also releases the guard', async () => {
+    const task = vi.fn().mockImplementationOnce(() => { throw new Error('sync'); }).mockResolvedValueOnce(undefined);
+    const run = singleFlight(task);
+    await expect(run()).rejects.toThrow('sync');
+    await expect(run()).resolves.toBeUndefined();
   });
 });
