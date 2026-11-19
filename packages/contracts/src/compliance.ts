@@ -196,6 +196,37 @@ export const AmlScreeningResult = z.object({
 });
 export type AmlScreeningResult = z.infer<typeof AmlScreeningResult>;
 
+/**
+ * Шалгасан субъектын snapshot — hit-ийн нотолгоотой зэрэгцүүлж харахад (compliance review). Регистр БАЙХГҮЙ (`registerNoMasked` нь screening-д),
+ * төрсөн огноог зөвхөн оноор (UN тулгалт ч оноор харьцуулдаг, §3.4) — хувийн мэдээллийг шаардлагатай хэмжээнд л.
+ */
+export const AmlScreeningSubjectView = z.object({
+  subjectType: z.enum(AmlSubjectType),
+  lastName: z.string().nullable(),
+  firstName: z.string(),
+  aliases: z.array(z.string()),
+  birthYear: z.number().int().nullable(),
+  countries: z.array(z.string()),
+  isPep: z.boolean(),
+  isRelatedParty: z.boolean(),
+});
+export type AmlScreeningSubjectView = z.infer<typeof AmlScreeningSubjectView>;
+/** `GET /aml/screenings/:id` — дэлгэрэнгүй (review дэлгэц). */
+export const AmlScreeningDetail = AmlScreeningResult.extend({ subject: AmlScreeningSubjectView });
+export type AmlScreeningDetail = z.infer<typeof AmlScreeningDetail>;
+
+/** `GET /aml/hits` — шийдвэрлэх дарааллын мөр (харилцагч тутмын ОДООГИЙН шалгалтын hit). */
+export const AmlHitQueueItem = z.object({
+  hit: AmlHit,
+  screening: z.object({
+    id: z.string(), customerId: z.string(), applicationId: z.string().nullable(), status: z.enum(ScreeningStatus),
+    subjectName: z.string(), registerNoMasked: z.string(), screenedAt: z.string(),
+  }),
+});
+export type AmlHitQueueItem = z.infer<typeof AmlHitQueueItem>;
+export const AmlHitQueuePage = z.object({ total: z.number().int(), items: z.array(AmlHitQueueItem) });
+export type AmlHitQueuePage = z.infer<typeof AmlHitQueuePage>;
+
 export const AmlHitReviewRequest = z.object({
   decision: z.enum(['CONFIRMED', 'FALSE_POSITIVE']),
   /** Тайлбар заавал (аудит). */

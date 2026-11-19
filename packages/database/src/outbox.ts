@@ -2,6 +2,7 @@
 // relay worker Redis Streams руу гаргана. Шууд publish хийхгүй.
 import { randomUUID } from 'node:crypto';
 import { DomainEvent, type RequestContext } from '@los/contracts';
+import { backoffDelayMs, describeDbError, isTransientDbError, type BackoffOptions } from './db-resilience';
 import type { EventBus } from './event-bus';
 
 export interface OutboxRow { id: string; type: string; payload: DomainEvent; createdAt: Date; publishedAt: Date | null }
@@ -38,7 +39,9 @@ export interface OutboxRelayOptions {
   bus: Pick<EventBus, 'publish'>;
   batchSize?: number;
   pollMs?: number;
-  log?: (level: 'info' | 'error', msg: string, extra?: unknown) => void;
+  log?: (level: 'info' | 'warn' | 'error', msg: string, extra?: unknown) => void;
+  /** M8: DB түр унасан үед tick хоорондын backoff (анхдагч 1с → 30с, jitter). */
+  backoff?: Partial<BackoffOptions> & { random?: () => number };
 }
 
 /**
@@ -50,6 +53,7 @@ export class OutboxRelay {
   private timer: NodeJS.Timeout | undefined;
   private running = false;
   private inflight: Promise<unknown> = Promise.resolve();
+  private dbFailures = 0;
   private readonly batch: number;
   private readonly q: { select: string; mark: string };
 
@@ -86,12 +90,24 @@ export class OutboxRelay {
     const tick = () => {
       if (!this.running) return;
       this.inflight = this.relayOnce()
-        .then((n) => n >= this.batch)
-        .catch((e) => { this.o.log?.('error', `outbox relay error: ${e instanceof Error ? e.message : String(e)}`); return false; })
-        .then((more) => { if (this.running) this.timer = setTimeout(tick, more ? 0 : (this.o.pollMs ?? 500)); });
+        .then((n) => { this.dbFailures = 0; return n >= this.batch ? 0 : (this.o.pollMs ?? 500); })
+        .catch((e) => this.onTickError(e))
+        .then((delay) => { if (this.running) this.timer = setTimeout(tick, delay); });
     };
     tick();
   }
+  /** M8: DB түр унасан бол warn + exponential backoff (timer үхэхгүй); бусад алдаа өмнөх шигээ error + pollMs. Транзакц rollback тул мөр тэмдэглэгдэхгүй. */
+  private onTickError(e: unknown): number {
+    if (!isTransientDbError(e)) {
+      this.o.log?.('error', `outbox relay error: ${e instanceof Error ? e.message : String(e)}`);
+      return this.o.pollMs ?? 500;
+    }
+    const b = this.o.backoff ?? {};
+    const delay = backoffDelayMs(this.dbFailures++, { initialDelayMs: b.initialDelayMs ?? 1000, maxDelayMs: b.maxDelayMs ?? 30_000 }, b.random);
+    this.o.log?.('warn', `outbox relay: DB unavailable (${describeDbError(e)}), retry in ${delay} ms`);
+    return delay;
+  }
+
   async stop(): Promise<void> {
     this.running = false;
     if (this.timer) clearTimeout(this.timer);

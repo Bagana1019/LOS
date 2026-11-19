@@ -416,4 +416,42 @@ describe.skipIf(!hasTestDb)('notification: загвар, хүргэлтийн б
       expect(res.body.channels[0]).toEqual({ channel: 'SMS', enabled: true });
     });
   });
+
+  // ── Харилцагчийн контекст (DECISIONS 2026-11-18): зөвхөн push төхөөрөмж + өөрийн opt-out ─────────────
+  describe('customer context (@AllowCustomerContext only on push-devices and preferences)', () => {
+    it('customer context is refused (403 CUSTOMER_CONTEXT_FORBIDDEN) on every other notification route', async () => {
+      const routes: Array<['get' | 'post' | 'put', string]> = [
+        ['get', '/api/notifications'], ['get', '/api/notifications/unread-count'], ['post', '/api/notifications/read-all'],
+        ['post', '/api/notifications/00000000-0000-4000-8000-000000000001/read'],
+        ['get', '/api/notifications/templates'], ['put', '/api/notifications/templates'], ['post', '/api/notifications/templates/preview'],
+        ['get', '/api/notifications/deliveries'], ['post', '/api/notifications/test-send'], ['post', '/api/notifications/reminders/run'],
+      ];
+      for (const [method, path] of routes) {
+        const res = await env.http()[method](path).set(actors.customer('cust-1')).send({});
+        expect(res.status, `${method} ${path}`).toBe(403);
+        expect(res.body.code, `${method} ${path}`).toBe('CUSTOMER_CONTEXT_FORBIDDEN');
+      }
+    });
+
+    it('customer + staff headers together are narrowed to the customer only (no staff ownership, no ADMIN reach)', async () => {
+      const c = await createCustomer(env.t.prisma);
+      const other = await createCustomer(env.t.prisma);
+      const mixed = { ...actors.customer(c.id), 'x-user-id': 'admin-1', 'x-roles': 'CUSTOMER,ADMIN' };
+      const dev = (o: Record<string, unknown>) => ({ ownerType: 'CUSTOMER', ownerId: c.id, platform: 'ANDROID', token: 'fcm-token-mixed-0001', ...o });
+      await env.http().post('/api/notifications/push-devices').set(mixed).send(dev({ ownerType: 'USER', ownerId: 'admin-1' })).expect(403);
+      await env.http().post('/api/notifications/push-devices').set(mixed).send(dev({})).expect(201);
+      await env.http().get(`/api/notifications/preferences/CUSTOMER/${other.id}`).set(mixed).expect(403);
+      await env.http().put(`/api/notifications/preferences/CUSTOMER/${other.id}`).set(mixed).send({ channels: [{ channel: 'SMS', enabled: false }] }).expect(403);
+      await env.http().get('/api/notifications/preferences/USER/admin-1').set(mixed).expect(403);
+      await env.http().get(`/api/notifications/preferences/CUSTOMER/${c.id}`).set(mixed).expect(200);
+      expect(await env.t.prisma.notificationPreference.count()).toBe(0);
+    });
+
+    it('x-customer-id without the CUSTOMER role is refused on customer routes', async () => {
+      const headers = { 'x-customer-id': 'cust-1', 'x-roles': 'OFFICER', 'x-org-id': ORG };
+      await env.http().post('/api/notifications/push-devices').set(headers).send({ ownerType: 'CUSTOMER', ownerId: 'cust-1', platform: 'IOS', token: 'apns-token-norole-01' }).expect(403);
+      await env.http().get('/api/notifications/preferences/CUSTOMER/cust-1').set(headers).expect(403);
+      expect(await env.t.prisma.pushDevice.count()).toBe(0);
+    });
+  });
 });

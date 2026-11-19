@@ -16,7 +16,7 @@ const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a
 const row = (over: { size?: number; checklistKey?: string | null } = {}) => ({
   id: ID, orgId: 'org-1', applicationId: 'app-1', type: 'id_card', relatedEntity: 'APPLICATION', relatedId: null, note: null, fileId: 'f-1', checklistKey: over.checklistKey === undefined ? 'id_card' : over.checklistKey,
   createdAt: new Date('2026-10-29T01:00:00Z'), updatedAt: new Date('2026-10-29T01:00:00Z'), createdBy: 'u-1', updatedBy: 'u-1',
-  file: { id: 'f-1', orgId: 'org-1', bucket: 'b', storageKey: 'k', name: 'id-card.png', mime: 'image/png', size: over.size ?? PNG.length, sha256: 'x', uploadedBy: 'u-1', retentionUntil: null, purgedAt: null, createdAt: new Date(), updatedAt: new Date(), createdBy: null, updatedBy: null },
+  file: { id: 'f-1', orgId: 'org-1', bucket: 'b', storageKey: 'k', name: 'id-card.png', mime: 'image/png', size: over.size ?? PNG.length, sha256: 'x', uploadedBy: 'u-1', retentionUntil: null, purgedAt: null, legalHold: false, createdAt: new Date(), updatedAt: new Date(), createdBy: null, updatedBy: null },
 });
 
 const extraction = (withText = false): ExtractResponse => ({

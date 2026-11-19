@@ -31,6 +31,23 @@ export function mergeXyp(req: Omit<CreateCustomerRequest, 'source'>, c: XypCitiz
   return out as Partial<CustomerInputRaw>;
 }
 
+/** Харьцуулахад: мөрийг trim, объектын түлхүүрийг эрэмбэлнэ (хаягийн талбарын дараалал/зай ялгаа биш). */
+const canonical = (v: unknown): unknown => {
+  if (typeof v === 'string') return v.trim();
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return v;
+  return Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined).sort(([a], [b]) => a.localeCompare(b)).map(([k, x]) => [k, canonical(x)]));
+};
+
+/**
+ * M5: ХУР-ын эзэмшдэг (AUTHORITATIVE) талбарт ЗЭЗ ХУР-аас ӨӨР утга илгээсэн бол тэдгээрийн нэрс (эрэмбэлсэн).
+ * Өмнө нь `mergeXyp` чимээгүй дарж байсан — одоо дуудагч 400 `XYP_FIELD_READONLY` буцаана. ХУР утга өгөөгүй талбарыг ЗЭЗ бөглөж болно.
+ */
+export function xypConflicts(req: Omit<CreateCustomerRequest, 'source'>, c: XypCitizen): string[] {
+  const prefill = citizenPrefill(c) as Record<string, unknown>;
+  const sent = req as Record<string, unknown>;
+  return AUTHORITATIVE.filter((k) => sent[k] !== undefined && prefill[k] !== undefined && JSON.stringify(canonical(sent[k])) !== JSON.stringify(canonical(prefill[k]))).sort();
+}
+
 /** `{officialAddress:{province}}` → `officialAddress.province` (хэдэн талбар автоматаар бөглөгдсөнийг тоолно). */
 export function leafPaths(v: unknown, prefix = ''): string[] {
   if (v === null || v === undefined) return [];

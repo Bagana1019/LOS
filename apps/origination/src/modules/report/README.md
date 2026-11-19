@@ -66,6 +66,14 @@ Excel ба JSON нэг `run` функцээр гарна (тестээр мөр�
 **Өгөгдлийн эх сурвалж**: `ReportResult.dataSource` (`origination` | `core-mock` | `core`). `core-mock` (deposit-balances, Core-д холбоогүй) үед Excel-ийн гарчиг, хуудасны нэр (`MOCK …`),
 "Огноо", "Үүсгэсэн" мөрөнд "ЗОХИОМОЛ (MOCK) ӨГӨГДӨЛ — Core-оос биш" гэж бичигдэж, `report_run.params_json.dataSource`-д бүртгэгдэнэ. `NODE_ENV=production` үед mock өгөгдлийг экспортлохгүй (501 `INTEGRATION_NOT_IMPLEMENTED`); JSON харалт үлдэнэ.
 
+### Салбар / ЗЭЗ-ийн нэр (Excel)
+`branchId`, `officerId` баганад UUID биш нэр гарна (`report-directory.ts`). Нэр нь gateway-ийн `iam` schema-д тул origination өөр schema уншихгүй:
+`shared/org-directory.ts` нь gateway-ийн `GET /api/internal/directory` (дотоод токен, `X-Org-Id`; PII-гүй `{branches, users}`)-ээс org тутамд нэг удаа авч 60с кэшлэнэ
+(зэрэг экспортууд нэг дуудлага хуваалцана). Экспорт бүр лавлахыг нэг л удаа (мөр тутамд биш) дуудна; id багана байхгүй тайлан / хоосон үр дүнд огт дуудахгүй.
+Нэр олдохгүй бол id хэвээр, лавлах унавал экспорт үргэлж амжилттай (id-тай) + `warn` лог. "Шүүлт" мөрөнд ч нэр. JSON (`GET reports/:key`) id хэвээр — UI өөрийн `/api/directory`-аар хөрвүүлнэ.
+Бүтээгдэхүүн, харилцагчийн нэр SQL-ээс нэрээр нь ирдэг; регистр хуучин ёсоор нуугдмал.
+`ЭТХ` (schedule) экспортод UUID багана байхгүй (зөвхөн хүсэлтийн дугаар) — өөрчлөлт шаардлагагүй.
+
 ## Dashboard (`DashboardSummary`)
 `applications` (төлвөөр тоо/дүн, энэ сарын илгээсэн/батлагдсан/буцаасан, `approvalRate` = батлагдсан ÷ (батлагдсан+буцаасан), `avgDecisionHours` сүүлийн 90 хоног) ·
 `disbursements` (энэ сар/өмнөх сар/YTD, сүүлийн 12 сар — хоосон сар 0) · `portfolio` (идэвхтэй зээл, үлдэгдэл, хэтэрсэн дүн/тоо, `parRatio`, 5 хувин — ангилал `agingBucket`) ·

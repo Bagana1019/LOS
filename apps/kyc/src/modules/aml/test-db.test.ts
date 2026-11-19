@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { assertTestDatabase, databaseNameOf, KYC_TEST_TABLES, truncateKycTables } from './test-db';
 
+const fakeDb = () => {
+  const raw = vi.fn(async (_sql: string) => 0);
+  const tx = { $executeRawUnsafe: raw };
+  return { raw, db: { ...tx, $transaction: async <R>(fn: (t: typeof tx) => Promise<R>) => fn(tx) } };
+};
+
 describe('test database guard', () => {
   afterEach(() => vi.unstubAllEnvs());
 
@@ -36,16 +42,18 @@ describe('test database guard', () => {
   });
 
   it('does not touch the database when the guard fails', async () => {
-    const db = { $executeRawUnsafe: vi.fn(async () => 0) };
+    const { db, raw } = fakeDb();
     await expect(truncateKycTables(db, 'postgresql://los@localhost:5432/los_prod')).rejects.toThrow(/Refusing to TRUNCATE/);
-    expect(db.$executeRawUnsafe).not.toHaveBeenCalled();
+    expect(raw).not.toHaveBeenCalled();
   });
 
   it('truncates every kyc test table in one statement on a test database', async () => {
-    const db = { $executeRawUnsafe: vi.fn(async () => 0) };
+    const { db, raw } = fakeDb();
     await truncateKycTables(db, 'postgresql://los@localhost:5544/los_kyc_test');
-    expect(db.$executeRawUnsafe).toHaveBeenCalledTimes(1);
-    const sql = (db.$executeRawUnsafe.mock.calls[0] as unknown as [string])[0];
+    // M10: audit_log append-only — TRUNCATE нь тестийн purge транзакц дотор (trigger алгасна)
+    expect(raw).toHaveBeenCalledTimes(2);
+    expect((raw.mock.calls[0] as unknown as [string])[0]).toBe('SET LOCAL session_replication_role = replica');
+    const sql = (raw.mock.calls[1] as unknown as [string])[0];
     for (const table of KYC_TEST_TABLES) expect(sql).toContain(table);
     expect(sql.startsWith('TRUNCATE ')).toBe(true);
   });

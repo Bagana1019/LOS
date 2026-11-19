@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { APPROVAL_VOTER_ROLES, OrgDirectory, UserRole } from './index';
+import { APPROVAL_VOTER_ROLES, CTX_HEADERS, DIRECTORY_TOKEN_HEADER, OrgDirectory, UserRole } from './index';
 
 // FR-1.2 (M2): Салбар / Хариуцсан ЗЭЗ баганад UUID биш нэр харуулахын тулд gateway-ийн унших-зөвхөн лавлах (id → нэр).
 describe('OrgDirectory (GET /api/directory)', () => {
@@ -36,5 +36,12 @@ describe('APPROVAL_VOTER_ROLES', () => {
   it('ЗЭЗ, комплаенс санал өгөх дүр биш', () => {
     expect(APPROVAL_VOTER_ROLES).not.toContain('OFFICER');
     expect(APPROVAL_VOTER_ROLES).not.toContain('COMPLIANCE');
+  });
+});
+
+describe('DIRECTORY_TOKEN_HEADER', () => {
+  it('жижиг үсэгтэй HTTP толгой; дотоод токен / контекстийн толгойтой давхцахгүй (нууц тусдаа)', () => {
+    expect(DIRECTORY_TOKEN_HEADER).toBe('x-directory-token');
+    expect(Object.values(CTX_HEADERS)).not.toContain(DIRECTORY_TOKEN_HEADER);
   });
 });

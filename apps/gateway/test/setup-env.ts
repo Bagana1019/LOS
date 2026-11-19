@@ -5,5 +5,8 @@ useTestDatabaseUrl('iam');
 process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-secret-test-secret-test-secret-0123456789';
 process.env.LOGIN_RATE_LIMIT = '1000';
+process.env.LOGIN_IP_RATE_LIMIT = '1000';
+// M9: Redis-д тест процесс бүр өөрийн түлхүүрийн орон зай (тоолуур файл/ажиллуулалт хооронд холилдохгүй)
+process.env.RATE_LIMIT_KEY_PREFIX = `test:gw:${process.pid}:${Date.now()}:`;
 process.env.WEB_ORIGIN = 'http://localhost:3000';
 process.env.INTERNAL_AUTH_SECRET = 'internal-secret-for-tests';

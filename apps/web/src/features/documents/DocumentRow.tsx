@@ -5,7 +5,7 @@ import { formatDateTime } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { describeApiError } from './shared/api-error';
 import { ApiErrorAlert } from './shared/ApiErrorAlert';
-import { downloadDmsFile, formatBytes } from './shared/files';
+import { downloadApplicationFile, formatBytes } from './shared/files';
 import { OcrResult } from './OcrResult';
 import { isIdCardRow, relatedLabel, type BorrowerOption } from './documents.utils';
 import { useOcrCheck } from './useDocuments';
@@ -26,7 +26,7 @@ function DocumentItem({ applicationId, doc, borrowers, canEdit, removing, onRemo
   const { message } = AntApp.useApp();
   const ocr = useOcrCheck(applicationId);
   const related = relatedLabel(doc, borrowers);
-  const download = () => downloadDmsFile(doc.fileId, doc.fileName).catch((e: unknown) => void message.error(describeApiError(e, 'document').message));
+  const download = () => downloadApplicationFile(applicationId, doc.fileId, doc.fileName).catch((e: unknown) => void message.error(describeApiError(e, 'document').message));
   return (
     <List.Item
       key={doc.id}

@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { MENU, menuFor, permissionsFor } from '@los/contracts';
-import { activeHref, canAccess, contractSearchHref, flattenMenu, hasOwnShell, isPublicPath, isStandalonePath, looksLikeContractNo, requiredPermission, safeNext, searchMenu } from './access';
+import { activeHref, canAccess, contractSearchHref, flattenMenu, hasOwnShell, isPublicPath, isStandalonePath, landingFor, looksLikeContractNo, merchantRedirect, requiredPermission, safeNext, searchMenu } from './access';
+
+describe('merchant POS users land in their own shell (docs/05-merchant-pos.md §8, §12)', () => {
+  it('staff users keep the safe next path', () => {
+    expect(landingFor(['OFFICER'], '/los/loan-application')).toBe('/los/loan-application');
+    expect(landingFor(['ADMIN'], null)).toBe('/');
+  });
+  it('merchant users go to /merchant unless next is already inside the merchant shell', () => {
+    expect(landingFor(['MERCHANT_STAFF'], null)).toBe('/merchant');
+    expect(landingFor(['MERCHANT_ADMIN'], '/los/dashboard')).toBe('/merchant');
+    expect(landingFor(['MERCHANT_STAFF'], '/merchant/leases?status=APPROVED')).toBe('/merchant/leases?status=APPROVED');
+    expect(landingFor(['MERCHANT_STAFF'], '//evil.com')).toBe('/merchant');
+  });
+  it('merchantRedirect sends merchant users away from staff pages only', () => {
+    expect(merchantRedirect(['MERCHANT_STAFF'], '/')).toBe('/merchant');
+    expect(merchantRedirect(['MERCHANT_STAFF'], '/settings/merchants')).toBe('/merchant');
+    expect(merchantRedirect(['MERCHANT_STAFF'], '/merchant/leases/new')).toBeNull();
+    expect(merchantRedirect(['OFFICER'], '/')).toBeNull();
+    expect(merchantRedirect([], '/')).toBeNull();
+  });
+});
 
 describe('safeNext (open redirect)', () => {
   it.each([

@@ -5,7 +5,7 @@ import * as collateral from './collateral/collateral.api';
 import * as documents from './documents/documents.api';
 import * as income from './income/income.api';
 import * as inquiry from './inquiry/inquiry.api';
-import { downloadDmsFile, uploadDmsFile } from './documents/shared/files';
+import { downloadApplicationFile, uploadDmsFile } from './documents/shared/files';
 import * as admin from './admin/admin.api';
 import * as notifications from './notifications/notifications.api';
 import * as payments from './payments/payments.api';
@@ -103,13 +103,13 @@ describe('барьцаа, баримтын API-ууд gateway-ийн зөв ха
     expect(requests).toEqual([{ url, method }]);
   });
 
-  it('dms: татах нь /api/dms/files/:id/content (блоб)', async () => {
+  it('татах нь origination-оор: /api/origination/applications/:id/files/:fileId/content (блоб)', async () => {
     vi.stubGlobal('document', { createElement: () => ({ click: () => undefined, remove: () => undefined }), body: { appendChild: () => undefined } });
     const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
     try {
-      await downloadDmsFile('f 1', 'a.pdf');
-      expect(requests).toEqual([{ url: `${API}/dms/files/f%201/content`, method: 'GET' }]);
+      await downloadApplicationFile('app 1', 'f 1', 'a.pdf');
+      expect(requests).toEqual([{ url: `${API}/origination/applications/app%201/files/f%201/content`, method: 'GET' }]);
       expect(create).toHaveBeenCalledTimes(1);
       expect(revoke).toHaveBeenCalledWith('blob:x');
     } finally {

@@ -51,6 +51,10 @@ export const SETTING_REGISTRY = {
   'borrower.max_guarantors': def(z.number().int().min(0), 3, 'Хүсэлтэд оруулах батлан даагчийн дээд тоо'),
   'payment.invoice_ttl_minutes': def(z.number().int().positive(), 60, 'Төлбөрийн invoice хүчинтэй байх хугацаа (минут)'),
   'payment.min_amount': def(z.number().positive(), 1000, 'Нэг удаагийн төлбөрийн доод дүн (₮)'),
+  // PRT-FR-5.1/5.2 (H8): харилцагчийн портал (portal-bff) нэг төлбөрийн дээд дүн — бүх хэрэгсэлд; доод нь payment.min_amount (DEMO таамаг — docs/DECISIONS.md)
+  'portal.payment_max_amount': def(z.number().positive(), 100_000_000, 'Харилцагчийн порталаар нэг удаа төлөх дээд дүн (₮)'),
+  // Портал USD зээлд (зөвхөн BANK_ACCOUNT) — portal.payment_max_amount нь зөвхөн MNT (DEMO таамаг ≈100 сая ₮ — docs/DECISIONS.md)
+  'portal.payment_max_amount_usd': def(z.number().positive(), 30_000, 'Харилцагчийн порталаар нэг удаа төлөх дээд дүн (USD зээл, $)'),
   'payment.collection_account': def(z.object({ bankCode: z.string(), accountNo: z.string(), accountName: z.string() }), { bankCode: '', accountNo: '', accountName: '' }, 'Банкны шилжүүлгээр хүлээн авах данс'),
   'notification.reminder_before_due_days': def(z.array(z.number().int().min(0)), [3, 1, 0], 'Төлбөрийн сануулга — хугацаанаас өмнөх хоногууд'),
   'notification.reminder_overdue_days': def(z.array(z.number().int().positive()), [1, 3, 7], 'Төлбөрийн сануулга — хугацаа хэтэрсний дараах хоногууд'),

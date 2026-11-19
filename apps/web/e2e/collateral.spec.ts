@@ -527,7 +527,7 @@ test.describe('Баримт, ЭБ, устгах', () => {
     const download = page.waitForEvent('download');
     await row.getByRole('button', { name: 'Татах: certificate.pdf' }).click();
     expect((await download).suggestedFilename()).toBe('certificate.pdf');
-    expect(api.callsTo('GET', '/dms/files/:id/content')).toHaveLength(1);
+    expect(api.callsTo('GET', '/applications/:applicationId/files/:id/content')).toHaveLength(1);
 
     // Хасах
     await row.getByRole('button', { name: 'Устгах: certificate.pdf' }).click();

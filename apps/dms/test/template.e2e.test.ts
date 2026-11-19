@@ -68,7 +68,7 @@ describe.skipIf(!HAS_DB)('dms templates (FR-11: /api/templates)', () => {
     });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     const out = RenderTemplateResponse.parse(res.body);
-    const pdf = await api().get(`/api/files/${out.pdfFileId}/content`).set(as('officerA')).buffer().parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+    const pdf = await api().get(`/api/files/${out.pdfFileId}/content`).set({ 'x-user-id': 'svc:origination-files', 'x-roles': '', 'x-org-id': SEED.org.id }).buffer().parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
     expect(pdf.headers['content-type']).toBe('application/pdf');
     const doc = await PDFDocument.load(pdf.body as Buffer);
     expect(doc.getPageCount()).toBeGreaterThan(1);

@@ -464,6 +464,93 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
     });
   });
 
+  // docs/05-compliance-aml.md §5, §7 + DECISIONS P4C-1: COMPLIANCE шийдвэрлэнэ, тайлбар заавал, шалгалт эхлүүлсэн хүн биш, аудиттай.
+  describe('compliance review (COMPLIANCE role, audit, detail for side-by-side review)', () => {
+    const matchBody = () => screenBody({}, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ', birthDate: '1980-05-17', aliases: ['Bat Erdene'], countries: ['MN'] });
+    const compliance = headers('compliance-1', ['COMPLIANCE']);
+    const review = (hitId: string, body: unknown, h = compliance) => http().post(`/api/aml/hits/${hitId}/review`).set(h).send(body as object);
+    const audits = async () => useDb
+      ? (await app.get<PrismaClient>(AML_PRISMA).auditLog.findMany({ orderBy: { at: 'asc' } })).map((r) => ({ ...r, at: r.at.toISOString() }))
+      : memory.getAuditLog();
+
+    it('lets COMPLIANCE see the queue and clear a false positive → CLEARED_AFTER_REVIEW, no longer blocking (origination gate passes)', async () => {
+      const screened = (await screen(matchBody()).expect(201)).body;
+      expect(screened).toMatchObject({ status: 'REVIEW_REQUIRED', blocking: true });
+      const queue = (await http().get('/api/aml/hits?status=OPEN').set(compliance).expect(200)).body;
+      expect(queue.total).toBe(1);
+      expect(queue.items[0]).toMatchObject({ hit: { id: screened.hits[0].id }, screening: { id: screened.id, customerId: 'cust-1', registerNoMasked: maskRegisterNoStrict(REGISTER) } });
+      const res = await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Төрсөн огноо, иргэншил зөрүүтэй' }).expect(200);
+      expect(res.body).toMatchObject({ status: 'CLEARED_AFTER_REVIEW', blocking: false });
+      expect(res.body.hits[0]).toMatchObject({ status: 'FALSE_POSITIVE', reviewedBy: 'compliance-1', reviewComment: 'Төрсөн огноо, иргэншил зөрүүтэй' });
+      // origination G1 (aml-gate.rules isBlockingScreening): blocking || REVIEW_REQUIRED || CONFIRMED_MATCH — цэвэрлэсэн шалгалт нэвтэрнэ
+      const latest = (await http().get('/api/aml/customers/cust-1/latest').set(headers('officer-1', ['OFFICER'])).expect(200)).body;
+      expect(latest.blocking || latest.status === 'REVIEW_REQUIRED' || latest.status === 'CONFIRMED_MATCH').toBe(false);
+      expect((await http().get('/api/aml/hits?status=OPEN').set(compliance).expect(200)).body.total).toBe(0);
+    });
+
+    it('a confirmed true match → CONFIRMED_MATCH, stays blocking', async () => {
+      const screened = (await screen(matchBody()).expect(201)).body;
+      const res = await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Паспортын дугаар таарсан' }).expect(200);
+      expect(res.body).toMatchObject({ status: 'CONFIRMED_MATCH', blocking: true, riskLevel: 'HIGH' });
+    });
+
+    it('rejects non-reviewer roles with 403 (OFFICER, BRANCH_MANAGER, none)', async () => {
+      const screened = (await screen(matchBody()).expect(201)).body;
+      for (const roles of [['OFFICER'], ['BRANCH_MANAGER'], []]) {
+        await http().get('/api/aml/hits').set(headers('u-1', roles)).expect(403);
+        await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('u-1', roles)).expect(403);
+      }
+      expect((await repo.findScreening('org-1', screened.id))?.status).toBe('REVIEW_REQUIRED');
+    });
+
+    it("hides another organisation's screening, hit and queue (404 / empty)", async () => {
+      const screened = (await screen(matchBody()).expect(201)).body;
+      const other = headers('compliance-9', ['COMPLIANCE'], 'org-2');
+      await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, other).expect(404);
+      await http().get(`/api/aml/screenings/${screened.id}`).set(other).expect(404);
+      expect((await http().get('/api/aml/hits').set(other).expect(200)).body.total).toBe(0);
+    });
+
+    it('requires a reason: missing, blank or shorter than 5 characters → 400, nothing changes', async () => {
+      const screened = (await screen(matchBody()).expect(201)).body;
+      for (const body of [{ decision: 'FALSE_POSITIVE' }, { decision: 'FALSE_POSITIVE', comment: '      ' }, { decision: 'CONFIRMED', comment: 'abcd' }, { comment: 'Cleared by compliance' }]) {
+        await review(screened.hits[0].id, body).expect(400);
+      }
+      expect((await repo.findScreening('org-1', screened.id))?.hits[0]?.status).toBe('OPEN');
+      expect(await audits()).toEqual([]);
+    });
+
+    it('four-eyes: a COMPLIANCE user who requested the screening cannot decide its hits (403)', async () => {
+      const screened = (await screen(matchBody(), compliance).expect(201)).body;
+      await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by myself' }).expect(403);
+      await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by a colleague' }, headers('compliance-2', ['COMPLIANCE'])).expect(200);
+    });
+
+    it('writes one audit_log row per decision in the same transaction, without the free-text reason or register', async () => {
+      const screened = (await screen(matchBody()).expect(201)).body;
+      await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'УБ12345678 биш хүн' }).expect(200);
+      const rows = await audits();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        orgId: 'org-1', entity: 'aml_hit', entityId: screened.hits[0].id, action: 'AML_HIT_REVIEWED', actorId: 'compliance-1', applicationId: 'app-1', correlationId: 'corr-1',
+        beforeJson: { status: 'OPEN', screeningStatus: 'REVIEW_REQUIRED', blocking: true },
+        afterJson: { status: 'FALSE_POSITIVE', screeningId: screened.id, list: 'UN_SC', screeningStatus: 'CLEARED_AFTER_REVIEW', blocking: false },
+      });
+      expect(JSON.stringify(rows[0])).not.toContain('УБ12345678');
+      // 409 (дахин шийдвэрлэх) аудит бичихгүй
+      await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Changed my mind' }).expect(409);
+      expect(await audits()).toHaveLength(1);
+    });
+
+    it('GET /aml/screenings/:id returns the screened subject for side-by-side review — birth year only, no register', async () => {
+      const screened = (await screen(matchBody()).expect(201)).body;
+      const detail = (await http().get(`/api/aml/screenings/${screened.id}`).set(compliance).expect(200)).body;
+      expect(detail.subject).toEqual({ subjectType: 'INDIVIDUAL', lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ', aliases: ['Bat Erdene'], birthYear: 1980, countries: ['MN'], isPep: false, isRelatedParty: false });
+      expect(JSON.stringify(detail)).not.toContain('1980-05-17');
+      expect(JSON.stringify(detail)).not.toContain(REGISTER);
+    });
+  });
+
   describe('a blocking screening cannot be superseded by a different identity', () => {
     const matchBody = (over: Record<string, unknown> = {}, subjectOver: Record<string, unknown> = {}) => screenBody(over, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ', ...subjectOver });
     const admin = headers('admin-1', ['ADMIN']);

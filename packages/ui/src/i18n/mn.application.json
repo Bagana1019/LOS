@@ -82,5 +82,9 @@
   "application.error.STALE_STATE": "Хүсэлтийн төлөв өөрчлөгдсөн байна, дахин ачаална уу",
   "application.error.VOTE_TARGET_CHANGED": "Хүсэлтийн батлах түвшин эсвэл хувилбар өөрчлөгдсөн байна. Жагсаалтыг шинэчиллээ, дахин шалгана уу",
   "application.error.BRANCH_REQUIRED": "Таны салбар тодорхойгүй тул хүсэлт үүсгэх боломжгүй",
-  "application.error.FORBIDDEN": "Хандах эрхгүй байна"
+  "application.error.FORBIDDEN": "Хандах эрхгүй байна",
+  "application.error.AML_REVIEW_REQUIRED": "Хүсэлт комплаенсын AML шалгалтыг хүлээж байна — комплаенсын ажилтан тохирлыг шийдвэрлэсний дараа дахин илгээнэ үү",
+  "application.error.AML_CONFIRMED_MATCH": "Оролцогч хориг арга хэмжээ / хар жагсаалтын баталгаажсан тохиролтой тул илгээх боломжгүй",
+  "application.error.AML_SCREENING_STALE": "Зарим оролцогчийн AML шалгалт хуучирсан байна — дахин илгээнэ үү",
+  "application.error.AML_SCREENING_UNAVAILABLE": "AML шалгалтын үйлчилгээ түр ажиллахгүй байна — хэсэг хугацааны дараа дахин илгээнэ үү"
 }

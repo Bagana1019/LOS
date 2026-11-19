@@ -3,7 +3,7 @@ import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { type XypCitizen } from '@los/contracts';
-import { SEED, blindIndex, decryptedField, isEncryptedField } from '@los/database';
+import { SEED, blindIndex, decryptedField, isEncryptedField, purgeAuditLogForTests } from '@los/database';
 import { DomainError } from '@los/nest-common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
@@ -54,7 +54,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
     await db.loanApplication.deleteMany();
     await db.customer.deleteMany(); // contacts cascade
     await db.blacklist.deleteMany();
-    await db.auditLog.deleteMany({ where: { entity: 'CUSTOMER' } });
+    await purgeAuditLogForTests(db, (tx) => tx.auditLog.deleteMany({ where: { entity: 'CUSTOMER' } }));
   });
 
   const create = (body: unknown, who: Parameters<typeof as>[0] = 'officerA') => http().post('/api/customers').set(as(who)).send(body as object);
@@ -181,7 +181,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
 
     it('source=XYP saves the customer from the officer\'s missing fields plus XYP data; XYP overrides identity fields it owns', async () => {
       const res = await create({
-        source: 'XYP', registerNo: REGISTER, lastName: 'Хуурамч', firstName: 'Хуурамч', gender: 'MALE', birthDate: '1980-05-05', maritalStatus: 'MARRIED',
+        source: 'XYP', registerNo: REGISTER, lastName: 'Цэрэн', gender: 'MALE', maritalStatus: 'MARRIED',
         phone: '99112233', email: 'x@example.mn', photoFileId: 'file-9', activitySector: 'Худалдаа', segment: 'Жижиг бизнес', education: 'Бакалавр',
         residenceSameAsOfficial: true, employment: { organization: 'Тэнгэр ХХК', position: 'Менежер' },
       });
@@ -192,6 +192,20 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
         phone: '99112233', xypFetchedAt: '2026-01-01T00:00:00.000Z',
       });
       expect(xypCalls).toEqual([REGISTER]);
+    });
+
+    it('M5: source=XYP refuses an officer-edited official address (or name) instead of silently replacing it; nothing is stored', async () => {
+      const officer = { phone: '99112233', email: 'x@example.mn', photoFileId: 'file-9', activitySector: 'Худалдаа', segment: 'Жижиг бизнес', education: 'Бакалавр', gender: 'MALE',
+        residenceSameAsOfficial: true, employment: { organization: 'Тэнгэр ХХК', position: 'Менежер' } };
+      const res = await create({ source: 'XYP', registerNo: REGISTER, ...officer, officialAddress: { ...ADDRESS, district: 'Сүхбаатар' }, firstName: 'Хуурамч' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('XYP_FIELD_READONLY');
+      expect(res.body.details).toEqual({ fields: ['firstName', 'officialAddress'] });
+      expect(await db.customer.count()).toBe(0);
+      // ХУР-ын утгыг хэвээр (whitespace-тэй ч) буцааж илгээвэл зөвшөөрнө
+      const ok = await create({ source: 'XYP', registerNo: REGISTER, ...officer, officialAddress: { ...ADDRESS, detail: ` ${ADDRESS.detail} ` }, firstName: 'Сарнай' });
+      expect(ok.status).toBe(201);
+      expect(ok.body.officialAddress).toEqual(ADDRESS);
     });
 
     it('source=XYP still refuses a customer whose officer-supplied fields are incomplete', async () => {
@@ -264,7 +278,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
   describe('карт, засвар, холбоо барих, KYC (FR-2.4, FR-2.5, FR-2.6)', () => {
     it('update changes only the given fields, re-validates, audits the diff, and cannot touch the register', async () => {
       const made = (await create(full())).body;
-      const res = await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ phone: '88001122', isPep: true, isRelatedParty: true, registerNo: 'УБ00000001', customerType: 'LEGAL_ENTITY' });
+      const res = await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ phone: '88001122', isPep: true, isRelatedParty: true });
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({ registerNo: REGISTER, customerType: 'INDIVIDUAL', phone: '88001122', isPep: true, isRelatedParty: true, firstName: 'Бат-Эрдэнэ', contacts: [expect.objectContaining({ firstName: 'Сараа' })] });
 
@@ -277,6 +291,27 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       // өөрчлөлтгүй хадгалбал аудит нэмэгдэхгүй
       await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ phone: '88001122' });
       expect(await db.auditLog.count({ where: { entity: 'CUSTOMER', entityId: made.id, action: 'CUSTOMER_UPDATED' } })).toBe(1);
+    });
+
+    it('M5: the official address round-trips through PUT and is read back from the card', async () => {
+      const made = (await create(full({ residenceSameAsOfficial: false, residenceAddress: { ...ADDRESS, khoroo: '1-р хороо' } }))).body;
+      const moved = { province: 'Дархан-Уул', district: 'Дархан', khoroo: '3-р баг', detail: '7-р байр' };
+      const res = await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ officialAddress: moved });
+      expect(res.status).toBe(200);
+      const card = (await http().get(`/api/customers/${made.id}`).set(as('officerA'))).body;
+      expect(card.officialAddress).toEqual(moved);
+      expect(card.residenceAddress).toEqual({ ...ADDRESS, khoroo: '1-р хороо' });
+    });
+
+    it('M5: unknown or read-only fields on PUT are refused with an explicit code, not silently dropped', async () => {
+      const made = (await create(full())).body;
+      const unknown = await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ phone: '88001122', registeredAddress: ADDRESS });
+      expect(unknown.status).toBe(400);
+      expect(unknown.body).toMatchObject({ code: 'UNKNOWN_FIELD', details: { fields: ['registeredAddress'] } });
+      const ro = await http().put(`/api/customers/${made.id}`).set(as('officerA')).send({ phone: '88001122', registerNo: 'УБ00000001', customerType: 'LEGAL_ENTITY' });
+      expect(ro.status).toBe(400);
+      expect(ro.body).toMatchObject({ code: 'READONLY_FIELD', details: { fields: ['customerType', 'registerNo'] } });
+      expect((await http().get(`/api/customers/${made.id}`).set(as('officerA'))).body.phone).toBe('99112233');
     });
 
     it('addresses: changing the official one drags a "same" residence along; giving a residence unticks the box', async () => {

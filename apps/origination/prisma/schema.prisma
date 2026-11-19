@@ -1004,6 +1004,10 @@ model PaymentInvoice {
   expiresAt            DateTime  @map("expires_at")
   paidAt               DateTime? @map("paid_at")
   note                 String?
+  /// H8 / PRT-FR-5.3: sha256(org|customer|Idempotency-Key)[:32] — портал төлбөрийн давхардлыг (orgId, key) UNIQUE-ээр pod хооронд хаана
+  portalIdempotencyKey String?   @map("portal_idempotency_key")
+  /// `<amountType>:<sha256(body)[:32]>` — ижил түлхүүр + өөр body → 422 IDEMPOTENCY_KEY_REUSED
+  portalRequestHash    String?   @map("portal_request_hash")
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
   createdBy            String?   @map("created_by")
@@ -1012,6 +1016,7 @@ model PaymentInvoice {
   application LoanApplication @relation(fields: [applicationId], references: [id])
   payments    Payment[]
 
+  @@unique([orgId, portalIdempotencyKey])
   @@index([applicationId])
   @@index([status, expiresAt])
   @@index([provider, providerInvoiceId])

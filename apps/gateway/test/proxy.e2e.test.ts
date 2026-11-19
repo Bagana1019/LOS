@@ -1,5 +1,5 @@
 import { type INestApplication } from '@nestjs/common';
-import { SEED } from '@los/database';
+import { SEED, purgeAuditLogForTests } from '@los/database';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
@@ -83,6 +83,44 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
     expect(h.cookie).toBeUndefined();
   });
 
+  describe('GATEWAY_DIRECTORY_TOKEN never fans out; /api/internal/* is never proxied', () => {
+    const DIR_TOKEN = 'directory-token-for-tests-0123';
+    const saved = process.env.GATEWAY_DIRECTORY_TOKEN;
+    beforeAll(() => { process.env.GATEWAY_DIRECTORY_TOKEN = DIR_TOKEN; });
+    afterAll(() => { if (saved === undefined) delete process.env.GATEWAY_DIRECTORY_TOKEN; else process.env.GATEWAY_DIRECTORY_TOKEN = saved; });
+
+    it('a client-sent X-Directory-Token on a proxied request is stripped: no service ever sees it', async () => {
+      await api().get('/api/origination/applications').set(bearer('officer.a')).set({ 'x-directory-token': DIR_TOKEN });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.headers['x-directory-token']).toBeUndefined();
+      expect(JSON.stringify(seen[0]!.headers)).not.toContain(DIR_TOKEN);
+    });
+
+    it('the service receives INTERNAL_AUTH_SECRET only; the directory token is a different secret and is not set by the proxy', async () => {
+      await api().get('/api/kyc/anything').set(bearer('officer.a'));
+      const h = seen[0]!.headers;
+      expect(h['x-internal-token']).toBe(process.env.INTERNAL_AUTH_SECRET);
+      expect(process.env.INTERNAL_AUTH_SECRET).not.toBe(DIR_TOKEN);
+      expect(JSON.stringify(h)).not.toContain(DIR_TOKEN);
+    });
+
+    it.each([
+      '/api/internal/other', '/api/internal/portal/me', '/api/internal/directory/extra', '/api/internal',
+      '/api/origination/internal/portal/me', '/api/origination/%69nternal/portal/me', '/api/origination/INTERNAL/portal/me',
+    ])('%s with a valid directory token and a valid session never reaches a backend (404)', async (path) => {
+      const res = await api().get(path).set(bearer('officer.a')).set({ 'x-directory-token': DIR_TOKEN, 'x-org-id': SEED.org.id });
+      expect(res.status, path).toBe(404);
+      expect(seen, path).toHaveLength(0);
+    });
+
+    it('/api/internal/directory is answered by the gateway controller itself (200) and nothing is proxied', async () => {
+      const res = await api().get('/api/internal/directory').set({ 'x-directory-token': DIR_TOKEN, 'x-org-id': SEED.org.id });
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body).sort()).toEqual(['branches', 'users']);
+      expect(seen).toHaveLength(0);
+    });
+  });
+
   it('spoofed headers without a valid token are still a 401 (headers are not trusted at the edge)', async () => {
     const res = await api().get('/api/origination/applications').set({ 'x-user-id': SEED.users.admin.id, 'x-roles': 'ADMIN', 'x-org-id': SEED.org.id });
     expect(res.status).toBe(401);
@@ -124,6 +162,20 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
     expect((await api().post('/api/origination/blacklist').set(bearer('officer.a')).send({})).status).toBe(403);
   });
 
+  it('route policy: the AML review queue and hit decisions are COMPLIANCE only (aml:review); screening detail stays open', async () => {
+    const hit = '/api/kyc/aml/hits/00000000-0000-4000-8000-0000000000aa/review';
+    for (const u of ['officer.a', 'manager', 'approver', 'admin']) {
+      expect((await api().get('/api/kyc/aml/hits?status=OPEN').set(bearer(u))).status, `GET ${u}`).toBe(403);
+      expect((await api().post(hit).set(bearer(u)).send({ decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' })).status, `POST ${u}`).toBe(403);
+    }
+    expect(seen).toHaveLength(0);
+    expect((await api().get('/api/kyc/aml/hits?status=OPEN').set(bearer('compliance'))).status).toBe(200);
+    expect((await api().post(hit).set(bearer('compliance')).send({ decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' })).status).toBe(200);
+    expect(seen.map((s) => `${s.method} ${s.url}`)).toEqual(['GET /api/aml/hits?status=OPEN', 'POST /api/aml/hits/00000000-0000-4000-8000-0000000000aa/review']);
+    expect(seen[1]!.headers['x-roles']).toBe('COMPLIANCE');
+    expect((await api().get('/api/kyc/aml/screenings/s-1').set(bearer('officer.a'))).status).toBe(200);
+  });
+
   it('unknown service prefixes are 404 and never proxied', async () => {
     const res = await api().get('/api/secret-service/x').set(bearer('admin'));
     expect(res.status).toBe(404);
@@ -131,7 +183,7 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
   });
 
   it('audits every mutating request (who/what/status) but never the body', async () => {
-    await prisma.auditLog.deleteMany({ where: { entity: 'HTTP' } });
+    await purgeAuditLogForTests(prisma, (tx) => tx.auditLog.deleteMany({ where: { entity: 'HTTP' } }));
     await api().post('/api/origination/applications/00000000-0000-4000-8000-0000000000aa/submit').set(bearer('officer.a')).send({ secret: 'do-not-log-me' });
     await api().get('/api/origination/applications').set(bearer('officer.a'));
     await new Promise((r) => setTimeout(r, 200)); // finish event → recordSafe

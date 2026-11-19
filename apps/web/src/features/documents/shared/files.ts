@@ -3,8 +3,9 @@ import { API, authFetch } from '../../../lib/api';
 import { newCorrelationId, readError } from '../../../lib/http';
 import { t } from '../../../lib/i18n';
 
-// dms файл сан (docs/05 §2): upload `POST /api/dms/files` (multipart, талбар `file`), татах `GET /api/dms/files/:id/content`. Gateway-ээр, bearer-тэй (`authFetch`).
-// `dms/documents` нь дотоод тул ашиглахгүй — файлыг хүсэлт/барьцаанд холбох нь origination-оор.
+// dms файл сан (docs/05 §2): upload `POST /api/dms/files` (multipart, талбар `file`). Gateway-ээр, bearer-тэй (`authFetch`).
+// Татах нь dms-ээс ШУУД биш: `GET /api/origination/applications/:applicationId/files/:fileId/content` — origination хүсэлтийн хүрээ + файлын холбоосыг
+// шалгаад dms-ээс сервисийн нэрээр авч дамжуулна (NFR-3, docs/DECISIONS.md 2026-11-19). `dms/documents` нь дотоод — файлыг хүсэлт/барьцаанд холбох нь origination-оор.
 
 /** dms-ийн FileView-ийн UI-д хэрэгтэй хэсэг (ALLOWED_TYPES-аас хамаарна: apps/dms/src/modules/file/file-type.ts). */
 export const DmsFile = z.object({ id: z.string().uuid(), name: z.string(), mime: z.string(), size: z.number() });
@@ -23,9 +24,9 @@ export async function uploadDmsFile(file: File): Promise<DmsFile> {
   return DmsFile.parse(await res.json());
 }
 
-export async function downloadDmsFile(fileId: string, fileName: string): Promise<void> {
+export async function downloadApplicationFile(applicationId: string, fileId: string, fileName: string): Promise<void> {
   const correlationId = newCorrelationId();
-  const res = await authFetch(`${API}/dms/files/${encodeURIComponent(fileId)}/content`, { headers: { 'x-correlation-id': correlationId } });
+  const res = await authFetch(`${API}/origination/applications/${encodeURIComponent(applicationId)}/files/${encodeURIComponent(fileId)}/content`, { headers: { 'x-correlation-id': correlationId } });
   if (!res.ok) throw await readError(res, correlationId);
   const url = URL.createObjectURL(await res.blob());
   const a = Object.assign(document.createElement('a'), { href: url, download: fileName || 'file' });

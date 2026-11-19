@@ -3,12 +3,13 @@ import { AUTH_CONFIG, loadAuthConfig } from './auth.config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { LoginAttemptLimiter } from './login-limiter';
 import { TokenService } from './token.service';
 
 @Global()
 @Module({
   controllers: [AuthController],
-  providers: [{ provide: AUTH_CONFIG, useFactory: () => loadAuthConfig() }, TokenService, AuthService, JwtAuthGuard],
+  providers: [{ provide: AUTH_CONFIG, useFactory: () => loadAuthConfig() }, TokenService, AuthService, JwtAuthGuard, LoginAttemptLimiter],
   exports: [AuthService, JwtAuthGuard, AUTH_CONFIG],
 })
 export class AuthModule {}

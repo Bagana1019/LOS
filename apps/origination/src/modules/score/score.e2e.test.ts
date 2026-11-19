@@ -135,12 +135,12 @@ describe.skipIf(!hasTestDb)('origination · score (Модуль 8)', () => {
       expect(scoring.calls).toHaveLength(0);
     });
 
-    it('CUSTOMER дүр (өөрийн хүсэлт дээр ч) → 403 FORBIDDEN (бүх endpoint)', async () => {
+    it('CUSTOMER дүр (өөрийн хүсэлт дээр ч) → 403 CUSTOMER_CONTEXT_FORBIDDEN (бүх endpoint)', async () => {
       const { app, primaryId } = await seed();
       for (const [m, p] of calls(app.id)) {
         const res = await send(m, p, actors.customer(primaryId!));
         expect([m, p, res.status]).toEqual([m, p, 403]);
-        expect(res.body.code).toBe('FORBIDDEN');
+        expect(res.body.code).toBe('CUSTOMER_CONTEXT_FORBIDDEN');
       }
       expect(scoring.calls).toHaveLength(0);
     });

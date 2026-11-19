@@ -96,6 +96,9 @@ describe('maker-checker REST', () => {
 
   it('policies: GET for ADMIN/APPROVER, PUT is a four-eyes request (202) another admin approves', async () => {
     expect((await http().get('/api/maker-checker/policies').set(H('o', 'OFFICER'))).status).toBe(403);
+    // PUT = @Permissions('settings:manage') (зөвхөн ADMIN) — gateway route-policy-тэй ижил, guard түвшинд 403
+    expect((await http().put('/api/maker-checker/policies/BLACKLIST_ENTRY/UPDATE').set(H('ap', 'APPROVER'))
+      .send({ enabled: false, checkerRoles: ['APPROVER'], expiresInHours: 12, reason: 'Түр' })).status).toBe(403);
     const list = await http().get('/api/maker-checker/policies').set(H('adminA', 'ADMIN'));
     expect(list.status).toBe(200);
     expect(list.body.map((p: { targetType: string }) => p.targetType)).toEqual(['BLACKLIST_ENTRY', 'MAKER_CHECKER_POLICY']);

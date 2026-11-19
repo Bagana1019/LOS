@@ -41,6 +41,12 @@ export const RiskBand = ['GREEN','YELLOW','RED'] as const;
 export type RiskBand = typeof RiskBand[number];
 export const UserRole = ['OFFICER','BRANCH_MANAGER','APPROVER','ADMIN','COMPLIANCE'] as const;
 export type UserRole = typeof UserRole[number];
+/** Мерчантын хэрэглэгчийн дүр (docs/05-merchant-pos.md §2) — лизингийн байгууллагын дүртэй (UserRole) хэзээ ч холилдохгүй. */
+export const MerchantRole = ['MERCHANT_ADMIN', 'MERCHANT_STAFF'] as const;
+export type MerchantRole = (typeof MerchantRole)[number];
+/** iam.user.roles-д байж болох бүх дүр (gateway сесс, JWT). */
+export const AccountRole = [...UserRole, ...MerchantRole] as const;
+export type AccountRole = (typeof AccountRole)[number];
 
 // ── docs/03-д баганы тайлбар хэлбэрээр байгаа (`A | B | C`) утгууд — Prisma-д String, энд цорын ганц эх сурвалж ──
 export const ApplicationSource = ['WEB','SYSTEM','API'] as const;

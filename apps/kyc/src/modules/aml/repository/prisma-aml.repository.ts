@@ -2,7 +2,7 @@
 // Event-ийг enqueueOutbox(@los/database)-ээр схемээр шалгаж, бизнес мөртэй нэг транзакцид outbox руу бичнэ (CLAUDE.md §3.2.4).
 import { Inject, Injectable } from '@nestjs/common';
 import type { AmlHit, AmlRiskFactor, DomainEvent } from '@los/contracts';
-import { enqueueOutbox } from '@los/database';
+import { enqueueOutbox, recordAudit } from '@los/database';
 import type { Prisma, PrismaClient } from '.prisma/client-kyc';
 import { AML_PRISMA } from '../aml.prisma';
 import {
@@ -226,6 +226,7 @@ export class PrismaAmlRepository implements AmlRepository {
         include: WITH_HITS,
       });
       await enqueueOutbox(tx, derived.event);
+      if (derived.audit) await recordAudit(tx, derived.audit); // NFR-4: шийдвэртэй НЭГ транзакцид
       return { outcome: 'applied', screening: screeningOf(updated) };
     });
   }

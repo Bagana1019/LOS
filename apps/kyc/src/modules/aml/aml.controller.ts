@@ -16,6 +16,11 @@ const HitQuery = z.object({
 });
 const RescreenBody = z.object({ limit: z.number().int().min(1).max(500).default(50) });
 const RefreshBody = z.object({ list: z.enum(['UN_SC', 'FATF']).optional() });
+/**
+ * Hit шийдвэрлэгч (§7): ADMIN, APPROVER + COMPLIANCE (DECISIONS P4C-1). Бүтээгдэхүүний зам (web → gateway) нь route-policy `aml:review`-ээр
+ * зөвхөн COMPLIANCE-д нээлттэй; энд ADMIN/APPROVER-ийг дотоод/хуучин дуудагчийн нийцтэй байдлын үүднээс хадгалсан.
+ */
+const REVIEWER_ROLES = ['ADMIN', 'APPROVER', 'COMPLIANCE'] as const;
 
 /** Compliance & AML (FR-2.5, FR-3.4, BR-9). Эрх gateway-д шийдэгдэнэ; энд зөвхөн дүрийн шалгалт (CLAUDE.md §3.2.9). */
 @Controller('aml')
@@ -42,20 +47,20 @@ export class AmlController {
 
   /** Шийдвэрлэх дараалал. */
   @Get('hits')
-  @Roles('ADMIN', 'APPROVER')
+  @Roles(...REVIEWER_ROLES)
   hits(@Query(new ZodPipe(HitQuery)) q: z.infer<typeof HitQuery>, @Ctx() ctx: RequestContext) {
     return this.aml.listHits(ctx.orgId, q);
   }
 
   @Post('hits/:id/review')
   @HttpCode(200)
-  @Roles('ADMIN', 'APPROVER')
+  @Roles(...REVIEWER_ROLES)
   review(@Param('id', PathParam) id: string, @Body(new ZodPipe(AmlHitReviewRequest)) body: AmlHitReviewRequest, @Ctx() ctx: RequestContext) {
     return this.aml.reviewHit(ctx, id, body);
   }
 
   @Get('lists')
-  @Roles('ADMIN', 'APPROVER')
+  @Roles(...REVIEWER_ROLES)
   lists(@Ctx() ctx: RequestContext) {
     return this.aml.listStatuses(ctx.orgId);
   }

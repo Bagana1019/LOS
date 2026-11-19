@@ -1,11 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, HttpCode, Param, Post, Put, Query, Res } from '@nestjs/common';
 import { z } from 'zod';
 import {
   DeliveryListQuery, NotificationListQuery, NotificationPreferenceRequest, PreviewTemplateRequest, RecipientType, RegisterPushDeviceRequest, RunRemindersRequest, SendTestRequest, UpsertTemplateRequest,
   type DeliveryListResponse, type DeliveryView, type MarkAllReadResponse, type NotificationListResponse, type NotificationPreferenceView, type NotificationView, type PreviewTemplateResponse,
   type PushDeviceView, type RunRemindersResponse, type TemplateView, type UnreadCountResponse,
 } from '@los/contracts';
-import { Ctx } from '@los/nest-common';
+import { AllowCustomerContext, Ctx } from '@los/nest-common';
 import type { RequestContext } from '@los/contracts';
 import { Roles } from '@los/nest-common';
 import { ZodValidationPipe } from '@los/nest-common';
@@ -22,6 +22,17 @@ interface StatusSetter { status(code: number): unknown }
 const RunBody = z.preprocess((v) => v ?? {}, RunRemindersRequest);
 const RecipientTypeParam = new ZodValidationPipe(z.enum(RecipientType));
 const TokenParam = new ZodValidationPipe(z.string().min(8).max(4096));
+
+/**
+ * @AllowCustomerContext маршрутууд (DECISIONS 2026-11-18): харилцагчийн контекстыг ЗӨВХӨН тухайн харилцагч болгон нарийсгана —
+ * ажилтны толгой (X-User-Id, X-Branch-Id, ADMIN зэрэг дүр) хамт ирсэн ч ашиглагдахгүй, тиймээс service-үүд зөвхөн ctx.customerId-ийн
+ * төхөөрөмж/тохиргоонд хүрнэ. CUSTOMER дүргүй харилцагчийн контекст → 403. Ажилтны контекст өөрчлөгдөхгүй.
+ */
+function selfServiceContext(ctx: RequestContext): RequestContext {
+  if (!ctx.customerId) return ctx;
+  if (!ctx.roles.includes('CUSTOMER')) throw new ForbiddenException({ code: 'CUSTOMER_CONTEXT_FORBIDDEN', message: 'Харилцагчийн хүсэлтээр энэ үйлдлийг хийх боломжгүй' });
+  return { ...ctx, userId: null, branchId: null, roles: ['CUSTOMER'] };
+}
 
 @Controller()
 export class NotificationController {
@@ -78,30 +89,34 @@ export class NotificationController {
   @HttpCode(200)
   runReminders(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(RunBody)) dto: RunRemindersRequest): Promise<RunRemindersResponse> { return this.reminders.run(ctx.orgId, { asOf: dto.asOf, dryRun: dto.dryRun }); }
 
-  // ── Push төхөөрөмж ──────────────────────────────────────────────────────────────
+  // ── Push төхөөрөмж (ажилтан + харилцагч өөрөө) ──────────────────────────────────────────────────────────────
   /** 201 — шинэ төхөөрөмж; 200 — токен байсан тул шинэчилсэн. */
   @Post('notifications/push-devices')
+  @AllowCustomerContext()
   async registerDevice(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(RegisterPushDeviceRequest)) dto: RegisterPushDeviceRequest, @Res({ passthrough: true }) res: StatusSetter): Promise<PushDeviceView> {
-    const { view, created } = await this.devices.register(ctx, dto);
+    const { view, created } = await this.devices.register(selfServiceContext(ctx), dto);
     if (!created) res.status(200);
     return view;
   }
 
   @Delete('notifications/push-devices/:token')
   @HttpCode(204)
-  async removeDevice(@Ctx() ctx: RequestContext, @Param('token', TokenParam) token: string): Promise<void> { await this.devices.remove(ctx, token); }
+  @AllowCustomerContext()
+  async removeDevice(@Ctx() ctx: RequestContext, @Param('token', TokenParam) token: string): Promise<void> { await this.devices.remove(selfServiceContext(ctx), token); }
 
-  // ── Сувгийн opt-out ─────────────────────────────────────────────────────────────
+  // ── Сувгийн opt-out (ажилтан + харилцагч өөрөө) ─────────────────────────────────────────────────────────────
   @Get('notifications/preferences/:recipientType/:recipientId')
+  @AllowCustomerContext()
   getPreferences(@Ctx() ctx: RequestContext, @Param('recipientType', RecipientTypeParam) recipientType: RecipientType, @Param('recipientId') recipientId: string): Promise<NotificationPreferenceView> {
-    return this.preferences.get(ctx, recipientType, recipientId);
+    return this.preferences.get(selfServiceContext(ctx), recipientType, recipientId);
   }
 
   @Put('notifications/preferences/:recipientType/:recipientId')
+  @AllowCustomerContext()
   putPreferences(
     @Ctx() ctx: RequestContext, @Param('recipientType', RecipientTypeParam) recipientType: RecipientType, @Param('recipientId') recipientId: string,
     @Body(new ZodValidationPipe(NotificationPreferenceRequest)) dto: NotificationPreferenceRequest,
   ): Promise<NotificationPreferenceView> {
-    return this.preferences.put(ctx, recipientType, recipientId, dto);
+    return this.preferences.put(selfServiceContext(ctx), recipientType, recipientId, dto);
   }
 }
