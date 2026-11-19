@@ -25,16 +25,20 @@ import {
   AmbiguousBankError, StatementParserRegistry, StatementVerificationService, UnsupportedBankError,
   type ParsedStatement, type StatementText,
 } from '../parsers';
+import { PARSE_WARNING } from '../parsers/engine/warnings';
 import { isStatementExtractionError, StatementTextService } from '../parsers/text-extraction';
 import { BSA_CLOCK, BSA_IMPORT_OPTIONS, type Clock, type ImportOptions } from './import.defaults';
 import { BSA_EVENT } from './import.events';
 import { BsaException } from './import.errors';
 import {
-  ambiguousBankIssue, extractionIssue, issue, parseWarningIssues, PIPELINE_MESSAGES, pipelineIssue, tooManyRowsIssue, verificationIssues,
+  ambiguousBankIssue, extractionIssue, unsupportedCurrencyIssue, issue, parseWarningIssues, PIPELINE_MESSAGES, pipelineIssue, tooManyRowsIssue, verificationIssues,
   VERIFICATION_MESSAGES,
 } from './import.issues';
 import { RecalculationService } from './recalculation.service';
 import { Deadline, ImportTimeoutError, withTimeout } from './timeout';
+
+/** BSA-ийн бүх дүн (DTI, орлого) төгрөгөөр — өөр валютын хуулгыг хүлээж авахгүй (M12, DECISIONS 2026-11-19) */
+const BASE_CURRENCY = 'MNT';
 
 /** Queue-ийн оролдлогын мэдээлэл (common/import-queue.ts-ийн ImportJobAttempt-тэй ижил хэлбэр) */
 export interface AttemptInfo {
@@ -159,6 +163,9 @@ export class ImportPipelineService {
       rowsTotal: rowCount,
     };
     if (rowCount > this.options.maxRowsPerFile) throw new DeterministicFailure([tooManyRowsIssue(this.options.maxRowsPerFile)], base);
+    // M12: ханшийн эх сурвалж (docs/02, docs/03) тодорхойлогдоогүй — төгрөгөөс өөр/холимог валютыг хөрвүүлэхгүй, импортыг зогсооно (мөр хадгалахгүй)
+    const mixedCurrency = parsed.warnings.some((w) => w.code === PARSE_WARNING.CURRENCY_MIXED);
+    if (parsed.currency !== BASE_CURRENCY || mixedCurrency) throw new DeterministicFailure([unsupportedCurrencyIssue(parsed.currency, mixedCurrency)], base);
 
     const verification = await this.verifier.verify(parsed, text.meta, {
       balanceTolerance: settings.balanceTolerance,

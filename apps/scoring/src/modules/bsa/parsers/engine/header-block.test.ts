@@ -1,7 +1,7 @@
 // header-block — толгой хэсгийн талбарууд (Монгол + Англи шошго; утга ижил нүдэнд / дараагийн нүдэнд / дараагийн мөрөнд). SYNTHETIC.
 import { describe, expect, it } from 'vitest';
 import { ENGINE_DEFAULTS as cfg } from './defaults';
-import { compileHeaderExtractor, type ZoneLine } from './header-block';
+import { compileHeaderExtractor, currencyCodes, type ZoneLine } from './header-block';
 import { WarningCollector } from './warnings';
 
 const extractor = compileHeaderExtractor(cfg, { dateOrder: 'DMY' });
@@ -165,5 +165,20 @@ describe('extractFooterLine', () => {
 
   it('a footer label without a readable value is still "matched" (not a description continuation)', () => {
     expect(footer(['Эцсийн үлдэгдэл: n/a'])).toMatchObject({ matched: true, fields: { closingBalance: null } });
+  });
+});
+
+describe('currencyCodes (M12: валютыг хэзээ ч чимээгүй MNT болгохгүй)', () => {
+  it('reads ISO codes, Mongolian/English words and symbols', () => {
+    expect(currencyCodes('MNT')).toEqual(['MNT']);
+    expect(currencyCodes('Төгрөг (MNT)')).toEqual(['MNT']);
+    expect(currencyCodes('₮')).toEqual(['MNT']);
+    expect(currencyCodes('Ам.доллар')).toEqual(['USD']);
+    expect(currencyCodes('US $')).toEqual(['USD']);
+    expect(currencyCodes('Евро')).toEqual(['EUR']);
+  });
+  it('returns every distinct code of a mixed value; nothing for an unreadable one', () => {
+    expect(currencyCodes('MNT, USD')).toEqual(['MNT', 'USD']);
+    expect(currencyCodes('—')).toEqual([]);
   });
 });

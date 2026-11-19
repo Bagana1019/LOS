@@ -69,6 +69,24 @@ interface Pair {
   value: string;
 }
 
+/** Валютын нэр/тэмдэгт → ISO код (ISO код хэвлээгүй хуулгад). Дарааллаар: эхэнд таарсан нь эхэнд. */
+const CURRENCY_WORDS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/₮|төг|tug/i, 'MNT'],
+  [/доллар|dollar|\$/i, 'USD'],
+  [/евро|euro|€/i, 'EUR'],
+  [/юан|yuan|renminbi/i, 'CNY'],
+  [/рубл|rubl|ruble|₽/i, 'RUB'],
+  [/иен|yen/i, 'JPY'],
+  [/вон|won|₩/i, 'KRW'],
+];
+
+/** Толгойн валютын утгаас бүх (давхардалгүй) ISO кодыг гаргана: ISO код + нэр/тэмдэгт. */
+export function currencyCodes(value: string): string[] {
+  const iso = [...value.toUpperCase().matchAll(/(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])/g)].map((m) => m[0]);
+  const words = CURRENCY_WORDS.filter(([re]) => re.test(value)).map(([, code]) => code);
+  return [...new Set([...iso, ...words])];
+}
+
 export function compileHeaderExtractor(cfg: EngineConfig, profile: Pick<BankProfile, 'headerLabels' | 'dateOrder'>): HeaderExtractor {
   const labelField = new Map<string, HeaderField>();
   const labels: Array<{ label: string; field: HeaderField }> = [];
@@ -212,9 +230,13 @@ export function compileHeaderExtractor(cfg: EngineConfig, profile: Pick<BankProf
         break;
       }
       case 'currency': {
-        const code = /(?<![A-Za-z])[A-Z]{3}(?![A-Za-z])/.exec(value.toUpperCase())?.[0];
-        if (code) set('currency', code);
-        else if (/₮|төг|tug/i.test(value)) set('currency', 'MNT');
+        // M12: өөр валют (эсвэл хоёр өөр валют) ч бай хэзээ ч чимээгүй MNT болгохгүй — pipeline UNSUPPORTED_CURRENCY-оор зогсооно
+        const codes = currencyCodes(value);
+        const current = target.currency;
+        if (codes.length > 1 || (codes[0] !== undefined && current !== null && current !== codes[0])) {
+          warnings.add(PARSE_WARNING.CURRENCY_MIXED, 'Statement prints more than one currency', where.page, where.line);
+        }
+        if (codes[0] !== undefined) set('currency', codes[0]);
         break;
       }
       case 'openingBalance':

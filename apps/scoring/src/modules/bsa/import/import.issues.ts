@@ -21,10 +21,12 @@ export type PipelineIssueCode =
   | 'FILE_MISSING'
   | 'AGGREGATION_FAILED'
   | 'HOLDER_UNVERIFIED'
-  | 'ROWS_SKIPPED_DUPLICATE';
+  | 'ROWS_SKIPPED_DUPLICATE'
+  | 'UNSUPPORTED_CURRENCY';
 
 export const PIPELINE_MESSAGES: Readonly<Record<PipelineIssueCode, string>> = {
   BANK_NOT_DETECTED: 'Хуулгын банкийг таньж чадсангүй. Банкаа гараар сонгоод дахин оруулна уу.',
+  UNSUPPORTED_CURRENCY: 'Зөвхөн төгрөгийн (MNT) хуулгыг шинжилнэ. Валютын ханшийн эх сурвалж тодорхойлогдоогүй тул өөр валютын дүнг төгрөгт нэмэхгүй — төгрөгийн дансны хуулга оруулна уу.',
   BANK_AMBIGUOUS: 'Хуулга хэд хэдэн банктай төстэй байна. Банкаа гараар сонгоод дахин оруулна уу.',
   TOO_MANY_ROWS: 'Хуулгын гүйлгээний тоо зөвшөөрөгдсөн хязгаараас хэтэрсэн байна. Хуулгыг хэсэгчлэн хуваан оруулна уу.',
   IMPORT_TIMEOUT: 'Хуулгыг боловсруулах хугацаа хэтэрлээ. Файлыг жижиглэж эсвэл дахин оруулна уу.',
@@ -75,6 +77,7 @@ export const PARSE_WARNING_MESSAGES: Readonly<Record<string, string>> = {
   HEADER_FIELD_INVALID: 'Хуулгын толгойн зарим талбар буруу байна.',
   PERIOD_DERIVED: 'Хуулгын хугацааг гүйлгээний огнооноос тодорхойлов.',
   CURRENCY_ASSUMED: 'Валют хэвлэгдээгүй тул төгрөг гэж үзэв.',
+  CURRENCY_MIXED: 'Хуулгад өөр өөр валют хэвлэгдсэн байна.',
   TIME_MISSING: 'Зарим гүйлгээнд цаг байхгүй.',
   TIME_UNEXPECTED: 'Зарим гүйлгээний цаг хүлээгдэж байснаас өөр хэлбэртэй.',
   CONTINUATION_DROPPED: 'Үргэлжилсэн мөрийн зарим хэсгийг орхисон.',
@@ -166,3 +169,9 @@ export const UPLOAD_REJECT_MESSAGES: Readonly<Record<UploadRejectCode, string>> 
   INVALID_BANK: 'Сонгосон банк дэмжигдэхгүй байна.',
   INTERNAL_ERROR: 'Файлыг хүлээн авах үед системийн алдаа гарлаа. Дахин оролдоно уу.',
 };
+
+/** M12: төгрөгөөс өөр (эсвэл холимог) валюттай хуулга. Валютын код (3 латин үсэг) PII биш. */
+export function unsupportedCurrencyIssue(currency: string, mixed: boolean): ImportIssue {
+  const what = mixed ? 'Хуулгад өөр өөр валют хэвлэгдсэн байна' : `Хуулгын валют ${/^[A-Z]{3}$/.test(currency) ? currency : 'тодорхойгүй'}`;
+  return issue('UNSUPPORTED_CURRENCY', `${what}. ${PIPELINE_MESSAGES.UNSUPPORTED_CURRENCY}`, { severity: 'ERROR' });
+}
