@@ -6,7 +6,7 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "test": "vitest run --passWithNoTests",
-    "lint": "eslint src",
+    "lint": "eslint src test",
     "replay-dlq": "node dist/cli/replay-dlq.js"
   },
   "dependencies": {
