@@ -12,7 +12,7 @@ class OutboxRelayHost implements OnModuleInit, OnApplicationShutdown {
 
   onModuleInit(): void {
     if (!this.bus) { this.log.warn(`event bus disabled (no REDIS_URL / OUTBOX_RELAY=off): ${this.schema}.outbox will not be published`); return; }
-    this.relay = new OutboxRelay({ db: this.db, schema: this.schema, bus: this.bus, pollMs: Number(process.env.OUTBOX_POLL_MS ?? 500), log: (level, msg) => (level === 'error' ? this.log.error(msg) : this.log.log(msg)) });
+    this.relay = new OutboxRelay({ db: this.db, schema: this.schema, bus: this.bus, pollMs: Number(process.env.OUTBOX_POLL_MS ?? 500), log: (level, msg) => (level === 'error' ? this.log.error(msg) : level === 'warn' ? this.log.warn(msg) : this.log.log(msg)) });
     this.relay.start();
   }
   async onApplicationShutdown(): Promise<void> {

@@ -1,6 +1,8 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { ZodError } from 'zod';
+import { describeDbError } from '@los/database';
 import { getRequestContext } from '../context/request-context';
+import { DB_RETRY_AFTER_SECONDS, DB_UNAVAILABLE, DB_UNAVAILABLE_MESSAGE, isTransientDbError } from './db-errors';
 
 /** vitest/ESM ба CJS-ийн хоёр zod хуулбар зэрэг ачаалагдаж `instanceof` бүтэлгүйтэх тул нэрээр мөн таниулна. */
 const isZodError = (e: unknown): e is ZodError => e instanceof ZodError || (e instanceof Error && e.name === 'ZodError' && Array.isArray((e as { issues?: unknown }).issues));
@@ -24,7 +26,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     if (host.getType() !== 'http') throw exception;
-    const res = host.switchToHttp().getResponse<{ status(c: number): { json(b: unknown): void } }>();
+    const res = host.switchToHttp().getResponse<{ status(c: number): { json(b: unknown): void }; setHeader(n: string, v: string): void }>();
+    // M8: DB түр тасарсан → 503 + Retry-After (500 биш). Лог-д зөвхөн нэр/код — мессеж host/connection string агуулж болно.
+    if (isTransientDbError(exception)) {
+      this.logger.warn(`${DB_UNAVAILABLE}: ${describeDbError(exception)}`);
+      res.setHeader('Retry-After', String(DB_RETRY_AFTER_SECONDS));
+      res.status(503).json({ code: DB_UNAVAILABLE, message: DB_UNAVAILABLE_MESSAGE, correlationId: getRequestContext()?.correlationId ?? null } satisfies ErrorBody);
+      return;
+    }
     const { status, body } = this.toResponse(exception);
     if (status >= 500) this.logger.error(exception instanceof Error ? `${exception.name}: ${exception.message}` : String(exception), exception instanceof Error ? exception.stack : undefined);
     res.status(status).json(body);

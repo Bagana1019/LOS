@@ -3,6 +3,7 @@ export * from './auth/guards';
 export * from './auth/internal-secret';
 export * from './auth/scope';
 export * from './http/errors';
+export * from './http/db-errors';
 export * from './http/zod.pipe';
 export * from './logging/json-logger';
 export * from './health/health.module';

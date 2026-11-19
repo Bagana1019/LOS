@@ -1,4 +1,5 @@
-import { Global, Injectable, Module, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Global, Injectable, Logger, Module, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { connectPrismaWithRetry } from '@los/database';
 import { PrismaClient, type Prisma } from '.prisma/client-scoring';
 
 /** scoring сервисийн цорын ганц PrismaClient (schema: scoring). */
@@ -6,7 +7,8 @@ import { PrismaClient, type Prisma } from '.prisma/client-scoring';
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   // `query` лог ХЭЗЭЭ Ч идэвхжүүлэхгүй (параметрт PII/шифр текст орно, CLAUDE.md §6.5); errorFormat 'minimal' нь алдааны мессежид аргумент хэвлэхгүй.
   constructor() { super({ log: ['warn'], errorFormat: 'minimal' }); }
-  async onModuleInit() { await this.$connect(); }
+  // M8: DB түр унасан бол backoff-оор дахин холбогдоно (DB_CONNECT_MAX_WAIT_MS, анхдагч 60с); төсөв дуусвал bootstrap exit(1).
+  async onModuleInit() { await connectPrismaWithRetry(this, new Logger('Prisma')); }
   async onModuleDestroy() { await this.$disconnect(); }
 }
 export type Tx = Prisma.TransactionClient;
