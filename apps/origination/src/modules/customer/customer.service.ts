@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   CustomerInput, customerTypeOfRegister, normalizeRegisterNo,
   type CreateCustomerRequest, type CustomerApplicationRef, type CustomerCard, type CustomerLookup, type CustomerPage, type CustomerView, type RequestContext,
-  UpdateCustomerRequest, type XypFetchResult,
+  UpdateCustomerRequest, type XypCitizen, type XypFetchResult, type XypOtpResult,
 } from '@los/contracts';
 import { auditDiff, blindIndex, encryptedField, recordAudit } from '@los/database';
 import { DomainError, conflict, notFound, scopeWhere } from '@los/nest-common';
@@ -10,7 +10,9 @@ import { Prisma } from '.prisma/client-origination';
 import { PrismaService } from '../../prisma.service';
 import { BlacklistLookupService } from '../blacklist/blacklist-lookup.service';
 import { auditSnapshot, toRawInput, toSummary, toView } from './customer.mapper';
+import { claimConsentAttempt, recordConsentOutcome } from './xyp-consent';
 import { XYP_LOOKUP, type XypLookup } from './xyp-lookup';
+import { openXypSnapshot, sealXypSnapshot } from './xyp-snapshot';
 import { citizenPrefill, leafPaths, mergeXyp } from './xyp-mapper';
 
 export interface ListQuery { q?: string; registerNo?: string; customerType?: 'INDIVIDUAL' | 'LEGAL_ENTITY'; page: number; pageSize: number }
@@ -84,20 +86,49 @@ export class CustomerService {
   }
 
   // ── "ХУР-аас татах": хадгалахгүй, зөвхөн маягтыг бөглөх өгөгдөл ──
-  async xypFetch(ctx: RequestContext, registerNoRaw: string): Promise<XypFetchResult> {
+  /**
+   * Иргэний зөвшөөрөл, 1-р алхам: ХУР иргэний БҮРТГЭЛТЭЙ утсанд нэг удаагийн код илгээнэ (ажилтан утас сонгохгүй).
+   * Регистр тус бүрт 15 минутад 3 хүртэл (SMS бөмбөгдөлтөөс хамгаална); хүсэлт бүр аудитад (код, түүхий регистргүйгээр).
+   */
+  async xypRequestOtp(ctx: RequestContext, registerNoRaw: string): Promise<XypOtpResult> {
+    const registerNo = normalizeRegisterNo(registerNoRaw);
+    if (!customerTypeOfRegister(registerNo)) throw invalidRegister();
+    const [existing, warnings] = await Promise.all([this.findByRegister(ctx.orgId, registerNo), this.blacklist.warningsForRegisterNo(ctx.orgId, registerNo)]);
+    if (existing) return { sent: false, requestedAt: null, existing: toSummary(existing, warnings.length > 0), warnings }; // Дахин бүртгэхгүй — ХУР, SMS дуудахгүй.
+    await claimConsentAttempt(this.db, ctx, registerNo, 'XYP_OTP_REQUESTED'); // ХУР-аас ӨМНӨ: алдаатай / тодорхойгүй дуудлага ч тоологдоно
+    const { requestedAt } = await this.xyp.requestOtp(ctx, registerNo);
+    return { sent: true, requestedAt, existing: null, warnings };
+  }
+
+  /**
+   * Иргэний зөвшөөрөл, 2-р алхам: иргэний утсанд ирсэн кодоор иргэний мэдээлэл татна. Регистр тус бүрт 15 минутад 5 оролдлого (кодыг таахаас хамгаална).
+   * Код нэг удаагийнх тул `source=XYP`-ээр үүсгэхэд ХУР-ыг дахин дуудахгүй: энд битүүмжилсэн тэмдэг (`snapshotToken`) буцааж, `create` нээнэ.
+   */
+  async xypFetch(ctx: RequestContext, registerNoRaw: string, otp: string): Promise<XypFetchResult> {
     const registerNo = normalizeRegisterNo(registerNoRaw);
     const customerType = customerTypeOfRegister(registerNo);
     if (!customerType) throw invalidRegister();
     const [existing, warnings] = await Promise.all([this.findByRegister(ctx.orgId, registerNo), this.blacklist.warningsForRegisterNo(ctx.orgId, registerNo)]);
     if (existing) { // Дахин бүртгэхгүй — гадаад ХУР-ыг дуудахгүй.
-      return { registerNo, customerType, fetchedAt: null, prefill: {}, prefilledFields: [], missing: [], existing: toSummary(existing, warnings.length > 0), warnings };
+      return { registerNo, customerType, fetchedAt: null, prefill: {}, prefilledFields: [], missing: [], existing: toSummary(existing, warnings.length > 0), warnings, snapshotToken: null };
     }
-    const citizen = await this.xyp.fetchCitizen(ctx, registerNo);
+    await claimConsentAttempt(this.db, ctx, registerNo, 'XYP_OTP_VERIFY_ATTEMPTED');
+    let citizen: XypCitizen;
+    try {
+      citizen = await this.xyp.fetchCitizen(ctx, registerNo, otp);
+    } catch (e) {
+      if (e instanceof DomainError && e.code === 'XYP_OTP_INVALID') await recordConsentOutcome(this.db, ctx, registerNo, 'XYP_OTP_REJECTED');
+      throw e;
+    }
+    await recordConsentOutcome(this.db, ctx, registerNo, 'XYP_CITIZEN_FETCHED'); // иргэний зөвшөөрлийн нотолгоо: хэн, хэзээ, аль регистр
     const prefill = citizenPrefill(citizen);
     const parsed = CustomerInput.safeParse(prefill);
     // "ХУР-аас татсаны дараа зөвхөн дутууг асуух": дутсан заавал талбарын жагсаалт
     const missing = parsed.success ? [] : [...new Set(parsed.error.issues.map((i) => i.path.join('.')))];
-    return { registerNo, customerType, fetchedAt: citizen.fetchedAt, prefill, prefilledFields: leafPaths(prefill), missing, existing: null, warnings };
+    return {
+      registerNo, customerType, fetchedAt: citizen.fetchedAt, prefill, prefilledFields: leafPaths(prefill), missing, existing: null, warnings,
+      snapshotToken: sealXypSnapshot(ctx, registerNo, citizen, Date.now()),
+    };
   }
 
   // ── Үүсгэх ──
@@ -105,14 +136,15 @@ export class CustomerService {
     const registerNo = req.registerNo;
     const inferred = customerTypeOfRegister(registerNo);
     if (!inferred) throw invalidRegister();
-    const { source, ...fields } = req;
+    const { source, xypSnapshotToken, ...fields } = req;
     const dup = await this.findByRegister(ctx.orgId, registerNo);
     if (dup) throw this.exists(dup.id); // ХУР дуудахаас өмнө
 
     let raw: Record<string, unknown> = { ...fields, customerType: fields.customerType ?? inferred };
     let xypFetchedAt: Date | null = null;
     if (source === 'XYP') {
-      const citizen = await this.xyp.fetchCitizen(ctx, registerNo);
+      // Иргэний код нэг удаагийнх: ХУР-ыг дахин дуудахгүй, `xyp-fetch`-ийн битүүмжилсэн тэмдгийг нээнэ (өөр хэрэглэгч / регистр / хугацаа дууссан → 400 XYP_SNAPSHOT_INVALID).
+      const citizen = openXypSnapshot(ctx, registerNo, xypSnapshotToken, Date.now());
       raw = mergeXyp(raw as Omit<CreateCustomerRequest, 'source'>, citizen);
       xypFetchedAt = new Date(citizen.fetchedAt);
     }

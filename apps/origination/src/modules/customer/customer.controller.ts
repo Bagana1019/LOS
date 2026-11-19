@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import {
-  CUSTOMER_ACTION_UPDATE, CUSTOMER_TARGET_TYPE, CreateCustomerRequest, CustomerEditRequestBody, CustomerType, UpdateCustomerRequest, XypCitizenRequest, type RequestContext,
+  CUSTOMER_ACTION_UPDATE, CUSTOMER_TARGET_TYPE, CreateCustomerRequest, CustomerEditRequestBody, CustomerType, UpdateCustomerRequest, XypCitizenRequest, XypOtpRequest, type RequestContext,
 } from '@los/contracts';
 import { Ctx, Permissions, ZodValidationPipe } from '@los/nest-common';
 import { z } from 'zod';
@@ -31,8 +31,13 @@ export class CustomerController {
   @Permissions('customer:read') @Get('lookup')
   lookup(@Ctx() ctx: RequestContext, @Query(new ZodValidationPipe(LookupQuery)) q: z.infer<typeof LookupQuery>) { return this.customers.lookup(ctx, q.registerNo); }
 
+  /** FR-2.2 · иргэний зөвшөөрөл, 1-р алхам: ХУР иргэний БҮРТГЭЛТЭЙ утсанд нэг удаагийн код илгээнэ. Утасны дугаар хүлээн авахгүй (strict → 400). */
+  @Permissions('customer:write') @HttpCode(200) @Post('xyp-otp')
+  xypOtp(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(XypOtpRequest)) body: z.infer<typeof XypOtpRequest>) { return this.customers.xypRequestOtp(ctx, body.registerNo); }
+
+  /** FR-2.2 · 2-р алхам: иргэний кодоор ХУР-аас татаж маягтыг бөглөнө. Хариуны `snapshotToken`-ийг `POST /customers`-д (`source=XYP`) буцааж өгнө. */
   @Permissions('customer:write') @HttpCode(200) @Post('xyp-fetch')
-  xypFetch(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(XypCitizenRequest)) body: z.infer<typeof XypCitizenRequest>) { return this.customers.xypFetch(ctx, body.registerNo); }
+  xypFetch(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(XypCitizenRequest)) body: z.infer<typeof XypCitizenRequest>) { return this.customers.xypFetch(ctx, body.registerNo, body.otp); }
 
   @Permissions('customer:write') @Post()
   create(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(CreateCustomerRequest)) body: CreateCustomerRequest) { return this.customers.create(ctx, body); }

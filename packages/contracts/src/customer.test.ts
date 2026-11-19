@@ -113,6 +113,13 @@ describe('XYP citizen consent contracts', () => {
     expect(XypOtpRequest.safeParse({ registerNo: 'УБ90010112', otp: '123456' }).success).toBe(false);
   });
 
+  it('CreateCustomerRequest: xypSnapshotToken (ХУР-аас иргэний кодоор татсан мэдээллийн тэмдэг) заавал биш; хоосон / хэт урт бол татгалзана', () => {
+    expect(CreateCustomerRequest.parse({ registerNo: 'УБ90010112' }).xypSnapshotToken).toBeUndefined();
+    expect(CreateCustomerRequest.safeParse({ registerNo: 'УБ90010112', source: 'XYP', xypSnapshotToken: 'v1.t1.a.b.c' }).success).toBe(true);
+    expect(CreateCustomerRequest.safeParse({ registerNo: 'УБ90010112', xypSnapshotToken: '' }).success).toBe(false);
+    expect(CreateCustomerRequest.safeParse({ registerNo: 'УБ90010112', xypSnapshotToken: 'x'.repeat(16_385) }).success).toBe(false);
+  });
+
   it('XypOtpResponse: sent=true ба ISO requestedAt заавал', () => {
     expect(XypOtpResponse.safeParse({ sent: true, requestedAt: '2026-11-19T10:00:00.000Z' }).success).toBe(true);
     expect(XypOtpResponse.safeParse({ sent: false, requestedAt: '2026-11-19T10:00:00.000Z' }).success).toBe(false);
