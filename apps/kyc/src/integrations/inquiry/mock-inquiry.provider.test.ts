@@ -4,7 +4,7 @@ import { createInquiryProvider } from './inquiry-integration.module';
 import { InquiryUnavailableError } from './inquiry.provider';
 import { MockInquiryProvider, OVERDUE_REGISTER, UNAVAILABLE_REGISTER } from './mock-inquiry.provider';
 import { RealInquiryProvider } from './real-inquiry.provider';
-import { IntegrationNotImplementedError } from '../errors';
+import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../errors';
 
 const external = INQUIRY_SOURCES.filter((s) => s !== 'BLACKLIST');
 const p = new MockInquiryProvider();
@@ -70,6 +70,8 @@ describe('createInquiryProvider · INTEGRATION_MODE', () => {
     expect(createInquiryProvider({ INTEGRATION_MODE: 'mock' })).toBeInstanceOf(MockInquiryProvider);
     const real = createInquiryProvider({ INTEGRATION_MODE: 'real' });
     expect(real).toBeInstanceOf(RealInquiryProvider);
-    await expect(real.fetch('CIB', 'УБ90010112')).rejects.toBeInstanceOf(IntegrationNotImplementedError);
+    // CIB (SainScore) тохиргоогүй бол fail closed (IntegrationNotConfiguredError); SainScore-ээр хангагдахгүй эх сурвалж IntegrationNotImplementedError.
+    await expect(real.fetch('CIB', 'УБ90010112')).rejects.toBeInstanceOf(IntegrationNotConfiguredError);
+    await expect(real.fetch('FICO', 'УБ90010112')).rejects.toBeInstanceOf(IntegrationNotImplementedError);
   });
 });

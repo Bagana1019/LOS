@@ -109,6 +109,12 @@ describe('isInternalOnly (staff proxy blocks internal sync paths)', () => {
     // бусдын регистр/нэр буцаадаг лавлагаа: origination л дуудна
     for (const p of ['/api/kyc/xyp/assets', '/api/kyc/xyp/property', '/api/kyc/collateral-checks/encumbrance', '/api/valuation/valuate/vehicle-lookup']) expect(isInternalOnly(p)).toBe(true);
   });
+  // ХУР-ын иргэний зөвшөөрөл (нэг удаагийн код): регистр тус бүрийн хязгаар (SMS бөмбөгдөлт, кодыг таах) ба аудит origination-д (`customers/xyp-otp`, `xyp-fetch`).
+  // kyc-ийн замыг ажилтан шууд дуудвал эдгээр хамгаалалтыг тойрно.
+  it('kyc /xyp/citizen ба /xyp/citizen/otp нь origination-ийн хязгаар, аудитыг тойрох боломжгүйн тулд ажилтанд хаалттай; origination-ийн замууд нээлттэй', () => {
+    for (const p of ['/api/kyc/xyp/citizen', '/api/kyc/xyp/citizen/otp', '/api/KYC/XYP/Citizen/OTP', '/api/kyc//xyp/citizen/otp', '/api/kyc/xyp/citizen/']) expect(isInternalOnly(p), p).toBe(true);
+    for (const p of ['/api/origination/customers/xyp-otp', '/api/origination/customers/xyp-fetch']) expect(isInternalOnly(p), p).toBe(false);
+  });
   it('file upload, base prices and the owner-less auto-valuation stay open to staff', () => {
     expect(isInternalOnly('/api/dms/files')).toBe(false);
     expect(isInternalOnly('/api/dms/files/abc/content')).toBe(false);

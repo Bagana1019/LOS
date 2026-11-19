@@ -41,3 +41,12 @@ export function requireEnv(integration: string, names: string[], env: NodeJS.Pro
   if (missing.length) throw new IntegrationNotConfiguredError(integration, missing);
   return Object.fromEntries(names.map((n) => [n, env[n] as string]));
 }
+
+/**
+ * Phase 5: NODE_ENV=production + real горимд шаардлагатай env-ийг bootstrap-д НЭГ удаа шалгана (assertInternalAuthSecret-ийн загвар).
+ * Алдаа зөвхөн хувьсагчийн нэрийг заана — утгыг хэзээ ч оруулахгүй. Production биш үед юу ч хийхгүй: тэнд дуудлага бүр IntegrationNotConfiguredError-аар fail-closed хэвээр.
+ */
+export function assertRealIntegrationEnv(name: string, requiredNames: string[], env: NodeJS.ProcessEnv = process.env): void {
+  if (!isProduction(env) || resolveIntegrationMode(name, env) !== 'real') return;
+  requireEnv(name, requiredNames, env);
+}

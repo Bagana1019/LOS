@@ -25,12 +25,16 @@ test('жагсаалт нээгдэнэ (404 биш) ба «Харилцагч �
   expect(guard.problems).toEqual([]);
 });
 
-test('шинэ харилцагч: регистр → ХУР → дутууг бөглөх → бүртгэх → карт', async ({ page }) => {
+// ХУР иргэний зөвшөөрөл: регистр → иргэний утсанд код → кодоор татах → (битүүмжилсэн тэмдэгтэй) бүртгэх. Mock горимын demo код 123456.
+const XYP_TOKEN = 'v1.t1.AAAA.BBBB.CCCC';
+
+test('шинэ харилцагч: регистр → иргэний код → ХУР → дутууг бөглөх → бүртгэх → карт', async ({ page }) => {
   const api = new MockApi('OFFICER');
   await api.install(page);
+  api.on('POST', '/customers/xyp-otp', { json: { sent: true, requestedAt: new Date().toISOString(), existing: null, warnings: [] } });
   api.on('POST', '/customers/xyp-fetch', {
     json: {
-      registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', fetchedAt: '2026-11-03T00:00:00.000Z', existing: null, warnings: [],
+      registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', fetchedAt: '2026-11-03T00:00:00.000Z', existing: null, warnings: [], snapshotToken: XYP_TOKEN,
       prefill: { lastName: 'Болд', firstName: 'Бат', birthDate: '1990-01-01', maritalStatus: 'MARRIED', familySize: 3, officialAddress: addr, activitySector: 'Худалдаа' },
       prefilledFields: ['lastName', 'firstName'], missing: ['phone', 'email'],
     },
@@ -41,6 +45,8 @@ test('шинэ харилцагч: регистр → ХУР → дутууг б
   await page.goto('/customer/new');
   await page.getByTestId('customer-register').fill('уб90010112');
   await page.getByTestId('customer-check').click();
+  await page.getByTestId('xyp-otp-input').fill('123456');
+  await page.getByTestId('xyp-otp-submit').click();
   await expect(page.getByTestId('customer-submit')).toBeVisible();
 
   // Дутуу бол алдаа гарч, сервер рүү дуудлага явахгүй
@@ -65,16 +71,19 @@ test('шинэ харилцагч: регистр → ХУР → дутууг б
 
   await expect(page).toHaveURL(new RegExp(`/customer/${ID}$`));
   const sent = api.lastCall('POST', '/customers')?.body as Record<string, unknown>;
-  expect(sent).toMatchObject({ registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', source: 'XYP', phone: '99112233', photoFileId: '33333333-3333-4333-8333-333333333333' });
+  expect(api.lastCall('POST', '/customers/xyp-otp')?.body).toEqual({ registerNo: 'УБ90010112' }); // утасны дугаар явахгүй
+  expect(api.lastCall('POST', '/customers/xyp-fetch')?.body).toEqual({ registerNo: 'УБ90010112', otp: '123456' });
+  expect(sent).toMatchObject({ xypSnapshotToken: XYP_TOKEN, registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', source: 'XYP', phone: '99112233', photoFileId: '33333333-3333-4333-8333-333333333333' });
   await expect(page.getByText('Харилцагчийн карт').or(page.getByText('Өмнөх зээлийн түүх'))).toBeVisible();
 });
 
 test('ХУР-аас татахад ургийн овог, иргэний бүртгэлийн дугаар гарна; холбоо барих хүний гэрийн хаяг 4 түвшинтэй', async ({ page }) => {
   const api = new MockApi('OFFICER');
   await api.install(page);
+  api.on('POST', '/customers/xyp-otp', { json: { sent: true, requestedAt: new Date().toISOString(), existing: null, warnings: [] } });
   api.on('POST', '/customers/xyp-fetch', {
     json: {
-      registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', fetchedAt: '2026-11-03T00:00:00.000Z', existing: null, warnings: [],
+      registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', fetchedAt: '2026-11-03T00:00:00.000Z', existing: null, warnings: [], snapshotToken: XYP_TOKEN,
       prefill: { lastName: 'Болд', clanName: 'Боржигин', civilId: '1234567890', firstName: 'Бат', birthDate: '1990-01-01', officialAddress: addr, activitySector: 'Худалдаа', segment: 'Жижиглэн' },
       prefilledFields: ['lastName', 'clanName', 'civilId', 'firstName', 'activitySector', 'segment'], missing: ['phone'],
     },
@@ -82,6 +91,8 @@ test('ХУР-аас татахад ургийн овог, иргэний бүр�
   await page.goto('/customer/new');
   await page.getByTestId('customer-register').fill('уб90010112');
   await page.getByTestId('customer-check').click();
+  await page.getByTestId('xyp-otp-input').fill('123456');
+  await page.getByTestId('xyp-otp-submit').click();
   await expect(page.locator('#clanName')).toHaveValue('Боржигин');
   await expect(page.locator('#civilId')).toHaveValue('1234567890');
   await expect(page.locator('#activitySector')).toHaveValue('Худалдаа');

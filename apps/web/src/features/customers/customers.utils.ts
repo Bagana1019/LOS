@@ -1,4 +1,4 @@
-import { CustomerInput } from '@los/contracts';
+import { CustomerInput, XypOtpCode, type CustomerType, type XypFetchResult, type XypOtpResult } from '@los/contracts';
 
 /** Хоосон мөр / null / хоосон объект / хоосон массивыг хасна: сервер `""`-г "оруулаагүй" гэж ойлгодог ч бүтэн объект (хаяг, хөдөлмөр) хагас хоосон байж болохгүй. */
 export function pruneEmpty(value: unknown): unknown {
@@ -85,6 +85,29 @@ export function canEditCustomer(
   if (!me || !me.permissions.includes('customer:write')) return { editable: false, reason: 'NO_PERMISSION' };
   if (customer.branchId !== null && customer.branchId !== me.user.branchId) return { editable: false, reason: 'OTHER_BRANCH' };
   return { editable: true, reason: null };
+}
+
+// ── ХУР: иргэний зөвшөөрөл (иргэний ХУР-д бүртгэлтэй утсанд ирсэн нэг удаагийн код) ──
+
+/** Кодыг дахин хүсэх товчийн UI хүлээлт. ЗӨВХӨН сэнхрүүлэх; жинхэнэ хязгаар (регистр тус бүрт 15 минутад 3) сервер дээр. */
+export const XYP_OTP_RESEND_COOLDOWN_SEC = 60;
+
+/** Буулгасан "123 456" / "12-34-56"-аас зөвхөн цифр үлдээж `XypOtpCode`-ын дээд урт (8)-д таслана. */
+export const normalizeOtpInput = (raw: string): string => raw.replace(/\D/g, '').slice(0, 8);
+
+/** Кодын дүрэм нь серверийн (contracts) `XypOtpCode`-той ижил — нэг эх сурвалж. */
+export const isValidXypOtp = (code: string): boolean => XypOtpCode.safeParse(code).success;
+
+/** Харилцагч аль хэдийн бүртгэлтэй (код илгээгдээгүй, ХУР дуудагдаагүй) үед `xyp-otp`-ийн хариуг маягтын `XypFetchResult` хэлбэрт оруулна. */
+export function xypOtpToFetchResult(otp: XypOtpResult, registerNo: string, customerType: CustomerType): XypFetchResult {
+  return { registerNo, customerType, fetchedAt: null, prefill: {}, prefilledFields: [], missing: [], existing: otp.existing, warnings: otp.warnings, snapshotToken: null };
+}
+
+/** Кодыг илгээснээс хойш «дахин авах» товч идэвхжих хүртэлх үлдсэн секунд (дээш бөөнжүүлнэ); огноо байхгүй / буруу бол 0. */
+export function otpResendRemainingSec(requestedAt: string | null, nowMs: number, cooldownSec: number = XYP_OTP_RESEND_COOLDOWN_SEC): number {
+  const at = requestedAt ? Date.parse(requestedAt) : Number.NaN;
+  if (Number.isNaN(at)) return 0;
+  return Math.max(0, Math.ceil((at + cooldownSec * 1000 - nowMs) / 1000));
 }
 
 /** Сервер (`xyp-mapper` AUTHORITATIVE) ХУР-ын утгыг эрх бүхий гэж үздэг талбарууд — өөр утга илгээвэл 400 `XYP_FIELD_READONLY`. */

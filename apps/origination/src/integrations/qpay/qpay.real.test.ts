@@ -184,19 +184,62 @@ describe('RealQPayClient — токен', () => {
 });
 
 describe('RealQPayClient — дахин оролдлого ба timeout', () => {
-  it('5xx-д exponential backoff-оор 2 удаа дахин оролдоно (нийт 3 дуудлага), дараа нь амжилттай', async () => {
-    const h = harness({ 'POST /auth/token': () => token(), 'POST /invoice': [() => json(503, {}), () => json(500, {}), okInvoice] });
-    const inv = await h.client.createInvoice(req);
-    expect(inv.providerInvoiceId).toBe('INV-123');
-    expect(h.count('POST /invoice')).toBe(3);
+  // Дахин оролдлого зөвхөн idempotent дуудлагад: payment/check (унших), DELETE /invoice, токен.
+  it('idempotent дуудлага (payment/check): 5xx-д exponential backoff-оор 2 удаа дахин оролдоно (нийт 3 дуудлага), дараа нь амжилттай', async () => {
+    const h = harness({ 'POST /auth/token': () => token(), 'POST /payment/check': [() => json(503, {}), () => json(500, {}), () => json(200, { rows: [] })] });
+    expect(await h.client.checkInvoice(ref)).toEqual({ paid: false, payments: [] });
+    expect(h.count('POST /payment/check')).toBe(3);
     expect(h.sleeps).toEqual([300, 600]);
   });
 
   it('3 дахь оролдлого ч 5xx бол ProviderUnavailableError', async () => {
-    const h = harness({ 'POST /auth/token': () => token(), 'POST /invoice': () => json(502, {}) });
-    await expect(h.client.createInvoice(req)).rejects.toBeInstanceOf(ProviderUnavailableError);
-    expect(h.count('POST /invoice')).toBe(3);
+    const h = harness({ 'POST /auth/token': () => token(), 'POST /payment/check': () => json(502, {}) });
+    await expect(h.client.checkInvoice(ref)).rejects.toBeInstanceOf(ProviderUnavailableError);
+    expect(h.count('POST /payment/check')).toBe(3);
     expect(h.sleeps).toEqual([300, 600]);
+  });
+
+  // POST /invoice нь idempotent гэдгийг баталсан баримт байхгүй (sender_invoice_no-ийн давхардлыг QPay хэрхэн авдаг нь тодорхойгүй) → дахин илгээхгүй.
+  it('createInvoice 5xx: дахин илгээхгүй (1 дуудлага, sleep үгүй) → ProviderUnavailableError', async () => {
+    const h = harness({ 'POST /auth/token': () => token(), 'POST /invoice': [() => json(503, {}), okInvoice] });
+    await expect(h.client.createInvoice(req)).rejects.toBeInstanceOf(ProviderUnavailableError);
+    expect(h.count('POST /invoice')).toBe(1);
+    expect(h.sleeps).toEqual([]);
+  });
+
+  it('createInvoice сүлжээний алдаа: дахин илгээхгүй', async () => {
+    const h = harness({ 'POST /auth/token': () => token(), 'POST /invoice': [() => new TypeError('fetch failed'), okInvoice] });
+    await expect(h.client.createInvoice(req)).rejects.toBeInstanceOf(ProviderUnavailableError);
+    expect(h.count('POST /invoice')).toBe(1);
+  });
+
+  it('createInvoice timeout: нэг удаа таслаад дахин илгээхгүй', async () => {
+    let invoiceCalls = 0;
+    const fetchImpl = ((url: string, init?: RequestInit) => {
+      if (url.endsWith('/auth/token')) return Promise.resolve(token());
+      invoiceCalls++;
+      return new Promise((_resolve, reject) => init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))));
+    }) as unknown as typeof fetch;
+    const sleeps: number[] = [];
+    const client = new RealQPayClient({ env: ENV, fetchImpl, sleep: async (ms) => { sleeps.push(ms); }, timeoutMs: 20 });
+    await expect(client.createInvoice(req)).rejects.toBeInstanceOf(ProviderUnavailableError);
+    expect(invoiceCalls).toBe(1);
+    expect(sleeps).toEqual([]);
+  });
+
+  it('createInvoice: нэвтрэлтийн endpoint 5xx-г дахин оролдоно (нэхэмжлэх илгээгдээгүй тул аюулгүй), нэхэмжлэх нэг л удаа явна', async () => {
+    const h = harness({ 'POST /auth/token': [() => json(500, {}), () => token()], 'POST /invoice': okInvoice });
+    await h.client.createInvoice(req);
+    expect(h.count('POST /auth/token')).toBe(2);
+    expect(h.count('POST /invoice')).toBe(1);
+    expect(h.sleeps).toEqual([300]);
+  });
+
+  it('createInvoice: 401 (боловсруулаагүй) → дахин нэвтэрч нэг удаа дахин илгээнэ', async () => {
+    const h = harness({ 'POST /auth/token': [() => token(3600, 'T1'), () => token(3600, 'T2')], 'POST /invoice': [() => json(401, {}), okInvoice] });
+    await h.client.createInvoice(req);
+    expect(h.count('POST /invoice')).toBe(2);
+    expect(h.count('POST /auth/token')).toBe(2);
   });
 
   it('сүлжээний алдаа (fetch throw) дахин оролдогдоно', async () => {
@@ -272,6 +315,22 @@ describe('RealQPayClient — checkInvoice', () => {
     const h = harness({ 'POST /auth/token': () => token(), 'POST /payment/check': () => json(200, { rows: [{ payment_id: 1, payment_status: 'PAID', payment_date: '2026-10-28 11:15:00', payment_amount: 10 }] }) });
     const res = await h.client.checkInvoice(ref);
     expect(res.payments[0].paidAt.toISOString()).toBe('2026-10-28T03:15:00.000Z');
+  });
+
+  // Python лавлагаа: хуудаснаас олон мөр байвал (count > page_limit) төлөгдсөн нэхэмжлэхийг төлөгдөөгүй гэж буруу мэдээлэхгүй.
+  it('count > page_limit (100): таслагдсан хуудас → ProviderUnavailableError, хэзээ ч paid=false биш', async () => {
+    const h = harness({ 'POST /auth/token': () => token(), 'POST /payment/check': () => json(200, { count: 101, rows: [{ payment_id: 1, payment_status: 'NEW' }] }) }, { maxRetries: 0 });
+    const err = await h.client.checkInvoice(ref).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderUnavailableError);
+    expect(err.message).toContain('100');
+  });
+
+  it('count == page_limit (100) хүртэл хэвийн; count тоо биш бол үл тооно', async () => {
+    const rows = [{ payment_id: 7, payment_status: 'PAID', payment_amount: 10 }];
+    const at = harness({ 'POST /auth/token': () => token(), 'POST /payment/check': () => json(200, { count: 100, rows }) });
+    expect((await at.client.checkInvoice(ref)).paid).toBe(true);
+    const odd = harness({ 'POST /auth/token': () => token(), 'POST /payment/check': () => json(200, { count: 'many', rows }) });
+    expect((await odd.client.checkInvoice(ref)).paid).toBe(true);
   });
 
   it('төлөгдөөгүй: paid=false, payments хоосон; rows байхгүй ч алдаагүй', async () => {

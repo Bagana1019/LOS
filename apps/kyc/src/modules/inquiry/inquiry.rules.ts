@@ -1,11 +1,24 @@
 // FR-3 · Цэвэр дүрмүүд (DB-гүй, unit тесттэй).
-import { INQUIRY_SOURCES, type CreditHistorySummary, type InquiryBlacklistResult, type InquiryRecord, type InquiryWarningLevel, type UnregisteredLoan } from '@los/contracts';
-import type { ProviderResult } from '../../integrations/inquiry/inquiry.provider';
+import { INQUIRY_SOURCES, type CreditHistorySummary, type InquiryBlacklistResult, type InquiryFetchFailure, type InquiryRecord, type InquiryWarningLevel, type UnregisteredLoan } from '@los/contracts';
+import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../../integrations/errors';
+import { InquiryRejectedError, InquiryUnavailableError, type ProviderResult } from '../../integrations/inquiry/inquiry.provider';
 
 const DAY_MS = 86_400_000;
 
 /** FR-3.5 · expires_at = fetched_at + stale_days. */
 export const expiresAt = (fetchedAt: Date, staleDays: number): Date => new Date(fetchedAt.getTime() + staleDays * DAY_MS);
+
+/**
+ * Provider-ийн алдааг эх сурвалж тус бүрийн failure болгоно — нэг эх сурвалжийн алдаа бусдыг зогсоохгүй.
+ * Танигдаагүй алдаа → null (дуудагч дахин шиднэ). Мессеж хэрэглэгчид харагдана: env-ийн нэр, нууц, хувийн мэдээлэл оруулахгүй.
+ */
+export function inquiryFailureFrom(source: InquiryFetchFailure['source'], e: unknown): InquiryFetchFailure | null {
+  if (e instanceof InquiryUnavailableError) return { source, code: 'INQUIRY_UNAVAILABLE', message: e.message };
+  if (e instanceof InquiryRejectedError) return { source, code: e.vendorCode === 'CONTACT_REQUIRED' ? 'CONTACT_REQUIRED' : 'INQUIRY_REJECTED', message: e.message };
+  if (e instanceof IntegrationNotImplementedError) return { source, code: 'INTEGRATION_NOT_IMPLEMENTED', message: 'Бодит холболт хараахан хийгдээгүй (INTEGRATION_MODE=mock)' };
+  if (e instanceof IntegrationNotConfiguredError) return { source, code: 'INTEGRATION_NOT_CONFIGURED', message: 'Бодит холболтын тохиргоо дутуу байна (администраторт мэдэгдэнэ үү)' };
+  return null;
+}
 
 /** FR-3.4 · хар жагсаалт: олдвол RED анхааруулга (хориг БИШ — BR-9). */
 export function blacklistInquiry(bl: InquiryBlacklistResult): ProviderResult {
@@ -38,10 +51,12 @@ export function creditHistoryFrom(latest: ReadonlyArray<Pick<InquiryRecord, 'sou
   const fico = latest.find((r) => r.source === 'FICO')?.summary;
   const unregistered = loans.reduce((s, l) => s + l.monthlyPayment, 0);
   const cibMonthly = num(cib?.monthly_payment);
+  // CIB-ийн сарын төлбөр ДУТУУ (FX зээл, задлагдаагүй мөр …) гэж тэмдэглэгдсэн бол дүн ӨГӨХГҮЙ: null = мэдэгдэхгүй → underwriting зогсоно, дутуу дүнгээр чадавхийг хэтрүүлэхгүй.
+  const cibIncomplete = cib?.payment_complete === false;
   return {
     ficoScore: num(fico?.fico_score),
     activeLoanCount: num(cib?.active_loan_count),
     overdueHistoryMonths: num(cib?.overdue_months),
-    existingDebtServiceMonthly: cibMonthly === null && loans.length === 0 ? null : Math.round(((cibMonthly ?? 0) + unregistered) * 100) / 100,
+    existingDebtServiceMonthly: cibIncomplete || (cibMonthly === null && loans.length === 0) ? null : Math.round(((cibMonthly ?? 0) + unregistered) * 100) / 100,
   };
 }

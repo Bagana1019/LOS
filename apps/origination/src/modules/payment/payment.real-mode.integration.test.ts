@@ -91,12 +91,17 @@ describe.skipIf(!hasTestDb)('payment: Real QPay (fetch stub) — бүтэн ур
     expect((await env.t.prisma.paymentInvoice.findUniqueOrThrow({ where: { id: view.id } })).status).toBe('PAID');
   });
 
-  it('5xx-ээр 2 удаа амжилтгүй болоод 3 дахь оролдлогоор invoice үүснэ (нэг л мөр)', async () => {
+  // Phase 5: POST /invoice idempotent биш → 5xx-д автоматаар дахин илгээхгүй (давхар нэхэмжлэх); хэрэглэгч дахин оролдоход нэг л нэхэмжлэх үүснэ.
+  it('5xx: POST /invoice дахин илгээгдэхгүй → 502, DB цэвэр; дараагийн хүсэлтээр нэг л invoice үүснэ', async () => {
     const { app } = await seedLoan(env);
-    server.failures.invoice = 2;
-    const res = await create({ applicationId: app.id, provider: 'QPAY', amount: 30_000 });
-    expect(res.status).toBe(201);
-    expect(server.log.filter((l) => l === 'POST /invoice')).toHaveLength(3);
+    server.failures.invoice = 1;
+    const first = await create({ applicationId: app.id, provider: 'QPAY', amount: 30_000 });
+    expect(first.status).toBe(502);
+    expect(server.log.filter((l) => l === 'POST /invoice')).toHaveLength(1);
+    expect(await env.t.prisma.paymentInvoice.count()).toBe(0);
+    const second = await create({ applicationId: app.id, provider: 'QPAY', amount: 30_000 });
+    expect(second.status).toBe(201);
+    expect(server.invoices.size).toBe(1);
     expect(await env.t.prisma.paymentInvoice.count()).toBe(1);
   });
 
@@ -106,6 +111,7 @@ describe.skipIf(!hasTestDb)('payment: Real QPay (fetch stub) — бүтэн ур
     const res = await create({ applicationId: app.id, provider: 'QPAY', amount: 30_000 });
     expect(res.status).toBe(502);
     expect(res.body).toMatchObject({ code: 'PROVIDER_UNAVAILABLE' });
+    expect(server.log.filter((l) => l === 'POST /invoice')).toHaveLength(1); // non-idempotent: дахин илгээгээгүй
     expect(await env.t.prisma.paymentInvoice.count()).toBe(0);
   });
 

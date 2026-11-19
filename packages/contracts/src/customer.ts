@@ -104,7 +104,11 @@ export type CustomerInputRaw = z.input<typeof CustomerInput>;
 
 /** POST /customers: хэсэгчилсэн — `source=XYP` үед ХУР-ийн талбарыг сервер өөрөө нөхнө, дараа нь `CustomerInput`-аар бүрэн шалгана. */
 export const CustomerSource = ['MANUAL', 'XYP'] as const;
-export const CreateCustomerRequest = CustomerFieldsShape.partial().required({ registerNo: true }).extend({ source: z.enum(CustomerSource).default('MANUAL') });
+export const CreateCustomerRequest = CustomerFieldsShape.partial().required({ registerNo: true }).extend({
+  source: z.enum(CustomerSource).default('MANUAL'),
+  /** `source=XYP` үед заавал: `POST /customers/xyp-fetch`-ийн `snapshotToken`. Иргэний код нэг удаагийнх тул сервер ХУР-ыг дахин дуудахгүй, энэ тэмдгийг нээж ХУР-ын мэдээллийг авна. */
+  xypSnapshotToken: z.string().min(1).max(16_384).optional(),
+});
 export type CreateCustomerRequest = z.infer<typeof CreateCustomerRequest>;
 
 /** PUT /customers/:id: өгсөн талбарыг л солино (регистр, төрөл өөрчлөгдөхгүй). `contacts` өгвөл жагсаалтыг бүхэлд нь солино. */
@@ -161,7 +165,18 @@ export interface CustomerCard extends CustomerView { applications: CustomerAppli
 export interface CustomerLookup { registerNo: string; customerType: CustomerType | null; exists: boolean; customer: CustomerSummary | null; warnings: BlacklistWarning[] }
 
 // ── ХУР (kyc `POST /api/xyp/citizen`) ──
-export const XypCitizenRequest = z.object({ registerNo: z.string().trim().min(1).transform(normalizeRegisterNo) });
+/**
+ * Иргэний зөвшөөрөл: ХУР иргэний БҮРТГЭЛТЭЙ утсанд нэг удаагийн код (OTP) илгээнэ (WS100008), иргэн кодоо өгсний дараа л лавлагаа (WS100101 `auth.citizen.otp`) хийгдэнэ.
+ * Урт 4–8 цифр: ТААМАГЛАЛ (gsb «6 оронтой» гэж тэмдэглэсэн, vendor int-ээр хүлээн авдаг); бодит WSDL-ээр баталгаажуулна (docs/DECISIONS.md).
+ */
+export const XypOtpCode = z.string().trim().regex(/^\d{4,8}$/);
+const XypRegisterNo = z.string().trim().min(1).transform(normalizeRegisterNo);
+/** Кодыг ХУР-аас хүсэх. Утасны дугаар ЗОРИУД байхгүй (strict): код зөвхөн иргэний бүртгэлтэй утсанд очно — ажилтан өөр утас руу чиглүүлж болохгүй. */
+export const XypOtpRequest = z.object({ registerNo: XypRegisterNo }).strict();
+export const XypOtpResponse = z.object({ sent: z.literal(true), requestedAt: z.string().datetime() });
+export type XypOtpResponse = z.infer<typeof XypOtpResponse>;
+/** Иргэний мэдээлэл татах: код заавал (кодгүй дуудлага ХУР руу явахгүй). */
+export const XypCitizenRequest = z.object({ registerNo: XypRegisterNo, otp: XypOtpCode });
 export const XypCitizen = z.object({
   registerNo: z.string(), customerType: z.enum(CustomerType),
   lastName: z.string().nullable(), firstName: z.string(),
@@ -181,4 +196,12 @@ export interface XypFetchResult {
   fetchedAt: string | null;
   prefill: Partial<CustomerInputRaw>; prefilledFields: string[]; missing: string[];
   existing: CustomerSummary | null; warnings: BlacklistWarning[];
+  /** ХУР-аас татсан мэдээллийн битүүмжилсэн тэмдэг: `POST /customers` (`source=XYP`)-д `xypSnapshotToken` болгон буцаана. Харилцагч бүртгэлтэй (ХУР дуудаагүй) бол null. */
+  snapshotToken: string | null;
 }
+
+/**
+ * `POST /customers/xyp-otp` — иргэний зөвшөөрөл, 1-р алхам. Код ЗӨВХӨН иргэний ХУР-д бүртгэлтэй утсанд очно (ажилтан утас сонгохгүй).
+ * Харилцагч аль хэдийн бүртгэлтэй бол ХУР / SMS дуудахгүй: `sent=false`, `existing` харна.
+ */
+export interface XypOtpResult { sent: boolean; requestedAt: string | null; existing: CustomerSummary | null; warnings: BlacklistWarning[] }

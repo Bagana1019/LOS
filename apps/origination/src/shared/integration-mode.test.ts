@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { IntegrationNotConfiguredError, isProduction, requireEnv, resolveIntegrationMode, unsetIfBlank } from './integration-mode';
+import { assertRealIntegrationEnv, IntegrationNotConfiguredError, isProduction, requireEnv, resolveIntegrationMode, unsetIfBlank } from './integration-mode';
 
 const messageOf = (fn: () => unknown): string => {
   try { fn(); } catch (e) { return (e as Error).message; }
@@ -108,6 +108,44 @@ describe('resolveIntegrationMode (H3: production must choose explicitly)', () =>
     expect(() => resolveIntegrationMode('qpay')).toThrow(/must be set explicitly/);
     vi.stubEnv('INTEGRATION_MODE', 'real');
     expect(resolveIntegrationMode('qpay')).toBe('real');
+  });
+});
+
+// Phase 5: production + real горимд шаардлагатай env-ийг хүсэлт бүрт биш, bootstrap-д нэг удаа шалгана (assertInternalAuthSecret-ийн загвар).
+describe('assertRealIntegrationEnv', () => {
+  const NAMES = ['X_USER', 'X_PASS'];
+  const FULL = { ...PROD, INTEGRATION_MODE: 'real', X_USER: 'u-secret', X_PASS: 'p-secret' };
+
+  it('does nothing outside production, even in real mode with missing env (per-call fail-closed stays)', () => {
+    expect(() => assertRealIntegrationEnv('x', NAMES, { INTEGRATION_MODE: 'real' })).not.toThrow();
+    expect(() => assertRealIntegrationEnv('x', NAMES, { NODE_ENV: 'staging', INTEGRATION_MODE: 'real' })).not.toThrow();
+  });
+
+  it('does nothing in production when the mode is an explicit mock', () => {
+    expect(() => assertRealIntegrationEnv('x', NAMES, { ...PROD, INTEGRATION_MODE: 'mock' })).not.toThrow();
+  });
+
+  it('passes in production + real when every variable is set', () => {
+    expect(() => assertRealIntegrationEnv('x', NAMES, FULL)).not.toThrow();
+  });
+
+  it.each([['unset', undefined], ['empty', ''], ['whitespace only', '   ']])('refuses to start in production + real when a variable is %s, naming it but never a value', (_label, value) => {
+    try {
+      assertRealIntegrationEnv('x', NAMES, { ...FULL, X_PASS: value });
+      throw new Error('expected a throw');
+    } catch (e) {
+      expect(e).toBeInstanceOf(IntegrationNotConfiguredError);
+      expect((e as IntegrationNotConfiguredError).missing).toEqual(['X_PASS']);
+      expect((e as Error).message).not.toContain('u-secret');
+    }
+  });
+
+  it('honours a per-integration real override', () => {
+    expect(() => assertRealIntegrationEnv('x', NAMES, { ...PROD, INTEGRATION_MODE: 'mock', INTEGRATION_MODE_X: 'real' })).toThrow(IntegrationNotConfiguredError);
+  });
+
+  it('still refuses an unset mode in production (no silent mock fallback)', () => {
+    expect(() => assertRealIntegrationEnv('x', NAMES, { ...PROD })).toThrow(/must be set explicitly/);
   });
 });
 

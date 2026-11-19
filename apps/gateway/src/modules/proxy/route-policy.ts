@@ -58,6 +58,7 @@ export function requiredPermission(method: string, path: string): Permission | n
 export const INTERNAL_ONLY_PREFIXES: readonly string[] = [
   '/api/dms/esign', '/api/dms/public', '/api/dms/dev', '/api/dms/documents', '/api/dms/templates/render', '/api/valuation/valuate/collateral',
   '/api/kyc/xyp/assets', '/api/kyc/xyp/property', '/api/kyc/collateral-checks', '/api/valuation/valuate/vehicle-lookup',
+  '/api/kyc/xyp/citizen', // + /citizen/otp: иргэний нэг удаагийн кодын хязгаар (SMS бөмбөгдөлт, кодыг таах), аудит нь origination-д (`customers/xyp-otp`, `xyp-fetch`) — шууд дуудвал тойрно
   '/api/scoring/underwrite', '/api/scoring/sosco/score', '/api/scoring/sosco/results',
   '/api/origination/internal', // H8: portal-bff → origination дотоод API (`/api/internal/portal/*`) — ажилтны proxy-гоор хэзээ ч биш
 ];

@@ -4,7 +4,7 @@ import { ROLE_PERMISSIONS, XypAssetsResponse, XypPropertyAsset, type UserRole } 
 import { SEED } from '@los/database';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { IntegrationNotImplementedError } from '../src/integrations/errors';
-import { XYP_CLIENT, XypUnavailableError, type XypClient } from '../src/integrations/xyp/xyp.client';
+import { XYP_CLIENT, XypOtpRejectedError, XypUnavailableError, type XypClient } from '../src/integrations/xyp/xyp.client';
 import { xypCoOwnerRegister } from '../src/integrations/xyp/xyp-assets.fixture';
 import { as, createApp, createLightApp } from './app';
 
@@ -125,7 +125,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('kyc · POST /api/xyp/assets and
 
     it('the seeded users of every role can read assets (unlike /xyp/citizen, which stays customer:write)', async () => {
       for (const who of ['officerA', 'officerB', 'manager', 'approver', 'admin'] as const) expect((await assets(who, 'УБ90010112')).status, who).toBe(200);
-      expect((await send(app, '/api/xyp/citizen', as('approver'), { registerNo: 'УБ90010112' })).status).toBe(403);
+      expect((await send(app, '/api/xyp/citizen', as('approver'), { registerNo: 'УБ90010112', otp: '123456' })).status).toBe(403);
+      expect((await send(app, '/api/xyp/citizen/otp', as('approver'), { registerNo: 'УБ90010112' })).status).toBe(403);
     });
 
     it('403 for an unknown role or no role; 401 anonymous or without organization', async () => {
@@ -145,24 +146,63 @@ describe('kyc · xyp assets/property error mapping (no database)', () => {
   let app: INestApplication | undefined;
   afterEach(async () => { await app?.close(); app = undefined; vi.unstubAllEnvs(); });
   const fakeClient = (error: unknown): XypClient => ({
+    requestCitizenOtp: async () => { throw error; },
     getCitizen: async () => { throw error; },
     getAssets: async () => { throw error; },
     getProperty: async () => { throw error; },
   });
   const withClient = (client: XypClient) => createLightApp((b) => b.overrideProvider(XYP_CLIENT).useValue(client));
 
-  it('INTEGRATION_MODE=real → 501 INTEGRATION_NOT_IMPLEMENTED for assets and property (and citizen), no guessed data', async () => {
+  it('INTEGRATION_MODE=real → 501 INTEGRATION_NOT_IMPLEMENTED for assets and property (no reference exists), no guessed data', async () => {
     vi.stubEnv('INTEGRATION_MODE', 'real');
     app = await createLightApp();
     for (const [path, body, who] of [
       ['/api/xyp/assets', { registerNo: 'УБ90010112' }, 'officerA'],
       ['/api/xyp/property', { propertyId: 'MOCK-УБ90010112-1' }, 'officerA'],
-      ['/api/xyp/citizen', { registerNo: 'УБ90010112' }, 'officerA'],
     ] as const) {
       const res = await send(app, path, as(who), body);
       expect([path, res.status, res.body.code]).toEqual([path, 501, 'INTEGRATION_NOT_IMPLEMENTED']);
       expect(res.body.message).toMatch(/ХУР/);
     }
+  });
+
+  // Phase 5: citizen нь бодитоор хэрэгжсэн; тохиргоогүй (XYP_ACCESS_TOKEN, түлхүүр) бол «гараар бөглөнө» замаар 503 XYP_UNAVAILABLE (env-ийн нэр гарахгүй).
+  it('INTEGRATION_MODE=real without XYP config → 503 XYP_UNAVAILABLE for citizen, no env names in the message', async () => {
+    vi.stubEnv('INTEGRATION_MODE', 'real');
+    vi.stubEnv('XYP_ACCESS_TOKEN', '');
+    vi.stubEnv('XYP_PRIVATE_KEY_PATH', '');
+    app = await createLightApp();
+    const res = await send(app, '/api/xyp/citizen', as('officerA'), { registerNo: 'УБ90010112', otp: '123456' });
+    expect([res.status, res.body.code]).toEqual([503, 'XYP_UNAVAILABLE']);
+    const otp = await send(app, '/api/xyp/citizen/otp', as('officerA'), { registerNo: 'УБ90010112' });
+    expect([otp.status, otp.body.code]).toEqual([503, 'XYP_UNAVAILABLE']);
+    expect(otp.body.message).not.toMatch(/XYP_/);
+    expect(res.body.message).toMatch(/ХУР/);
+    expect(res.body.message).not.toMatch(/XYP_/);
+  });
+
+  // Иргэний зөвшөөрөл (OTP) HTTP давхарга: mock горимд demo код 123456.
+  it('citizen consent over HTTP (mock): code request → 200 { sent }, wrong code → 422 XYP_OTP_INVALID, right code → 200 citizen, no code / extra phone → 400', async () => {
+    vi.stubEnv('INTEGRATION_MODE', 'mock');
+    app = await createLightApp();
+    const otp = await send(app, '/api/xyp/citizen/otp', as('officerA'), { registerNo: 'УБ90010112' });
+    expect([otp.status, otp.body.sent]).toEqual([200, true]);
+    expect(new Date(otp.body.requestedAt).toString()).not.toBe('Invalid Date');
+    const wrong = await send(app, '/api/xyp/citizen', as('officerA'), { registerNo: 'УБ90010112', otp: '000000' });
+    expect([wrong.status, wrong.body.code]).toEqual([422, 'XYP_OTP_INVALID']);
+    const right = await send(app, '/api/xyp/citizen', as('officerA'), { registerNo: 'УБ90010112', otp: '123456' });
+    expect([right.status, right.body.registerNo]).toEqual([200, 'УБ90010112']);
+    expect((await send(app, '/api/xyp/citizen', as('officerA'), { registerNo: 'УБ90010112' })).status).toBe(400);
+    expect((await send(app, '/api/xyp/citizen/otp', as('officerA'), { registerNo: 'УБ90010112', phone: '99112233' })).status).toBe(400);
+    expect((await send(app, '/api/xyp/citizen/otp', as('officerA'), { registerNo: 'УБ00000000' })).body.code).toBe('XYP_NOT_FOUND');
+  });
+
+  it('a client that rejects the code → 422 XYP_OTP_INVALID; one that is down → 503 (not "wrong code")', async () => {
+    app = await withClient(fakeClient(new XypOtpRejectedError()));
+    expect((await send(app, '/api/xyp/citizen', as('officerA'), { registerNo: 'УБ90010112', otp: '123456' })).body.code).toBe('XYP_OTP_INVALID');
+    await app.close();
+    app = await withClient(fakeClient(new XypUnavailableError()));
+    expect((await send(app, '/api/xyp/citizen', as('officerA'), { registerNo: 'УБ90010112', otp: '123456' })).body.code).toBe('XYP_UNAVAILABLE');
   });
 
   it('INTEGRATION_MODE=mock serves the fixtures without a database', async () => {
@@ -194,7 +234,7 @@ describe('kyc · xyp assets/property error mapping (no database)', () => {
   });
 
   it('a client that finds nothing → 404 XYP_NOT_FOUND', async () => {
-    app = await withClient({ getCitizen: async () => null, getAssets: async () => null, getProperty: async () => null });
+    app = await withClient({ requestCitizenOtp: async () => false, getCitizen: async () => null, getAssets: async () => null, getProperty: async () => null });
     expect((await send(app, '/api/xyp/assets', as('officerA'), { registerNo: 'УБ90010112' })).body.code).toBe('XYP_NOT_FOUND');
     expect((await send(app, '/api/xyp/property', as('officerA'), { propertyId: 'MOCK-УБ90010112-1' })).body.code).toBe('XYP_NOT_FOUND');
   });

@@ -16,6 +16,11 @@ describe('createUnScClient', () => {
     expect(createUnScClient({ INTEGRATION_MODE: 'real' })).toBeInstanceOf(RealUnScClient);
   });
 
+  it('production + real: http UN_SC_URL бол bootstrap-д унана; анхдагч (нийтийн) тохиргоо OK', () => {
+    expect(() => createUnScClient({ NODE_ENV: 'production', INTEGRATION_MODE: 'real', UN_SC_URL: 'http://mirror.example.test/un.xml' })).toThrow(/UN_SC_URL must use https/);
+    expect(createUnScClient({ NODE_ENV: 'production', INTEGRATION_MODE: 'real' })).toBeInstanceOf(RealUnScClient);
+  });
+
   it('rejects an unknown mode', () => {
     expect(() => createUnScClient({ INTEGRATION_MODE: 'staging' })).toThrow(/INTEGRATION_MODE/);
   });

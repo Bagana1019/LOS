@@ -14,7 +14,10 @@ export const useCustomerList = (params: api.CustomerListParams) =>
 export const useCustomerCard = (id: string) =>
   useQuery({ queryKey: [...customersKey, 'card', id], queryFn: () => api.fetchCustomerCard(id), retry: retryTransient, refetchOnMount: 'always' });
 
-export const useXypFetch = () => useMutation({ mutationFn: (registerNo: string) => api.xypFetch(registerNo) });
+/** Иргэний зөвшөөрөл, 1-р алхам: иргэний ХУР-д бүртгэлтэй утсанд код илгээнэ. */
+export const useXypOtp = () => useMutation({ mutationFn: (registerNo: string) => api.xypRequestOtp(registerNo) });
+/** 2-р алхам: иргэний кодоор татна. Код нэг удаагийнх — автоматаар дахин оролдохгүй. */
+export const useXypFetch = () => useMutation({ mutationFn: (v: { registerNo: string; otp: string }) => api.xypFetch(v.registerNo, v.otp) });
 
 export function useCreateCustomer() {
   const qc = useQueryClient();

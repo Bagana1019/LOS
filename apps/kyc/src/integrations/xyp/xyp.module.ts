@@ -3,10 +3,13 @@ import { resolveIntegrationMode } from '../integration-mode';
 import { MockXypClient } from './mock-xyp.client';
 import { RealXypClient } from './real-xyp.client';
 import { XYP_CLIENT, type XypClient } from './xyp.client';
+import { assertXypProductionConfig } from './xyp.config';
 
 /** INTEGRATION_MODE-оор mock / real сонгоно (CLAUDE.md §3.2.7). */
 export function createXypClient(env: Record<string, string | undefined> = process.env): XypClient {
-  return resolveIntegrationMode(env) === 'real' ? new RealXypClient({ baseUrl: env.XYP_BASE_URL }) : new MockXypClient();
+  if (resolveIntegrationMode(env) !== 'real') return new MockXypClient();
+  assertXypProductionConfig(env); // production + real: тохиргоо дутуу / http WSDL бол bootstrap-д унана
+  return new RealXypClient({ env });
 }
 
 @Module({

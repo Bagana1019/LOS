@@ -16,6 +16,10 @@ describe('createFatfClient', () => {
     expect(createFatfClient({ INTEGRATION_MODE: 'real' })).toBeInstanceOf(RealFatfClient);
   });
 
+  it('production + real: FATF_LIST_FILE дутуу бол bootstrap-д унана (нэрийг л заана)', () => {
+    expect(() => createFatfClient({ NODE_ENV: 'production', INTEGRATION_MODE: 'real' })).toThrow(/FATF_LIST_FILE/);
+  });
+
   it('rejects an unknown mode', () => {
     expect(() => createFatfClient({ INTEGRATION_MODE: 'staging' })).toThrow(/INTEGRATION_MODE/);
   });

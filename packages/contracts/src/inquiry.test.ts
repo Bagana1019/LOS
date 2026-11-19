@@ -17,6 +17,22 @@ describe('InquiryFetchRequest', () => {
   });
 });
 
+describe('InquiryFetchRequest.contact (ЗМС vendor утас, имэйл)', () => {
+  const base = { applicationId: 'a', customerId: 'c', registerNo: 'УБ90010112' };
+  it('is optional: older callers without contact still parse', () => {
+    expect(InquiryFetchRequest.parse(base).contact).toBeUndefined();
+  });
+  it('trims, and accepts null / empty values (a customer may have no phone or email; the adapter treats blank as missing)', () => {
+    expect(InquiryFetchRequest.parse({ ...base, contact: { phone: ' 99112233 ', email: 'a@b.mn' } }).contact).toEqual({ phone: '99112233', email: 'a@b.mn' });
+    expect(InquiryFetchRequest.parse({ ...base, contact: { phone: null, email: '' } }).contact).toEqual({ phone: null, email: '' });
+    expect(InquiryFetchRequest.parse({ ...base, contact: {} }).contact).toEqual({});
+  });
+  it('rejects oversized values (no unbounded PII forwarded to the vendor)', () => {
+    expect(InquiryFetchRequest.safeParse({ ...base, contact: { phone: '9'.repeat(33) } }).success).toBe(false);
+    expect(InquiryFetchRequest.safeParse({ ...base, contact: { email: 'a'.repeat(255) } }).success).toBe(false);
+  });
+});
+
 describe('income inputs', () => {
   it('period must be YYYY-MM with a real month', () => {
     expect(IncomeCalculateBody.safeParse({ customerId: 'c', periodFrom: '2025-11', periodTo: '2026-10' }).success).toBe(true);

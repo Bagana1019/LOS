@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPayload, canEditCustomer, issuePath, pruneEmpty, validateCustomer, xypLockedFields } from './customers.utils';
+import { XYP_OTP_RESEND_COOLDOWN_SEC, buildPayload, canEditCustomer, isValidXypOtp, issuePath, normalizeOtpInput, otpResendRemainingSec, pruneEmpty, validateCustomer, xypLockedFields, xypOtpToFetchResult } from './customers.utils';
 
 const fixed = { customerType: 'INDIVIDUAL', registerNo: 'УБ90010112' };
 const addr = { province: 'УБ', district: 'БЗД', khoroo: '1', detail: 'Байр 1' };
@@ -8,6 +8,40 @@ const full = {
   activitySector: 'Худалдаа', maritalStatus: 'MARRIED', segment: 'Жижиг', education: 'Бакалавр', officialAddress: addr, residenceSameAsOfficial: true,
   employment: { organization: 'ХХК', position: 'Менежер' },
 };
+
+// ХУР иргэний зөвшөөрөл (нэг удаагийн код): маягтын тусламж функцүүд. Кодын дүрэм нь contracts-ийн `XypOtpCode`-той ижил (нэг эх сурвалж).
+describe('иргэний код (OTP) — тусламж', () => {
+  it('normalizeOtpInput: зөвхөн цифр үлдээж 8 оронд таслана (буулгасан "123 456", "12-34-56", үсэг)', () => {
+    expect(normalizeOtpInput('123 456')).toBe('123456');
+    expect(normalizeOtpInput('12-34-56')).toBe('123456');
+    expect(normalizeOtpInput('ab12cd')).toBe('12');
+    expect(normalizeOtpInput('1234567890')).toBe('12345678');
+    expect(normalizeOtpInput('')).toBe('');
+  });
+
+  it.each([['1234', true], ['123456', true], ['12345678', true], ['123', false], ['123456789', false], ['12a456', false], ['', false]])('isValidXypOtp(%j) = %s', (code, ok) => {
+    expect(isValidXypOtp(code)).toBe(ok);
+  });
+
+  it('xypOtpToFetchResult: бүртгэлтэй харилцагч — ХУР дуудаагүй (fetchedAt, snapshotToken null), existing / warnings дамжина', () => {
+    const existing = { id: 'c1', registerNo: 'УБ90010112' } as never;
+    const warnings = [{ code: 'BLACKLISTED' }] as never;
+    expect(xypOtpToFetchResult({ sent: false, requestedAt: null, existing, warnings }, 'УБ90010112', 'INDIVIDUAL')).toEqual({
+      registerNo: 'УБ90010112', customerType: 'INDIVIDUAL', fetchedAt: null, prefill: {}, prefilledFields: [], missing: [], existing, warnings, snapshotToken: null,
+    });
+  });
+
+  it('otpResendRemainingSec: илгээснээс хойш 60 секунд хүртэл үлдсэнийг (дээш бөөнжүүлж) тоолж, дараа нь 0; огноо байхгүй / буруу бол 0', () => {
+    const t0 = Date.parse('2026-11-19T10:00:00.000Z');
+    expect(XYP_OTP_RESEND_COOLDOWN_SEC).toBe(60);
+    expect(otpResendRemainingSec('2026-11-19T10:00:00.000Z', t0)).toBe(60);
+    expect(otpResendRemainingSec('2026-11-19T10:00:00.000Z', t0 + 10_400)).toBe(50);
+    expect(otpResendRemainingSec('2026-11-19T10:00:00.000Z', t0 + 60_000)).toBe(0);
+    expect(otpResendRemainingSec('2026-11-19T10:00:00.000Z', t0 + 120_000)).toBe(0);
+    expect(otpResendRemainingSec(null, t0)).toBe(0);
+    expect(otpResendRemainingSec('not a date', t0)).toBe(0);
+  });
+});
 
 describe('pruneEmpty', () => {
   it('хоосон мөр, хоосон объект, массивыг хасна; false/0-г хэвээр үлдээнэ', () => {

@@ -3,10 +3,13 @@ import { resolveIntegrationMode } from '../integration-mode';
 import { MockUnScClient } from './mock-un-sc.client';
 import { RealUnScClient } from './real-un-sc.client';
 import { UN_SC_CLIENT, type UnScClient } from './un-sc.client';
+import { assertUnScProductionConfig } from './un-sc.config';
 
 /** INTEGRATION_MODE-оор mock / real сонгоно (CLAUDE.md §3.2.7). */
 export function createUnScClient(env: Record<string, string | undefined> = process.env): UnScClient {
-  return resolveIntegrationMode(env) === 'real' ? new RealUnScClient() : new MockUnScClient();
+  if (resolveIntegrationMode(env) !== 'real') return new MockUnScClient();
+  assertUnScProductionConfig(env); // production + real: тохиргоо буруу (http URL гэх мэт) бол bootstrap-д унана
+  return new RealUnScClient({ env });
 }
 
 @Module({

@@ -69,6 +69,15 @@ describe.skipIf(!hasTestDb)('inquiry API (DB)', () => {
     expect(KycCompleted.parse(JSON.parse(JSON.stringify((await t.prisma.outbox.findFirstOrThrow({ where: { type: 'KycCompleted' } })).payload))).blacklisted).toBe(false);
   });
 
+  it('the customer phone and email are forwarded to kyc (the ЗМС vendor requires them) but never written to the audit log', async () => {
+    const { app } = await setup();
+    await fetch(app.id);
+    expect(kyc.calls[0]!.contact).toEqual({ phone: expect.stringMatching(/^9911\d{4}$/), email: expect.stringMatching(/^c\d+@example\.mn$/) });
+    const audit = await t.prisma.auditLog.findMany({ where: { applicationId: app.id } });
+    expect(JSON.stringify(audit)).not.toContain(kyc.calls[0]!.contact!.phone as string);
+    expect(JSON.stringify(audit)).not.toContain(kyc.calls[0]!.contact!.email as string);
+  });
+
   it('the register is sent to kyc normalised but never written to the audit log', async () => {
     const { app, primary } = await setup();
     await fetch(app.id);

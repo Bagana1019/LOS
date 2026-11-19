@@ -4,16 +4,19 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { type XypCitizen } from '@los/contracts';
 import { SEED, blindIndex, decryptedField, isEncryptedField, purgeAuditLogForTests } from '@los/database';
+import { normalizeRegisterNo } from '@los/contracts';
 import { DomainError } from '@los/nest-common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
 import { XYP_LOOKUP } from '../src/modules/customer/xyp-lookup';
+import { XYP_SNAPSHOT_TTL_MS, sealXypSnapshot } from '../src/modules/customer/xyp-snapshot';
 import { as } from './app';
 
 const OTHER_ORG = '00000000-0000-4000-8000-0000000000ff';
 const ADDRESS = { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'Хан-Уул хотхон, 12-р байр, 45 тоот' };
 const REGISTER = 'УБ90010112';
+const OTP = '123456';
 
 /** Бүрэн, зөв иргэн (FR-2.3). */
 const full = (over: Record<string, unknown> = {}) => ({
@@ -22,12 +25,19 @@ const full = (over: Record<string, unknown> = {}) => ({
   employment: { organization: 'Тэнгэр ХХК', position: 'Менежер', phone: '70112233' }, contacts: [{ relation: 'SPOUSE', firstName: 'Сараа', phone: '88112233' }], ...over,
 });
 
-/** ХУР-ын fake (kyc-ийн mock-той ижил хэлбэр). Дуудлагын тоог тоолно. */
+/** ХУР-ын fake (kyc-ийн mock-той ижил хэлбэр). Дуудлагын тоог тоолно: `otpCalls` = иргэнд код илгээсэн, `xypCalls` = иргэний мэдээлэл татсан. */
 const xypCalls: string[] = [];
+const otpCalls: string[] = [];
 const fakeXyp = {
-  async fetchCitizen(_ctx: unknown, registerNo: string): Promise<XypCitizen> {
+  async requestOtp(_ctx: unknown, registerNo: string): Promise<{ sent: true; requestedAt: string }> {
+    otpCalls.push(registerNo);
+    if (registerNo.endsWith('00000000')) throw new DomainError('XYP_NOT_FOUND', 'ХУР-д олдсонгүй', 404);
+    return { sent: true, requestedAt: '2026-11-19T10:00:00.000Z' };
+  },
+  async fetchCitizen(_ctx: unknown, registerNo: string, otp: string): Promise<XypCitizen> {
     xypCalls.push(registerNo);
     if (registerNo.endsWith('00000000')) throw new DomainError('XYP_NOT_FOUND', 'ХУР-д олдсонгүй', 404);
+    if (otp !== OTP) throw new DomainError('XYP_OTP_INVALID', 'Иргэний код буруу', 422);
     return {
       registerNo, customerType: 'INDIVIDUAL', lastName: 'Цэрэн', clanName: 'Хиад', civilId: '1234567890', firstName: 'Сарнай', gender: 'FEMALE', birthDate: '1990-01-01', maritalStatus: 'DIVORCED', familySize: 3,
       activitySector: null, address: ADDRESS, fetchedAt: '2026-01-01T00:00:00.000Z',
@@ -50,13 +60,26 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
   afterAll(async () => { await app.close(); });
   beforeEach(async () => {
     xypCalls.length = 0;
+    otpCalls.length = 0;
     await db.loanApplicationBorrower.deleteMany();
     await db.loanApplication.deleteMany();
     await db.customer.deleteMany(); // contacts cascade
     await db.blacklist.deleteMany();
-    await purgeAuditLogForTests(db, (tx) => tx.auditLog.deleteMany({ where: { entity: 'CUSTOMER' } }));
+    await purgeAuditLogForTests(db, (tx) => tx.auditLog.deleteMany({ where: { entity: { in: ['CUSTOMER', 'XYP_CONSENT'] } } })); // audit_log append-only (M10): цэвэрлэгээ зөвхөн тестийн helper-ээр
   });
 
+  const xypOtp = (body: unknown = { registerNo: REGISTER }, who: Parameters<typeof as>[0] = 'officerA') => http().post('/api/customers/xyp-otp').set(as(who)).send(body as object);
+  /** Сервер «код хүсэгдсэн» (15 мин дотор) байхыг шаарддаг: энэ helper нь тэр урьдчилсан нөхцөлийг (2 минутын өмнөх `XYP_OTP_REQUESTED`) тавьж, дараа нь татна. */
+  const ensureCodeRequested = async (registerNo: string) => {
+    const entityId = blindIndex(normalizeRegisterNo(registerNo));
+    const recent = await db.auditLog.findFirst({ where: { orgId: SEED.org.id, entity: 'XYP_CONSENT', entityId, action: 'XYP_OTP_REQUESTED', at: { gte: new Date(Date.now() - 14 * 60_000) } } });
+    if (!recent) await db.auditLog.create({ data: { orgId: SEED.org.id, entity: 'XYP_CONSENT', entityId, action: 'XYP_OTP_REQUESTED', actorId: SEED.users.officerA.id, at: new Date(Date.now() - 2 * 60_000) } });
+  };
+  const xypFetch = async (who: Parameters<typeof as>[0] = 'officerA', registerNo = REGISTER, otp = OTP) => {
+    await ensureCodeRequested(registerNo);
+    return http().post('/api/customers/xyp-fetch').set(as(who)).send({ registerNo, otp });
+  };
+  const xypFetchRaw = (registerNo = REGISTER, otp = OTP) => http().post('/api/customers/xyp-fetch').set(as('officerA')).send({ registerNo, otp });
   const create = (body: unknown, who: Parameters<typeof as>[0] = 'officerA') => http().post('/api/customers').set(as(who)).send(body as object);
   const blacklist = (registerNo: string, over: Record<string, unknown> = {}) => db.blacklist.create({
     data: { orgId: SEED.org.id, registerNoHash: blindIndex(registerNo), registerNoEncrypted: 'x', customerType: 'INDIVIDUAL', name: 'Хар', listType: 'INTERNAL', reasonCode: 'FRAUD', reasonText: 'Залилан', ...over },
@@ -167,8 +190,10 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
 
   describe('AC: ХУР mock-оор 10+ талбар автоматаар бөглөгдөнө (FR-2.2)', () => {
     it('xyp-fetch pre-fills the form and lists only what is still missing', async () => {
-      const res = await http().post('/api/customers/xyp-fetch').set(as('officerA')).send({ registerNo: 'уб 90010112' });
+      const res = await xypFetch('officerA', 'уб 90010112');
       expect(res.status).toBe(200);
+      expect(typeof res.body.snapshotToken).toBe('string'); // POST /customers-д ХУР-ыг дахин дуудахгүйгээр ашиглана
+      expect(res.body.snapshotToken).not.toContain('Сарнай');
       expect(res.body.prefilledFields.length).toBeGreaterThanOrEqual(10);
       expect(res.body).toMatchObject({
         registerNo: REGISTER, customerType: 'INDIVIDUAL', fetchedAt: '2026-01-01T00:00:00.000Z', existing: null, warnings: [],
@@ -180,8 +205,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
     });
 
     it('source=XYP saves the customer from the officer\'s missing fields plus XYP data; XYP overrides identity fields it owns', async () => {
+      const { snapshotToken } = (await xypFetch()).body;
       const res = await create({
-        source: 'XYP', registerNo: REGISTER, lastName: 'Цэрэн', gender: 'MALE', maritalStatus: 'MARRIED',
+        source: 'XYP', xypSnapshotToken: snapshotToken, registerNo: REGISTER, lastName: 'Цэрэн', gender: 'MALE', maritalStatus: 'MARRIED',
         phone: '99112233', email: 'x@example.mn', photoFileId: 'file-9', activitySector: 'Худалдаа', segment: 'Жижиг бизнес', education: 'Бакалавр',
         residenceSameAsOfficial: true, employment: { organization: 'Тэнгэр ХХК', position: 'Менежер' },
       });
@@ -191,25 +217,27 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
         maritalStatus: 'MARRIED', familySize: 3, // ЗЭЗ-ийн бөглөснийг хадгалж, хоосныг ХУР нөхнө
         phone: '99112233', xypFetchedAt: '2026-01-01T00:00:00.000Z',
       });
-      expect(xypCalls).toEqual([REGISTER]);
+      expect(xypCalls).toEqual([REGISTER]); // нэг л татсан: үүсгэхэд ХУР-ыг дахин дуудаагүй (иргэний код нэг удаагийнх)
     });
 
     it('M5: source=XYP refuses an officer-edited official address (or name) instead of silently replacing it; nothing is stored', async () => {
       const officer = { phone: '99112233', email: 'x@example.mn', photoFileId: 'file-9', activitySector: 'Худалдаа', segment: 'Жижиг бизнес', education: 'Бакалавр', gender: 'MALE',
         residenceSameAsOfficial: true, employment: { organization: 'Тэнгэр ХХК', position: 'Менежер' } };
-      const res = await create({ source: 'XYP', registerNo: REGISTER, ...officer, officialAddress: { ...ADDRESS, district: 'Сүхбаатар' }, firstName: 'Хуурамч' });
+      const { snapshotToken } = (await xypFetch()).body;
+      const res = await create({ source: 'XYP', xypSnapshotToken: snapshotToken, registerNo: REGISTER, ...officer, officialAddress: { ...ADDRESS, district: 'Сүхбаатар' }, firstName: 'Хуурамч' });
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('XYP_FIELD_READONLY');
       expect(res.body.details).toEqual({ fields: ['firstName', 'officialAddress'] });
       expect(await db.customer.count()).toBe(0);
       // ХУР-ын утгыг хэвээр (whitespace-тэй ч) буцааж илгээвэл зөвшөөрнө
-      const ok = await create({ source: 'XYP', registerNo: REGISTER, ...officer, officialAddress: { ...ADDRESS, detail: ` ${ADDRESS.detail} ` }, firstName: 'Сарнай' });
+      const ok = await create({ source: 'XYP', xypSnapshotToken: snapshotToken, registerNo: REGISTER, ...officer, officialAddress: { ...ADDRESS, detail: ` ${ADDRESS.detail} ` }, firstName: 'Сарнай' });
       expect(ok.status).toBe(201);
       expect(ok.body.officialAddress).toEqual(ADDRESS);
     });
 
     it('source=XYP still refuses a customer whose officer-supplied fields are incomplete', async () => {
-      const res = await create({ source: 'XYP', registerNo: REGISTER, phone: '99112233' });
+      const { snapshotToken } = (await xypFetch()).body;
+      const res = await create({ source: 'XYP', xypSnapshotToken: snapshotToken, registerNo: REGISTER, phone: '99112233' });
       expect(res.status).toBe(400);
       expect((res.body.details as { path: string }[]).map((d) => d.path)).toContain('photoFileId');
       expect(await db.customer.count()).toBe(0);
@@ -217,17 +245,171 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
 
     it('a registered customer is returned instead of calling XYP again; creating with source=XYP does not call XYP for a duplicate', async () => {
       const made = await create(full());
-      const res = await http().post('/api/customers/xyp-fetch').set(as('officerB')).send({ registerNo: REGISTER });
-      expect(res.body).toMatchObject({ existing: { id: made.body.id }, fetchedAt: null, prefill: {}, missing: [] });
+      const res = await xypFetch('officerB');
+      expect(res.body).toMatchObject({ existing: { id: made.body.id }, fetchedAt: null, prefill: {}, missing: [], snapshotToken: null });
       expect((await create({ source: 'XYP', registerNo: REGISTER })).status).toBe(409);
       expect(xypCalls).toEqual([]);
     });
 
     it('XYP "not found" reaches the officer with its own code; a malformed register is 400', async () => {
-      const nf = await http().post('/api/customers/xyp-fetch').set(as('officerA')).send({ registerNo: 'УБ00000000' });
+      const nf = await xypFetch('officerA', 'УБ00000000');
       expect(nf.status).toBe(404);
       expect(nf.body.code).toBe('XYP_NOT_FOUND');
-      expect((await http().post('/api/customers/xyp-fetch').set(as('officerA')).send({ registerNo: 'AB1' })).body.code).toBe('INVALID_REGISTER_NO');
+      expect((await xypFetch('officerA', 'AB1')).body.code).toBe('INVALID_REGISTER_NO');
+      expect((await xypOtp({ registerNo: 'AB1' })).body.code).toBe('INVALID_REGISTER_NO');
+      expect(otpCalls).toEqual([]);
+    });
+  });
+
+  describe('AC: иргэний зөвшөөрөл — ХУР-ын нэг удаагийн код (FR-2.2)', () => {
+    const consentRows = () => db.auditLog.findMany({ where: { entity: 'XYP_CONSENT' }, orderBy: { at: 'asc' } });
+    const ageConsentRows = (minutes: number) => purgeAuditLogForTests(db, (tx) => tx.auditLog.updateMany({ where: { entity: 'XYP_CONSENT' }, data: { at: new Date(Date.now() - minutes * 60_000) } })); // append-only trigger-ийг зөвхөн тестэд алгасна
+
+    it('xyp-otp: иргэний бүртгэлтэй утсанд кодыг НЭГ удаа хүсч, аудитад (код, түүхий регистргүйгээр) тэмдэглэнэ', async () => {
+      const res = await xypOtp();
+      expect([res.status, res.body.sent, res.body.existing]).toEqual([200, true, null]);
+      expect(new Date(res.body.requestedAt).toISOString()).toBe(res.body.requestedAt);
+      expect(otpCalls).toEqual([REGISTER]);
+      const rows = await consentRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ action: 'XYP_OTP_REQUESTED', entityId: blindIndex(REGISTER), actorId: SEED.users.officerA.id, orgId: SEED.org.id });
+      expect(JSON.stringify(rows)).not.toContain(REGISTER);
+    });
+
+    it('xyp-otp: утасны дугаар өгвөл 400 (код зөвхөн иргэний бүртгэлтэй утсанд очно), ХУР-д хүрэхгүй, хязгаарт тоологдохгүй', async () => {
+      expect((await xypOtp({ registerNo: REGISTER, phone: '99112233' })).status).toBe(400);
+      expect(otpCalls).toEqual([]);
+      expect(await consentRows()).toHaveLength(0);
+    });
+
+    it('xyp-otp: бүртгэлтэй харилцагчид ХУР / SMS дуудахгүй — sent=false, existing', async () => {
+      const made = await create(full());
+      const res = await xypOtp();
+      expect(res.body).toMatchObject({ sent: false, requestedAt: null, existing: { id: made.body.id } });
+      expect(otpCalls).toEqual([]);
+      expect(await consentRows()).toHaveLength(0);
+    });
+
+    it('xyp-otp: ижил регистрт хоёр хүсэлтийн хооронд сервер дээр 1 минут (UI-ийн «дахин авах» хүлээлттэй ижил): шууд давтавал 429, ХУР-д хүрэхгүй', async () => {
+      expect((await xypOtp()).status).toBe(200);
+      const tooSoon = await xypOtp();
+      expect([tooSoon.status, tooSoon.body.code]).toEqual([429, 'XYP_OTP_RATE_LIMITED']);
+      expect(tooSoon.body.message).toContain('1 минут');
+      expect(otpCalls).toHaveLength(1);
+    });
+
+    it('xyp-otp: ижил регистрт 15 минутад 3 хүртэл; 4-р нь 429 XYP_OTP_RATE_LIMITED (ХУР-д хүрэхгүй); өөр регистр чөлөөтэй; 15 минут өнгөрвөл дахин боломжтой', async () => {
+      for (let i = 0; i < 3; i++) { expect((await xypOtp()).status).toBe(200); await ageConsentRows(2); } // 1 минутын зайг давуулна
+      const blocked = await xypOtp();
+      expect([blocked.status, blocked.body.code]).toEqual([429, 'XYP_OTP_RATE_LIMITED']);
+      expect(blocked.body.message).toContain('15');
+      expect(otpCalls).toHaveLength(3);
+      expect((await xypOtp({ registerNo: 'УБ95010512' }, 'officerB')).status).toBe(200); // регистр тус бүрээр (ажилтнаар биш)
+      await ageConsentRows(16);
+      expect((await xypOtp()).status).toBe(200);
+    });
+
+    it('xyp-otp: нэг регистрт 24 цагт 6 хүртэл (өдрийн дээд хязгаар: нэг иргэнд өдөр бүр SMS бөмбөгдөх, кодыг өдөр дамжин таах хориг); цонх өнгөрвөл үргэлжилнэ', async () => {
+      const entityId = blindIndex(REGISTER);
+      await db.auditLog.createMany({ data: Array.from({ length: 6 }, (_, i) => ({ orgId: SEED.org.id, entity: 'XYP_CONSENT', entityId, action: 'XYP_OTP_REQUESTED', actorId: SEED.users.officerB.id, at: new Date(Date.now() - (2 + i) * 3_600_000) })) });
+      const blocked = await xypOtp();
+      expect([blocked.status, blocked.body.code]).toEqual([429, 'XYP_OTP_RATE_LIMITED']);
+      expect(blocked.body.message).toContain('24');
+      expect(otpCalls).toEqual([]);
+      await ageConsentRows(25 * 60);
+      expect((await xypOtp()).status).toBe(200);
+    });
+
+    it('xyp-otp: нэг ажилтан өөр өөр регистрт цагт 20-оос илүү код хүсэж чадахгүй (олон иргэнд SMS бөмбөгдөх); өөр ажилтан чөлөөтэй; цаг өнгөрвөл дахин боломжтой', async () => {
+      const regs = Array.from({ length: 21 }, (_, i) => `УБ9001${String(1000 + i).padStart(4, '0')}`);
+      for (const r of regs.slice(0, 20)) expect((await xypOtp({ registerNo: r })).status, r).toBe(200);
+      const blocked = await xypOtp({ registerNo: regs[20] });
+      expect([blocked.status, blocked.body.code]).toEqual([429, 'XYP_OTP_RATE_LIMITED']);
+      expect(blocked.body.message).toContain('60');
+      expect(otpCalls).toHaveLength(20);
+      expect((await xypOtp({ registerNo: regs[20] }, 'officerB')).status).toBe(200);
+      await ageConsentRows(61);
+      expect((await xypOtp({ registerNo: regs[20] })).status).toBe(200);
+    });
+
+    it('xyp-otp: зэрэг 6 хүсэлт → яг 1 нь амжилттай (хязгаар атомар: түгжээгүй бол бүгд «хоосон» харж тэнцэх байсан)', async () => {
+      const statuses = (await Promise.all(Array.from({ length: 6 }, () => xypOtp()))).map((r) => r.status).sort();
+      expect(statuses).toEqual([200, 429, 429, 429, 429, 429]);
+      expect(otpCalls).toHaveLength(1);
+    });
+
+    it('xyp-otp: ХУР алдаа (олдсонгүй) ч хязгаарт тоологдоно — SMS явсан эсэх тодорхойгүй үед шууд давтаж болохгүй', async () => {
+      expect((await xypOtp({ registerNo: 'УБ00000000' })).body.code).toBe('XYP_NOT_FOUND');
+      expect((await xypOtp({ registerNo: 'УБ00000000' })).body.code).toBe('XYP_OTP_RATE_LIMITED');
+      expect(otpCalls).toHaveLength(1);
+    });
+
+    it('xyp-fetch: код буруу → 422 XYP_OTP_INVALID (тэмдэггүй), аудитад XYP_OTP_REJECTED; зөв код → XYP_CITIZEN_FETCHED + тэмдэг', async () => {
+      expect((await xypOtp()).status).toBe(200);
+      const wrong = await xypFetch('officerA', REGISTER, '000000');
+      expect([wrong.status, wrong.body.code, wrong.body.snapshotToken]).toEqual([422, 'XYP_OTP_INVALID', undefined]);
+      const right = await xypFetch();
+      expect([right.status, typeof right.body.snapshotToken]).toEqual([200, 'string']);
+      expect((await consentRows()).map((r) => r.action).sort()).toEqual(['XYP_CITIZEN_FETCHED', 'XYP_OTP_REJECTED', 'XYP_OTP_REQUESTED', 'XYP_OTP_VERIFY_ATTEMPTED', 'XYP_OTP_VERIFY_ATTEMPTED']); // нэг мс-д бичигдэх тул дарааллыг шалгахгүй
+    });
+
+    it('xyp-fetch: илгээсэн код тус бүрт 3 оролдлого; дараа нь зөв код ч 429 XYP_OTP_ATTEMPTS_EXHAUSTED (ХУР-д хүрэхгүй); шинэ код илгээвэл дахин 3 оролдлого', async () => {
+      expect((await xypOtp()).status).toBe(200);
+      await ageConsentRows(2); // 1 минутын зайг давуулна
+      for (let i = 0; i < 3; i++) expect((await xypFetch('officerA', REGISTER, `00000${i}`)).status).toBe(422);
+      const blocked = await xypFetch();
+      expect([blocked.status, blocked.body.code]).toEqual([429, 'XYP_OTP_ATTEMPTS_EXHAUSTED']);
+      expect(xypCalls).toHaveLength(3);
+      await ageConsentRows(2);
+      expect((await xypOtp()).status).toBe(200); // шинэ код → өмнөх оролдлого тоологдохгүй
+      expect((await xypFetch()).status).toBe(200);
+    });
+
+    it('xyp-fetch: код ХҮСЭЭГҮЙ (эсвэл 15 минутаас өмнө хүссэн) бол 409 XYP_OTP_NOT_REQUESTED — ХУР дуудагдахгүй, оролдлого тоологдохгүй (кодгүйгээр таах боломжгүй)', async () => {
+      const never = await xypFetchRaw();
+      expect([never.status, never.body.code]).toEqual([409, 'XYP_OTP_NOT_REQUESTED']);
+      await db.auditLog.create({ data: { orgId: SEED.org.id, entity: 'XYP_CONSENT', entityId: blindIndex(REGISTER), action: 'XYP_OTP_REQUESTED', actorId: SEED.users.officerA.id, at: new Date(Date.now() - 16 * 60_000) } });
+      expect((await xypFetchRaw()).body.code).toBe('XYP_OTP_NOT_REQUESTED');
+      expect(xypCalls).toEqual([]);
+      expect((await consentRows()).filter((r) => r.action === 'XYP_OTP_VERIFY_ATTEMPTED')).toHaveLength(0);
+    });
+
+    it('аудитад иргэний код, түүхий регистр хэзээ ч орохгүй', async () => {
+      await xypOtp();
+      await xypFetch('officerA', REGISTER, '654321');
+      await xypFetch();
+      const dump = JSON.stringify(await consentRows());
+      for (const secret of [REGISTER, OTP, '654321', 'Сарнай']) expect(dump).not.toContain(secret);
+    });
+
+    describe('POST /customers source=XYP: тэмдгийг сервер өөрөө нээж ХУР-ыг дахин дуудахгүй', () => {
+      const body = (token: unknown, register = REGISTER) => ({ source: 'XYP', xypSnapshotToken: token, registerNo: register, phone: '99112233', email: 'x@example.mn', photoFileId: 'file-9', activitySector: 'Худалдаа', segment: 'Жижиг бизнес', education: 'Бакалавр', residenceSameAsOfficial: true, gender: 'MALE', maritalStatus: 'MARRIED', employment: { organization: 'Тэнгэр ХХК', position: 'Менежер' } });
+      const scopeOf = (who: 'officerA' | 'officerB') => ({ orgId: SEED.org.id, userId: SEED.users[who].id });
+      const citizenOf = async () => (await fakeXyp.fetchCitizen(null, REGISTER, OTP));
+
+      it('тэмдэггүй → 400 XYP_SNAPSHOT_INVALID, юу ч хадгалагдахгүй, ХУР дуудагдахгүй', async () => {
+        const res = await create(body(undefined));
+        expect([res.status, res.body.code]).toEqual([400, 'XYP_SNAPSHOT_INVALID']);
+        expect(await db.customer.count()).toBe(0);
+        expect(xypCalls).toEqual([]);
+      });
+
+      it.each([['засварласан', (t: string) => t.slice(0, -4) + 'AAAA'], ['тасарсан', (t: string) => t.slice(0, -10)], ['хуурамч', () => 'v1.t1.AAAA.BBBB.CCCC']])('%s тэмдэг → 400 XYP_SNAPSHOT_INVALID', async (_label, damage) => {
+        const { snapshotToken } = (await xypFetch()).body;
+        const res = await create(body(damage(snapshotToken)));
+        expect([res.status, res.body.code]).toEqual([400, 'XYP_SNAPSHOT_INVALID']);
+        expect(await db.customer.count()).toBe(0);
+      });
+
+      it('өөр ажилтны, өөр регистрийн тэмдэг → 400; хугацаа дууссан тэмдэг → 400', async () => {
+        const { snapshotToken } = (await xypFetch('officerA')).body;
+        expect((await create(body(snapshotToken), 'officerB')).body.code).toBe('XYP_SNAPSHOT_INVALID');
+        expect((await create(body(snapshotToken, 'УБ95010512'))).body.code).toBe('XYP_SNAPSHOT_INVALID');
+        const expired = sealXypSnapshot(scopeOf('officerA'), REGISTER, await citizenOf(), Date.now() - XYP_SNAPSHOT_TTL_MS - 1000);
+        expect((await create(body(expired))).body.code).toBe('XYP_SNAPSHOT_INVALID');
+        expect(await db.customer.count()).toBe(0);
+        expect((await create(body(snapshotToken))).status).toBe(201); // зөв ажилтан, регистр, хугацаанд — хүчинтэй хэвээр
+      });
     });
   });
 
@@ -241,7 +423,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       const look = await http().get('/api/customers/lookup').query({ registerNo: REGISTER }).set(as('officerA'));
       expect(look.body.warnings[0]).toMatchObject({ code: 'BLACKLISTED', severity: 'WARNING', listType: expect.any(String) });
       expect(codes(look.body.warnings)).toEqual(['FRAUD', 'PEP_RISK']);
-      expect(codes((await http().post('/api/customers/xyp-fetch').set(as('officerA')).send({ registerNo: REGISTER })).body.warnings)).toEqual(['FRAUD', 'PEP_RISK']);
+      expect(codes((await xypFetch()).body.warnings)).toEqual(['FRAUD', 'PEP_RISK']);
+      expect(codes((await xypOtp()).body.warnings)).toEqual(['FRAUD', 'PEP_RISK']);
       expect(codes((await http().get('/api/blacklist/check').query({ registerNo: REGISTER }).set(as('officerA'))).body.warnings)).toEqual(['FRAUD', 'PEP_RISK']);
 
       const res = await create(full());
@@ -498,7 +681,8 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       for (const who of ['manager', 'approver', 'admin'] as const) {
         expect((await create(full({ registerNo: 'УБ95010512' }), who)).status, `${who} create`).toBe(403);
         expect((await http().put(`/api/customers/${made.id}`).set(as(who)).send({ phone: '99001122' })).status, `${who} update`).toBe(403);
-        expect((await http().post('/api/customers/xyp-fetch').set(as(who)).send({ registerNo: REGISTER })).status, `${who} xyp`).toBe(403);
+        expect((await xypFetch(who)).status, `${who} xyp`).toBe(403);
+        expect((await xypOtp({ registerNo: REGISTER }, who)).status, `${who} xyp-otp`).toBe(403);
         expect((await http().get(`/api/customers/${made.id}`).set(as(who))).status, `${who} read`).toBe(200);
         expect((await http().get('/api/customers').set(as(who))).status, `${who} list`).toBe(200);
       }
