@@ -57,7 +57,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   APPROVER: ['customer:read', 'application:read', 'approval:vote', 'disbursement:approve', 'blacklist:read', 'report:read', 'change-request:read'],
   ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage', 'change-request:read', 'erp-sync:manage'],
   // Комплаенс (Q-128): хар/саарал жагсаалт бүртгэх, 4 нүдээр батлах, аудит харах. Зээл батлахгүй, тохиргоо өөрчлөхгүй.
-  COMPLIANCE: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'audit:read', 'change-request:read', 'aml:review'],
+  // `application:read` БАЙХГҮЙ (N2): origination-ийн хүсэлт/зээлийн жагсаалт COMPLIANCE-д 403 өгдөг тул цэс харуулахгүй.
+  COMPLIANCE: ['customer:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'audit:read', 'change-request:read', 'aml:review'],
 };
 
 export function permissionsFor(roles: readonly string[]): Permission[] {
