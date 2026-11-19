@@ -8,7 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
 import { OBJECT_STORAGE, type MemoryStorage } from '../src/modules/file/storage';
-import { RetentionService } from '../src/modules/retention/retention.service';
+import { FILE_REFERENCES, RetentionService } from '../src/modules/retention/retention.service';
 import { RetentionSweeper, parseRetentionConfig } from '../src/modules/retention/retention.sweeper';
 
 const HAS_DB = !!process.env.TEST_DATABASE_URL;
@@ -107,6 +107,59 @@ describe.skipIf(!HAS_DB)('dms retention sweeper (M10, retention_policy)', () => 
       expect((await service.sweep(new Date(), 100)).purged).toBe(0);
       expect((await row(f.id)).purgedAt).toBeNull();
     } finally { await db.contractTemplate.delete({ where: { id: tpl.id } }); }
+  });
+
+  describe('security: a file referenced anywhere else is never purged', () => {
+    /** Төгсгөлийн (CANCELLED) хүсэлт — идэвхтэй гэрээний unique index-д саад болохгүй, SIGNED CHECK хамаарахгүй. */
+    const signingRequest = (files: { sourceFileId?: string; signedFileId?: string; signatureFileId?: string }) => db.signingRequest.create({
+      data: {
+        orgId: ORG, applicationId: `ret-${randomUUID()}`, contractId: randomUUID(), contractNo: 'ret-1', status: 'CANCELLED',
+        sourceFileId: files.sourceFileId ?? randomUUID(), signedFileId: files.signedFileId ?? null, signatureFileId: files.signatureFileId ?? null,
+        originalSha256: 'x', signerCustomerId: randomUUID(), signerName: 'x', signerRegisterEncrypted: 'x', signerPhoneEncrypted: 'x',
+        signerRegisterMasked: 'x', signerPhoneMasked: 'x', tokenHash: randomUUID(), linkExpiresAt: new Date(), correlationId: 'ret',
+      },
+    });
+
+    for (const column of ['sourceFileId', 'signedFileId', 'signatureFileId'] as const) {
+      it(`an expired file referenced by signing_request.${column} is NOT purged`, async () => {
+        const f = await seedFile({ ageYears: 3 });
+        const sr = await signingRequest({ [column]: f.id });
+        try {
+          expect((await service.sweep(new Date(), 100)).purged).toBe(0);
+          expect((await row(f.id)).purgedAt).toBeNull();
+          expect(storage.objects.has(f.storageKey)).toBe(true);
+        } finally { await db.signingRequest.delete({ where: { id: sr.id } }); }
+      });
+    }
+
+    it('next to a referenced one, an expired unreferenced file is still purged, a held one is not', async () => {
+      const referenced = await seedFile({ ageYears: 3 });
+      const free = await seedFile({ ageYears: 3 });
+      const held = await seedFile({ ageYears: 3, legalHold: true });
+      const sr = await signingRequest({ sourceFileId: referenced.id });
+      try {
+        expect((await service.sweep(new Date(), 100)).purged).toBe(1);
+        expect((await row(free.id)).purgedAt).not.toBeNull();
+        expect((await row(referenced.id)).purgedAt).toBeNull();
+        expect((await row(held.id)).purgedAt).toBeNull();
+      } finally { await db.signingRequest.delete({ where: { id: sr.id } }); }
+    });
+
+    it('FILE_REFERENCES covers every column that references dms.file (FKs and *file_id columns) — register new ones there', async () => {
+      const fks = await db.$queryRaw<{ table: string; column: string }[]>`
+        SELECT cl.relname AS table, a.attname AS column FROM pg_constraint c
+        JOIN pg_class cl ON cl.oid = c.conrelid JOIN pg_namespace n ON n.oid = cl.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+        WHERE c.contype = 'f' AND c.confrelid = 'dms.file'::regclass`;
+      const named = await db.$queryRaw<{ table: string; column: string }[]>`
+        SELECT table_name AS table, column_name AS column FROM information_schema.columns
+        WHERE table_schema = 'dms' AND table_name <> 'file' AND (column_name = 'file_id' OR column_name LIKE '%\_file\_id')`;
+      const key = (r: { table: string; column: string }) => `${r.table}.${r.column}`;
+      const registered = new Set(FILE_REFERENCES.map(key));
+      const found = [...new Set([...fks, ...named].map(key))].sort();
+      expect(found.length).toBeGreaterThanOrEqual(5);
+      expect(found.filter((k) => !registered.has(k))).toEqual([]);
+    });
   });
 
   it('is batch-limited and idempotent: 3 expired with batch 2 → 2, then 1, then 0', async () => {
