@@ -7,14 +7,24 @@ const base = z.object({
   eventId: z.string().uuid(), occurredAt: z.string().datetime(), version: z.literal(1),
   orgId: z.string(), actorId: z.string().nullable(), correlationId: z.string(),
 });
-export const ApplicationSubmitted = base.extend({ type: z.literal('ApplicationSubmitted'), applicationId: z.string(), amount: z.number(), productId: z.string() });
+// N4 (DWH fact dimensions): additive optional fields — v1 payloads already in the stream stay valid. Ids/codes/amounts/rates only, no PII.
+// interestRatePercent = annual % as stored on loan_application (23.99); customerId = primary borrower.
+export const ApplicationSubmitted = base.extend({ type: z.literal('ApplicationSubmitted'), applicationId: z.string(), amount: z.number(), productId: z.string(),
+  branchId: z.string().optional(), officerId: z.string().nullable().optional(), customerId: z.string().nullable().optional(),
+  interestRatePercent: z.number().nullable().optional(), termMonths: z.number().int().nullable().optional() });
 export const ApplicationApproved = base.extend({ type: z.literal('ApplicationApproved'), applicationId: z.string(), contractNo: z.string() });
 export const ApplicationReturned = base.extend({ type: z.literal('ApplicationReturned'), applicationId: z.string(), levelNo: z.number(), comment: z.string() });
 export const ApplicationStatusChanged = base.extend({ type: z.literal('ApplicationStatusChanged'), applicationId: z.string(), from: z.string(), to: z.string() });
-export const DisbursementApproved = base.extend({ type: z.literal('DisbursementApproved'), applicationId: z.string(), amount: z.number(), coreLoanId: z.string().nullable() });
+export const DisbursementApproved = base.extend({ type: z.literal('DisbursementApproved'), applicationId: z.string(), amount: z.number(), coreLoanId: z.string().nullable(),
+  branchId: z.string().optional(), productId: z.string().nullable().optional(), customerId: z.string().nullable().optional() });
 export const KycCompleted = base.extend({ type: z.literal('KycCompleted'), applicationId: z.string(), customerId: z.string(), blacklisted: z.boolean() });
-export const StatementImported = base.extend({ type: z.literal('StatementImported'), analysisId: z.string(), applicationId: z.string(), rows: z.number(), status: z.enum(['COMPLETED','FAILED']) });
-export const ScoringCompleted = base.extend({ type: z.literal('ScoringCompleted'), applicationId: z.string(), selectedMethod: z.string(), soscoScore: z.number().nullable(), dtiPercent: z.number().nullable() });
+export const StatementImported = base.extend({ type: z.literal('StatementImported'), analysisId: z.string(), applicationId: z.string(), rows: z.number(), status: z.enum(['COMPLETED','FAILED']),
+  /** N4: INT-4 BsaSummary snapshot at import time (COMPLETED only); monthlyIncome = totalMonthlyIncome, pendingSuspiciousCount = unresolved suspicions */
+  customerId: z.string().optional(), periodMonths: z.number().int().optional(), monthlyIncome: z.number().optional(), netCashFlowMonthly: z.number().optional(),
+  dtiPercent: z.number().optional(), dtiLevel: z.enum(['LOW','MEDIUM','HIGH']).optional(), pendingSuspiciousCount: z.number().int().min(0).optional() });
+export const ScoringCompleted = base.extend({ type: z.literal('ScoringCompleted'), applicationId: z.string(), selectedMethod: z.string(), soscoScore: z.number().nullable(), dtiPercent: z.number().nullable(),
+  /** N4: selected method's ӨТЧХ (B/C, ratio e.g. 1.31; null for A) and collateral LTV (fraction 0.62; null without collateral) */
+  dscr: z.number().nullable().optional(), ltv: z.number().nullable().optional() });
 // valuationId…assetType нь нэмэлт (optional) талбарууд — origination барьцааны үнэлгээг event-ээр давхар синк хийхэд хэрэглэнэ (Модуль 6).
 export const ValuationCompleted = base.extend({ type: z.literal('ValuationCompleted'), collateralId: z.string(), applicationId: z.string(), marketValue: z.number(), collateralValue: z.number(),
   valuationId: z.string().optional(), assetType: z.string().optional(), source: z.enum(['INTERNAL', 'EXTERNAL_LICENSED']).optional(), haircutRate: z.number().optional(), valuedAt: z.string().datetime().optional(), validUntil: z.string().datetime().nullable().optional(), externalRequired: z.boolean().optional() });
