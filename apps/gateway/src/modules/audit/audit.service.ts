@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit, Op
 import { sanitizeForAudit } from '@los/database';
 import { PrismaService } from '../../prisma.service';
 import { auditErrorClass, isTransientAuditError } from './audit-errors';
+import { cleanJson, cleanText, cleanTextOpt } from './audit-sanitize';
 import { AUDIT_FALLBACK_QUEUE, type AuditFallbackQueue, type AuditRow, type QueuedItem } from './audit-fallback-queue';
 
 export interface AuditRecord {
@@ -27,10 +28,13 @@ const DEFAULTS: AuditOptions = {
   drainIntervalMs: Number(process.env.AUDIT_DRAIN_INTERVAL_MS ?? 30_000), lockTtlMs: 30_000,
 };
 const DRAIN_BATCH = 100;
+/** DLQ дүүрэлтийн дохио (тайрагдахаас өмнө). */
+const DLQ_ALARM_RATIO = 0.8;
 /** Чөлөөт текстийн дээд урт (энгийн хүсэлт poison мөр үүсгэхгүй). */
 const MAX = { id: 256, entityId: 512, ip: 64, userAgent: 300 } as const;
 
-type Metrics = { written: number; retried: number; queued: number; drained: number; deadLettered: number; lost: number };
+/** lost = хаана ч үлдээгүй (fallback/DLQ бүтэлгүй эсвэл DLQ-аас тайрагдсан); rejected = critical мөр хадгалагдаагүй тул үйлдэл 503. */
+type Metrics = { written: number; retried: number; queued: number; drained: number; deadLettered: number; rejected: number; lost: number };
 type AuditDb = { auditLog: { create(a: { data: AuditRow }): Promise<unknown>; createMany(a: { data: AuditRow[]; skipDuplicates: boolean }): Promise<unknown> } };
 /** 'ok' | 'transient' | байнгын алдааны анги (PII-гүй код). */
 type WriteResult = 'ok' | 'transient' | { permanent: string };
@@ -38,17 +42,6 @@ type WriteResult = 'ok' | 'transient' | { permanent: string };
 const isDuplicateId = (e: unknown) => (e as { code?: unknown } | null)?.code === 'P2002';
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-/** NUL (Postgres text/jsonb хүлээж авахгүй) хасаад уртыг хязгаарлана. */
-const NUL = String.fromCharCode(0);
-const noNul = (s: string) => s.split(NUL).join('');
-const bound = (s: string, max: number) => noNul(s).slice(0, max);
-const boundOpt = (s: string | null | undefined, max: number) => (s == null ? null : bound(s, max));
-function stripNul(v: unknown, depth = 0): unknown {
-  if (typeof v === 'string') return noNul(v);
-  if (v === null || typeof v !== 'object' || depth > 8) return v;
-  if (Array.isArray(v)) return v.map((x) => stripNul(x, depth + 1));
-  return Object.fromEntries(Object.entries(v as Record<string, unknown>).map(([k, x]) => [noNul(k), stripNul(x, depth + 1)]));
-}
 
 /**
  * iam.audit_log — нэвтрэлт ба gateway-ээр дамжсан өөрчлөлтийн хүсэлт (NFR-4). Нууц үг, token, body хэзээ ч бичихгүй.
@@ -60,7 +53,7 @@ function stripNul(v: unknown, depth = 0): unknown {
 export class AuditService implements OnModuleInit, OnModuleDestroy {
   private readonly log = new Logger('Audit');
   private readonly opts: AuditOptions;
-  private readonly counters: Metrics = { written: 0, retried: 0, queued: 0, drained: 0, deadLettered: 0, lost: 0 };
+  private readonly counters: Metrics = { written: 0, retried: 0, queued: 0, drained: 0, deadLettered: 0, rejected: 0, lost: 0 };
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
@@ -83,22 +76,25 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
   /** Ариутгасан (sanitizeForAudit), хязгаарласан, id/at-тай мөр — өөр транзакц дотор (`tx.auditLog.create({ data })`) бичихэд ч хэрэглэнэ. */
   toRow(r: AuditRecord): AuditRow {
     return {
-      id: randomUUID(), at: new Date(), orgId: boundOpt(r.orgId, MAX.id), entity: bound(r.entity, MAX.id), entityId: bound(r.entityId, MAX.entityId),
-      action: bound(r.action, MAX.id), actorId: boundOpt(r.actorId, MAX.id),
-      afterJson: stripNul(sanitizeForAudit(r.afterJson ?? null)), beforeJson: stripNul(sanitizeForAudit(r.beforeJson ?? null)), applicationId: null,
-      correlationId: boundOpt(r.correlationId, MAX.id), ip: boundOpt(r.ip, MAX.ip), userAgent: boundOpt(r.userAgent, MAX.userAgent),
+      id: randomUUID(), at: new Date(), orgId: cleanTextOpt(r.orgId, MAX.id), entity: cleanText(r.entity, MAX.id), entityId: cleanText(r.entityId, MAX.entityId),
+      action: cleanText(r.action, MAX.id), actorId: cleanTextOpt(r.actorId, MAX.id),
+      afterJson: cleanJson(sanitizeForAudit(r.afterJson ?? null)), beforeJson: cleanJson(sanitizeForAudit(r.beforeJson ?? null)), applicationId: null,
+      correlationId: cleanTextOpt(r.correlationId, MAX.id), ip: cleanTextOpt(r.ip, MAX.ip), userAgent: cleanTextOpt(r.userAgent, MAX.userAgent),
     };
   }
 
-  /** Critical (нэвтрэлт, сесс): DB, fallback эсвэл DLQ-д хадгалагдтал; аль нь ч бүтэхгүй бол 503 (fail closed). */
+  /**
+   * Critical (нэвтрэлт, сесс): audit_log эсвэл түүн рүү drain хийгдэх fallback дараалалд орсон үед л амжилттай. Байнгын алдаа (DLQ нь
+   * хадгалалт биш) эсвэл хаана ч бичиж чадахгүй бол 503 (fail closed) — үйлдэл аудитгүй үргэлжлэхгүй.
+   */
   async record(r: AuditRecord): Promise<void> {
-    if (await this.persist(this.toRow(r))) return;
+    if (await this.persist(this.toRow(r), true)) return;
     throw new ServiceUnavailableException({ code: 'AUDIT_UNAVAILABLE', message: 'Аудит бүртгэх боломжгүй байна. Түр хүлээгээд дахин оролдоно уу' });
   }
 
   /** Хүсэлтийн урсгалыг хаахгүй (HTTP мөр, хариу илгээгдсэний дараа): retry + fallback-тай, алдаа нь лог + тоолуур. */
   recordSafe(r: AuditRecord): void {
-    void this.persist(this.toRow(r)).catch((e: unknown) => this.log.error(`AUDIT_LOST unexpected: ${msg(e)}`));
+    void this.persist(this.toRow(r), false).catch((e: unknown) => this.log.error(`AUDIT_LOST unexpected: ${msg(e)}`));
   }
 
   /**
@@ -159,10 +155,15 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     return { done, persisted };
   }
 
-  /** true = DB, fallback эсвэл DLQ-д хадгалагдсан. */
-  private async persist(row: AuditRow): Promise<boolean> {
+  /** true = DB эсвэл fallback-д (critical биш бол DLQ-д ч) хадгалагдсан. */
+  private async persist(row: AuditRow, critical: boolean): Promise<boolean> {
     const res = await this.writeWithRetry(row);
     if (res === 'ok') return true;
+    if (critical && res !== 'transient') {
+      this.counters.rejected += 1;
+      this.log.error(`AUDIT_REJECTED id=${row.id} action=${row.action} entity=${row.entity} class=${res.permanent}: critical audit row permanently rejected, failing closed`);
+      return false;
+    }
     try {
       if (res === 'transient') {
         await this.queue.push(row);
@@ -181,9 +182,14 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
 
   /** DLQ: алдааны анги л (мессеж/утга биш). DLQ бичилт бүтэхгүй бол throw — дуудагч мөрийг устгахгүй. */
   private async deadLetter(raw: string, id: string | null, errorClass: string): Promise<void> {
-    const before = await this.queue.deadLetter({ raw, id, errorClass, failedAt: new Date().toISOString() });
+    const { size, capacity, trimmed } = await this.queue.deadLetter({ raw, id, errorClass, failedAt: new Date().toISOString() });
     this.counters.deadLettered += 1;
-    this.log.error(`AUDIT_DLQ id=${id ?? '-'} class=${errorClass} dlqSize=${before + 1}: permanently rejected audit row moved to the dead-letter list`);
+    this.log.error(`AUDIT_DLQ id=${id ?? '-'} class=${errorClass} dlqSize=${size}/${capacity}: permanently rejected audit row moved to the dead-letter list`);
+    if (size >= capacity * DLQ_ALARM_RATIO) this.log.error(`AUDIT_DLQ_HIGH dlqSize=${size}/${capacity}: inspect with \`audit:dlq list\` before entries are trimmed`);
+    for (const d of trimmed) {
+      this.counters.lost += 1;
+      this.log.error(`AUDIT_LOST id=${d.id ?? '-'} class=${d.errorClass} failedAt=${d.failedAt} reason=dlq-trimmed: dead-letter list at capacity`);
+    }
   }
 
   private async insertOnce(row: AuditRow): Promise<WriteResult> {

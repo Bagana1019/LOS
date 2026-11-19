@@ -9,6 +9,13 @@ const known = (code: string, message = `prisma ${code}`) => Object.assign(new Er
 const transient = () => new Error('Connection terminated unexpectedly');
 
 type Row = Record<string, unknown>;
+/** Postgres text/jsonb нь NUL ба ганц surrogate-ыг хүлээж авахгүй (22021 / 22P05). */
+const NUL = String.fromCharCode(0);
+const pgRejects = (data: Row): boolean => {
+  const walk = (v: unknown): boolean => typeof v === 'string' ? v.includes(NUL) || /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(v)
+    : Array.isArray(v) ? v.some(walk) : v !== null && typeof v === 'object' && !(v instanceof Date) ? Object.entries(v).some(([k, x]) => walk(k) || walk(x)) : false;
+  return walk(data);
+};
 /** Fake iam.audit_log: id нь PK (skipDuplicates), `bad` гэсэн action-тай мөр байнгын алдаа (P2000) өгнө. */
 function fakePrisma(plan: Array<'ok' | 'fail' | 'dup'> = []) {
   const rows: Row[] = [];
@@ -17,6 +24,7 @@ function fakePrisma(plan: Array<'ok' | 'fail' | 'dup'> = []) {
     const step = plan.shift() ?? 'ok';
     if (step === 'fail') throw transient();
     if (data.action === 'BAD') throw known('P2000', 'value too long for column "entity_id": SECRET-VALUE');
+    if (pgRejects(data)) throw Object.assign(known('P2010', 'invalid input'), { meta: { code: '22P05' } });
     if (step === 'dup' || rows.some((r) => r.id === data.id)) { if (!rows.some((r) => r.id === data.id)) rows.push(data); throw known('P2002'); }
     rows.push(data);
     return data;
@@ -121,17 +129,63 @@ describe('AuditService durability (M10)', () => {
       await vi.waitFor(async () => expect(await queue.size()).toBe(1));
     });
 
-    it('a permanent error is not retried and the row is not queued forever: it goes to the DLQ', async () => {
+    it('CRITICAL row with a permanent failure fails closed (503): a DLQ push is not persistence', async () => {
       const f = fakePrisma();
       const queue = new MemoryAuditQueue();
       const svc = make(f.prisma, queue);
-      await expect(svc.record(rec({ action: 'BAD' }))).resolves.toBeUndefined();
-      expect(f.create).toHaveBeenCalledTimes(1);
+      const err = await svc.record(rec({ action: 'BAD' })).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ServiceUnavailableException);
+      expect(f.create).toHaveBeenCalledTimes(1); // permanent — not retried
       expect(await queue.size()).toBe(0);
+      expect(svc.metrics()).toMatchObject({ written: 0, rejected: 1 });
+      expect(errors.some((e) => e.includes('AUDIT_REJECTED') && e.includes('class=P2000') && !e.includes('SECRET-VALUE'))).toBe(true);
+    });
+
+    it('non-critical row with a permanent failure goes to the DLQ with a loud log (no payload PII)', async () => {
+      const f = fakePrisma();
+      const queue = new MemoryAuditQueue();
+      const svc = make(f.prisma, queue);
+      svc.recordSafe(rec({ entity: 'HTTP', action: 'BAD' }));
+      await vi.waitFor(async () => expect(await queue.deadLetters(10)).toHaveLength(1));
       const [dl] = await queue.deadLetters(10);
       expect(dl).toMatchObject({ errorClass: 'P2000' });
       expect(JSON.stringify(dl)).not.toContain('SECRET-VALUE');
       expect(svc.metrics()).toMatchObject({ deadLettered: 1, lost: 0 });
+      expect(errors.some((e) => e.includes('AUDIT_DLQ'))).toBe(true);
+    });
+
+    it('DLQ at capacity: the trimmed entry is counted and logged as AUDIT_LOST (class, id), never silently', async () => {
+      const f = fakePrisma();
+      const queue = new MemoryAuditQueue({ dlqMax: 2 });
+      const svc = make(f.prisma, queue);
+      for (let i = 0; i < 3; i += 1) svc.recordSafe(rec({ entity: 'HTTP', action: 'BAD' }));
+      await vi.waitFor(() => expect(svc.metrics().deadLettered).toBe(3));
+      expect(await queue.deadLetters(10)).toHaveLength(2);
+      expect(svc.metrics().lost).toBe(1);
+      const lost = errors.filter((e) => e.includes('AUDIT_LOST') && e.includes('class=P2000') && e.includes('dlq-trimmed'));
+      expect(lost).toHaveLength(1);
+      expect(lost[0]).toMatch(/id=[0-9a-f-]{36}/);
+      expect(lost[0]).not.toContain('SECRET-VALUE');
+    });
+
+    it('lone surrogates and NUL from client input are sanitized so the row is persisted, not dead-lettered', async () => {
+      const f = fakePrisma();
+      const queue = new MemoryAuditQueue();
+      const svc = make(f.prisma, queue);
+      await svc.record(rec({ entityId: 'POST /api/a\uD800b\u0000c', userAgent: 'ua\uDC00\u0000', afterJson: { username: 'x\uD83D\u0000y', ['k\uDFFF']: ['\uD800'], ok: '😀' } }));
+      expect(f.rows).toHaveLength(1);
+      expect(await queue.deadLetters(10)).toHaveLength(0);
+      const r = f.rows[0]!;
+      expect(r.entityId).toBe('POST /api/a�bc');
+      expect(r.userAgent).toBe('ua�');
+      expect(r.afterJson).toEqual({ username: 'x�y', ['k�']: ['�'], ok: '😀' });
+    });
+
+    it('bounding never splits a surrogate pair into a lone surrogate', async () => {
+      const f = fakePrisma();
+      await make(f.prisma).record(rec({ userAgent: `${'a'.repeat(299)}😀` }));
+      expect(f.rows).toHaveLength(1);
+      expect(f.rows[0]!.userAgent).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
     });
 
     it('redacts secret-like keys from payloads (no PII / secrets in audit rows)', async () => {

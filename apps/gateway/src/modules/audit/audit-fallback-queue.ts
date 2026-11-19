@@ -20,6 +20,7 @@ export interface AuditRow {
 export interface QueuedItem { raw: string; row: AuditRow | null }
 /** DLQ-ийн элемент: `raw` нь аль хэдийн ариутгасан мөр (replay-д хэрэгтэй); `errorClass` нь зөвхөн код (алдааны мессеж/утга биш). */
 export interface DeadLetter { raw: string; id: string | null; errorClass: string; failedAt: string }
+export interface DeadLetterResult { size: number; capacity: number; trimmed: DeadLetter[] }
 
 export interface AuditFallbackQueue {
   push(row: AuditRow): Promise<void>;
@@ -33,8 +34,8 @@ export interface AuditFallbackQueue {
   release(token: string): Promise<void>;
   /** Token хүчинтэй БА толгой нь яг `raws` бол тэдгээрийг устгаад true; эс бөгөөс юу ч устгахгүй, false. */
   removeHead(raws: string[], token: string): Promise<boolean>;
-  /** DLQ-д нэмнэ (шинэ нь үлдэж, хуучин нь `dlqMax`-аас хэтэрвэл тайрагдана). Нэмэхийн өмнөх уртыг буцаана. */
-  deadLetter(d: DeadLetter): Promise<number>;
+  /** DLQ-д нэмнэ; `dlqMax`-аас хэтэрвэл хамгийн хуучныг тайрч, тайрсан БҮХ элементийг буцаана (дуудагч AUDIT_LOST гэж бүртгэнэ — чимээгүй устгахгүй). */
+  deadLetter(d: DeadLetter): Promise<DeadLetterResult>;
   /** Хамгийн хуучнаас n элемент. */
   deadLetters(n: number): Promise<DeadLetter[]>;
   /** DLQ-ийн хамгийн хуучин n элементийг дарааллын сүүлд буцаана (шалтгааныг зассаны дараа). Шилжүүлсэн тоо. */
@@ -89,10 +90,11 @@ export class MemoryAuditQueue implements AuditFallbackQueue {
     this.items = this.items.slice(raws.length);
     return true;
   }
-  async deadLetter(d: DeadLetter): Promise<number> {
-    const before = this.dead.length;
-    this.dead = [...this.dead, JSON.stringify(d)].slice(-this.dlqMax);
-    return before;
+  async deadLetter(d: DeadLetter): Promise<DeadLetterResult> {
+    const all = [...this.dead, JSON.stringify(d)];
+    const over = Math.max(0, all.length - this.dlqMax);
+    this.dead = all.slice(over);
+    return { size: this.dead.length, capacity: this.dlqMax, trimmed: all.slice(0, over).map(parseDead) };
   }
   async deadLetters(n: number): Promise<DeadLetter[]> { return this.dead.slice(0, n).map(parseDead); }
   async replayDeadLetters(n: number): Promise<number> {
@@ -115,6 +117,15 @@ for i = 1, n do
 end
 redis.call('ltrim', KEYS[1], n, -1)
 return 1`;
+// KEYS[1]=dlq; ARGV[1]=entry, ARGV[2]=max → {шинэ урт, тайрсан элементүүд...} (атомар: тайрсныг заавал буцаана)
+const DEAD_LETTER = `
+redis.call('rpush', KEYS[1], ARGV[1])
+local out = {}
+while redis.call('llen', KEYS[1]) > tonumber(ARGV[2]) do
+  out[#out + 1] = redis.call('lpop', KEYS[1])
+end
+table.insert(out, 1, redis.call('llen', KEYS[1]))
+return out`;
 // KEYS[1]=dlq, KEYS[2]=list; ARGV[1]=n
 const REPLAY = `
 local moved = 0
@@ -153,10 +164,9 @@ export class RedisAuditQueue implements AuditFallbackQueue {
     if (raws.length === 0) return true;
     return (await this.redis.eval(REMOVE_HEAD, 2, this.key, this.lockKey, token, ...raws)) === 1;
   }
-  async deadLetter(d: DeadLetter): Promise<number> {
-    const res = await this.redis.multi().rpush(this.dlqKey, JSON.stringify(d)).ltrim(this.dlqKey, -this.dlqMax, -1).exec();
-    const len = Number(res?.[0]?.[1] ?? 0);
-    return Math.max(0, len - 1);
+  async deadLetter(d: DeadLetter): Promise<DeadLetterResult> {
+    const [size, ...popped] = (await this.redis.eval(DEAD_LETTER, 1, this.dlqKey, JSON.stringify(d), this.dlqMax)) as [number, ...string[]];
+    return { size: Number(size), capacity: this.dlqMax, trimmed: popped.map(parseDead) };
   }
   async deadLetters(n: number): Promise<DeadLetter[]> { return (await this.redis.lrange(this.dlqKey, 0, n - 1)).map(parseDead); }
   async replayDeadLetters(n: number): Promise<number> { return Number(await this.redis.eval(REPLAY, 2, this.dlqKey, this.key, n)); }

@@ -1,6 +1,7 @@
 import { type CallHandler, type ExecutionContext, Injectable, type NestInterceptor } from '@nestjs/common';
 import type { Observable } from 'rxjs';
 import { contextOf } from '@los/nest-common';
+import { cleanText } from './audit-sanitize';
 import { AuditService } from './audit.service';
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -27,7 +28,7 @@ export class AuditInterceptor implements NestInterceptor {
     const started = Date.now();
     res.once('finish', () => {
       this.audit.recordSafe({
-        orgId: ctx.orgId || null, entity: 'HTTP', entityId: `${req.method} ${path.replace(UUID, ':id')}`.slice(0, MAX_ENTITY_ID), action: `HTTP_${req.method}`, actorId: ctx.userId,
+        orgId: ctx.orgId || null, entity: 'HTTP', entityId: cleanText(`${req.method} ${path.replace(UUID, ':id')}`, MAX_ENTITY_ID), action: `HTTP_${req.method}`, actorId: ctx.userId,
         afterJson: { status: res.statusCode, durationMs: Date.now() - started }, correlationId: ctx.correlationId, ip: req.ip ?? null,
         userAgent: typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null,
       });

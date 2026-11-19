@@ -46,6 +46,13 @@ describe.skipIf(!HAS_DB)('iam.audit_log immutability + durable gateway audit (M1
       expect(row).toMatchObject({ action: 'PROBE', actorId: null, afterJson: { v: 1 } });
     });
 
+    it('a lone surrogate / NUL in client input is sanitized and persisted by real Postgres (not dead-lettered)', async () => {
+      const correlationId = randomUUID();
+      await app.get(AuditService).record({ entity: 'HTTP', entityId: 'POST /api/a\uD800b\u0000c', action: 'PROBE', correlationId, userAgent: 'ua\uDC00\u0000', afterJson: { username: 'x\uD83D\u0000y' } });
+      const row = await prisma.auditLog.findFirstOrThrow({ where: { correlationId } });
+      expect(row).toMatchObject({ entityId: 'POST /api/a�bc', userAgent: 'ua�', afterJson: { username: 'x�y' } });
+    });
+
     it('test-only purge helper still lets suites clean up (refused outside NODE_ENV=test)', async () => {
       const id = randomUUID();
       await prisma.auditLog.create({ data: { id, entity: 'TEST', entityId: 'purge', action: 'PROBE' } });

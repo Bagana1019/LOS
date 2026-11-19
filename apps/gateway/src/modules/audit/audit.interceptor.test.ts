@@ -29,5 +29,10 @@ describe('AuditInterceptor field bounds (M10)', () => {
     expect(r!.entityId.startsWith('POST /api/aaa')).toBe(true);
   });
 
+  it('sanitizes a lone surrogate and NUL in the path (client-controlled) before it reaches the audit row', () => {
+    const [r] = run('/api/x\uD800y\u0000z');
+    expect(r!.entityId).toBe('POST /api/x�yz');
+  });
+
   it('does not audit reads', () => { expect(run('/api/x', 'GET')).toHaveLength(0); });
 });

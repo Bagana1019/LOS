@@ -64,10 +64,16 @@ function contract(name: string, make: (opts: { dlqMax: number; now?: () => numbe
       await q.release(fresh);
     });
 
-    it('dead letters are bounded (newest kept) and can be replayed into the queue', async () => {
+    it('dead letters are bounded (newest kept), every trimmed entry is returned to the caller, and can be replayed', async () => {
       const q = make({ dlqMax: 3 });
       const rows = [row(), row(), row(), row(), row()];
-      for (const r of rows) await q.deadLetter({ raw: JSON.stringify(r), id: r.id, errorClass: 'P2000', failedAt: '2026-11-19T00:00:00.000Z' });
+      const trimmed: (string | null)[] = [];
+      for (const r of rows) {
+        const res = await q.deadLetter({ raw: JSON.stringify(r), id: r.id, errorClass: 'P2000', failedAt: '2026-11-19T00:00:00.000Z' });
+        trimmed.push(...res.trimmed.map((d) => d.id));
+        expect(res.size).toBeLessThanOrEqual(3);
+      }
+      expect(trimmed).toEqual([rows[0]!.id, rows[1]!.id]);
       const dl = await q.deadLetters(10);
       expect(dl.map((d) => d.id)).toEqual(rows.slice(2).map((r) => r.id));
       expect(await q.replayDeadLetters(2)).toBe(2);
