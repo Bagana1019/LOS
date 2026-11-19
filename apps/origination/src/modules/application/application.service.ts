@@ -10,6 +10,7 @@ import type { Prisma } from '.prisma/client-origination';
 import { PrismaService, type Tx } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
 import { OrgSettings } from '../../shared/org-settings';
+import { OrgDirectoryService, directoryName } from '../../shared/org-directory';
 import { hasRole } from '../../shared/roles';
 import { customerDisplayName, customerRegisterNoMasked } from '../borrower/customer-directory';
 import { APPROVAL_FLOW, type ApprovalFlowPort } from './approval-flow.port';
@@ -43,6 +44,7 @@ export class ApplicationService {
     private readonly machine: ApplicationStateMachine,
     private readonly settings: OrgSettings,
     private readonly submitGate: SubmitGateService,
+    private readonly directory: OrgDirectoryService,
     @Optional() @Inject(APPROVAL_FLOW) private readonly approval?: ApprovalFlowPort,
   ) {}
 
@@ -173,16 +175,18 @@ export class ApplicationService {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Хүсэлт');
     ws.columns = [
-      { header: '№', key: 'appNo', width: 18 }, { header: 'Салбар', key: 'branchId', width: 14 }, { header: 'Хариуцсан ЗЭЗ', key: 'officerId', width: 16 }, { header: 'Гэрээний дугаар', key: 'contractNo', width: 18 },
+      { header: '№', key: 'appNo', width: 18 }, { header: 'Салбар', key: 'branch', width: 20 }, { header: 'Хариуцсан ЗЭЗ', key: 'officer', width: 22 }, { header: 'Гэрээний дугаар', key: 'contractNo', width: 18 },
       { header: 'Харилцагч', key: 'customer', width: 26 }, { header: 'Регистр', key: 'register', width: 14 }, { header: 'Бүтээгдэхүүн', key: 'product', width: 24 }, { header: 'Валют', key: 'currency', width: 8 },
       { header: 'Хэмжээ', key: 'amount', width: 16, style: { numFmt: '#,##0.00' } }, { header: 'Хүү', key: 'rate', width: 8 }, { header: 'Хугацаа', key: 'term', width: 9 },
       { header: 'Шийдвэрлэгдсэн огноо', key: 'decidedAt', width: 20 }, { header: 'Төлөв', key: 'status', width: 14 },
     ];
     ws.getRow(1).font = { bold: true };
     ws.views = [{ state: 'frozen', ySplit: 1 }];
+    // Салбар/ЗЭЗ-ийн UUID → нэр: лавлахыг экспорт бүрт НЭГ удаа авна (мөр тутамд биш); унавал id хэвээр
+    const names = rows.length ? await this.directory.load(ctx) : { branches: {}, users: {} };
     for (const r of rows.map((x) => this.toRow(x, required))) {
       ws.addRow({
-        appNo: r.appNo, branchId: r.branchId, officerId: r.officerId ?? 'Систем', contractNo: r.contractNo, customer: r.primaryBorrower?.displayName, register: r.primaryBorrower?.registerNoMasked,
+        appNo: r.appNo, branch: directoryName(names.branches, r.branchId), officer: r.officerId ? directoryName(names.users, r.officerId) : 'Систем', contractNo: r.contractNo, customer: r.primaryBorrower?.displayName, register: r.primaryBorrower?.registerNoMasked,
         product: r.productName, currency: r.currency, amount: r.amount, rate: r.interestRate, term: r.termMonths, decidedAt: r.decidedAt?.slice(0, 10), status: r.status,
       });
     }

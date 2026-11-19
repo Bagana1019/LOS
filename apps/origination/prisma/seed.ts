@@ -58,6 +58,12 @@ async function main() {
       update: {},
     });
   }
+  // BR-11 (DECISIONS 2026-11-19): {BRANCH} кодгүй бол батлалт 422 — seed салбаруудын iam.branch.code-ийг хоосон үед л бөглөнө (admin-ий утгыг дарахгүй)
+  const branchCodes = await prisma.setting.findUnique({ where: { orgId_key: { orgId, key: 'contract.branch_codes' } } });
+  if (!branchCodes?.valueJson || Object.keys(branchCodes.valueJson as object).length === 0) {
+    const valueJson = Object.fromEntries(Object.values(SEED.branches).map((b) => [b.id, b.code]));
+    await prisma.setting.update({ where: { orgId_key: { orgId, key: 'contract.branch_codes' } }, data: { valueJson } });
+  }
   const sla = SETTING_REGISTRY['approval.default_sla_hours'].default as number;
 
   for (const p of products) {

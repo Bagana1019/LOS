@@ -1,5 +1,6 @@
 // ERP outbox relay: PENDING үйл явдлыг түрээслэн ErpGateway руу илгээж, амжилт/дахин оролдлого/DEAD төлөв тэмдэглэнэ. (FIN-SYNC-4)
 // Хамгаалалт: at-least-once (Idempotency-Key-тэй), нэг application дотор seq дарааллаар, олон instance SKIP LOCKED-оор зэрэг ажиллана.
+// M9: no runExclusive on purpose — claimNext (FOR UPDATE SKIP LOCKED + lease) already prevents duplicate ERP posts, and a pod lock would serialize horizontal delivery throughput (proven by erp-sync.e2e.pg.test.ts 'concurrent relays').
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';

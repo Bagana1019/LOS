@@ -1,4 +1,5 @@
 // AML модулийн port-ууд (hexagonal). Prisma хэрэгжүүлэлт нь repository/prisma-*.ts, тестэд in-memory.
+import type { AuditInput } from '@los/database';
 import type {
   AmlHit, AmlPolicy, AmlRiskFactor, AmlRiskLevel, AmlSubject, DomainEvent, HitStatus, ScreeningList,
   ScreeningStatus, ScreeningTrigger, UserRole,
@@ -70,6 +71,8 @@ export interface ReviewDerivation {
   riskFactors: AmlRiskFactor[];
   /** Outbox-д нэг транзакцид бичигдэнэ (CLAUDE.md §3.2.4); дээрх утгуудаас үүсгэсэн байх ёстой. */
   event: DomainEvent;
+  /** NFR-4: `kyc.audit_log`-д ИЖИЛ транзакцид (шийдвэр хадгалагдсан үед л). Тайлбар (чөлөөт текст), регистр орохгүй. */
+  audit?: AuditInput;
 }
 
 export interface HitReviewCommand {

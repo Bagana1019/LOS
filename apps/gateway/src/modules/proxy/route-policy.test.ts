@@ -1,5 +1,27 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PUBLIC_PAYMENT_CALLBACKS, isAmbiguousPath, isInternalOnly, requiredPermission } from './route-policy';
+import { PUBLIC_PAYMENT_CALLBACKS, ROUTE_POLICIES, isAmbiguousPath, isInternalOnly, isMerchantPortalPath, requiredPermission } from './route-policy';
+
+describe('isMerchantPortalPath (docs/05-merchant-pos.md §8: merchant principals reach ONLY the merchant portal)', () => {
+  it.each([
+    '/api/origination/merchant-portal/me',
+    '/api/origination/merchant-portal/leases/abc/submit',
+    '/api/origination/merchant-portal',
+    '/API/Origination/Merchant-Portal/me',
+  ])('%s is a merchant portal path', (p) => expect(isMerchantPortalPath(p)).toBe(true));
+
+  it.each([
+    '/api/origination/applications',
+    '/api/origination/pos-leases',
+    '/api/origination/merchants',
+    '/api/origination/pos-plans',
+    '/api/origination/merchant-portalx/me',
+    '/api/kyc/merchant-portal/me',
+    '/api/origination/settings',
+    '/api/admin/users',
+  ])('%s is not', (p) => expect(isMerchantPortalPath(p)).toBe(false));
+});
 
 describe('requiredPermission (FR-5.5 pricing tiers)', () => {
   const tiers = '/api/origination/loan-terms/pricing/tiers';
@@ -10,6 +32,19 @@ describe('requiredPermission (FR-5.5 pricing tiers)', () => {
   });
   it('does not match look-alike prefixes', () => {
     expect(requiredPermission('PUT', `${tiers}-x`)).toBeNull();
+  });
+});
+
+describe('requiredPermission (AML hit review — docs/05-compliance-aml.md §7)', () => {
+  it('the review queue and hit decisions need aml:review (COMPLIANCE), read and write alike', () => {
+    expect(requiredPermission('GET', '/api/kyc/aml/hits')).toBe('aml:review');
+    expect(requiredPermission('GET', '/api/KYC/aml/hits')).toBe('aml:review');
+    expect(requiredPermission('POST', '/api/kyc/aml/hits/00000000-0000-4000-8000-000000000001/review')).toBe('aml:review');
+  });
+  it('screening, its detail and the per-customer latest result stay open to any signed-in user (kyc checks roles)', () => {
+    expect(requiredPermission('POST', '/api/kyc/aml/screen')).toBeNull();
+    expect(requiredPermission('GET', '/api/kyc/aml/screenings/s-1')).toBeNull();
+    expect(requiredPermission('GET', '/api/kyc/aml/hitsx')).toBeNull();
   });
 });
 
@@ -100,5 +135,14 @@ describe('PUBLIC_PAYMENT_CALLBACKS (H9)', () => {
       'POST /api/origination/payments/callbacks/qpay -> /api/payments/callbacks/qpay',
       'POST /api/origination/payments/callbacks/socialpay -> /api/payments/callbacks/socialpay',
     ]);
+  });
+});
+
+describe('ROUTE_POLICIES (NFR-3 drift guard coverage)', () => {
+  it('every policy service has a route-authorization test that compares it with the service controllers', () => {
+    const services = [...new Set(ROUTE_POLICIES.map((p) => p.service))];
+    const testFile = (s: string) => resolve(__dirname, `../../../../${s}/test/route-authorization.test.ts`);
+    const missing = services.filter((s) => !existsSync(testFile(s)) || !readFileSync(testFile(s), 'utf8').includes('findPolicyDrift'));
+    expect(missing).toEqual([]);
   });
 });

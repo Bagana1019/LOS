@@ -18,14 +18,25 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { service: 'origination', prefix: '/api/origination/maker-checker/policies', writeOnly: true, permission: 'settings:manage' },
   // ERP синкийн ops API (FIN-SYNC): унших/бичих бүгд ADMIN. Service давхар шалгана (@Permissions('erp-sync:manage'))
   { service: 'origination', prefix: '/api/origination/erp-sync', permission: 'erp-sync:manage' },
+  // AML hit шийдвэрлэх дараалал ба шийдвэр (docs/05-compliance-aml.md §5, §7; DECISIONS P4C-1): унших/бичих — COMPLIANCE. kyc AmlAccessGuard давхар шалгана.
+  { service: 'kyc', prefix: '/api/kyc/aml/hits', permission: 'aml:review' },
   { service: 'dms', prefix: '/api/dms/templates', writeOnly: true, permission: 'settings:manage' }, // FR-11.2 загвар засварлагч
   { service: 'scoring', prefix: '/api/scoring/sosco/models', writeOnly: true, permission: 'settings:manage' },
-  { service: 'scoring', prefix: '/api/scoring/bsa/categories', writeOnly: true, permission: 'settings:manage' },
   { service: 'scoring', prefix: '/api/scoring/bsa/rules', writeOnly: true, permission: 'settings:manage' },
   { service: 'valuation', prefix: '/api/valuation/base-prices', writeOnly: true, permission: 'settings:manage' },
   { service: 'valuation', prefix: '/api/valuation/haircuts', writeOnly: true, permission: 'settings:manage' },
 ];
 const READ = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * docs/05-merchant-pos.md §8, §13: мерчант principal (MERCHANT_ADMIN / MERCHANT_STAFF) зөвхөн мерчант порталыг дуудна.
+ * Лизингийн байгууллагын API (`/pos-leases`, `/merchants`, `/applications` …), бусад сервис, gateway admin/directory → 403 (JwtAuthGuard).
+ */
+export const MERCHANT_PORTAL_PREFIX = '/api/origination/merchant-portal';
+export function isMerchantPortalPath(path: string): boolean {
+  const p = path.toLowerCase();
+  return p === MERCHANT_PORTAL_PREFIX || p.startsWith(`${MERCHANT_PORTAL_PREFIX}/`);
+}
 
 export function requiredPermission(method: string, path: string): Permission | null {
   const p = path.toLowerCase();

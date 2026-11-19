@@ -27,6 +27,7 @@ import { MerchantModule } from './modules/merchant/merchant.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { ErpSyncModule } from './modules/erp-sync/erp-sync.module';
 import { CollateralModule } from './modules/collateral/collateral.module';
+import { ApplicationFileModule } from './modules/application-file/application-file.module';
 import { DocumentModule } from './modules/document/document.module';
 import { BsaModule } from './modules/bsa/bsa.module';
 import { CommentModule } from './modules/comment/comment.module';
@@ -64,6 +65,7 @@ import { PortalModule } from './modules/portal/portal.module';
     ErpSyncModule,
     CollateralModule,
     DocumentModule,
+    ApplicationFileModule,
     BsaModule,
     CommentModule,
     PortalModule,

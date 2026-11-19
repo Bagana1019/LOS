@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserRole } from './enums';
+import { AccountRole, UserRole } from './enums';
 
 // ── Gateway → дотоод сервис: итгэмжлэгдсэн толгойнууд (CLAUDE.md §3.2.9; X-Org-Id, X-Customer-Id нэмэгдсэн — DECISIONS.md) ──
 export const CTX_HEADERS = {
@@ -43,6 +43,8 @@ export const Permission = [
   'change-request:read',
   // ERP синк (FIN-SYNC): ERP рүү явах үйл явдлын илгээлтийг харах/дахин оролдуулах/хаах. Зөвхөн ADMIN.
   'erp-sync:manage',
+  // AML hit шийдвэрлэх дараалал (docs/05-compliance-aml.md §5, §7; DECISIONS P4C-1): цэс + gateway route-policy. Зөвхөн COMPLIANCE.
+  'aml:review',
 ] as const;
 export type Permission = typeof Permission[number];
 
@@ -55,7 +57,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   APPROVER: ['customer:read', 'application:read', 'approval:vote', 'disbursement:approve', 'blacklist:read', 'report:read', 'change-request:read'],
   ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage', 'change-request:read', 'erp-sync:manage'],
   // Комплаенс (Q-128): хар/саарал жагсаалт бүртгэх, 4 нүдээр батлах, аудит харах. Зээл батлахгүй, тохиргоо өөрчлөхгүй.
-  COMPLIANCE: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'audit:read', 'change-request:read'],
+  COMPLIANCE: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'audit:read', 'change-request:read', 'aml:review'],
 };
 
 export function permissionsFor(roles: readonly string[]): Permission[] {
@@ -84,6 +86,8 @@ export const MENU: readonly MenuItem[] = [
   { id: 'loan', labelKey: 'nav.loan', href: '/los/loan/list', permission: 'application:read' },
   { id: 'maker-checker', labelKey: 'nav.maker_checker', href: '/los/maker-checker', permission: 'change-request:read' },
   { id: 'report', labelKey: 'nav.report', href: '/los/report', permission: 'report:read' },
+  // Compliance · AML шалгалт: хориг жагсаалтын тохирлыг шийдвэрлэх дараалал (зөвхөн COMPLIANCE).
+  { id: 'aml-review', labelKey: 'nav.aml_review', href: '/los/compliance/aml', permission: 'aml:review' },
   // Хар жагсаалт — дэд цэс биш, дээд түвшний цэс; «Тохиргоо»-ны яг дээр.
   { id: 'blacklist', labelKey: 'nav.blacklist', href: '/los/blacklist', permission: 'blacklist:read' },
   { id: 'settings', labelKey: 'nav.settings', href: '/settings', permission: 'settings:manage' },
@@ -102,7 +106,9 @@ const MenuItemSchema: z.ZodType<MenuItem> = z.lazy(() => z.object({
 export const LoginRequest = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(200) });
 export type LoginRequest = z.infer<typeof LoginRequest>;
 export const SessionUser = z.object({
-  id: z.string(), orgId: z.string(), branchId: z.string().nullable(), username: z.string(), fullName: z.string(), roles: z.array(z.enum(UserRole)),
+  id: z.string(), orgId: z.string(), branchId: z.string().nullable(), username: z.string(), fullName: z.string(), roles: z.array(z.enum(AccountRole)),
+  /** Мерчант POS (docs/05-merchant-pos.md §2): зөвхөн MERCHANT_* дүртэй хэрэглэгчид; gateway X-Merchant-Id / X-Store-Id-г эндээс тавина. */
+  merchantId: z.string().nullable().optional(), storeId: z.string().nullable().optional(),
 });
 export type SessionUser = z.infer<typeof SessionUser>;
 /** Refresh token нь httpOnly cookie-д (`los_rt`); body-д зөвхөн access token. */
@@ -112,7 +118,7 @@ export const MeResponse = AuthResponse.omit({ accessToken: true, expiresIn: true
 export type MeResponse = z.infer<typeof MeResponse>;
 /** Access token (JWT) claim. */
 export const AccessTokenClaims = z.object({
-  sub: z.string(), org: z.string(), br: z.string().nullable(), roles: z.array(z.enum(UserRole)), sid: z.string(), iat: z.number(), exp: z.number(),
+  sub: z.string(), org: z.string(), br: z.string().nullable(), roles: z.array(z.enum(AccountRole)), sid: z.string(), iat: z.number(), exp: z.number(),
 });
 export type AccessTokenClaims = z.infer<typeof AccessTokenClaims>;
 

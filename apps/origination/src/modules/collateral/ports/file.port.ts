@@ -4,8 +4,9 @@ import { DomainError, type InternalHttpClient } from '@los/nest-common';
 import { INTERNAL_TIMEOUT_MS, callUpstream, createInternalHttp } from './upstream';
 
 /** dms файлын мета (барьцааны баримт, гадны үнэлгээний тайлан шалгахад). `apps/dms/src/modules/file` `FileView`-ийн хэрэгтэй хэсэг. */
-export const DmsFileMeta = z.object({ id: z.string(), name: z.string(), mime: z.string(), size: z.number().int().nonnegative() }).passthrough();
-export type FileMeta = Pick<z.infer<typeof DmsFileMeta>, 'id' | 'name' | 'mime' | 'size'>;
+export const DmsFileMeta = z.object({ id: z.string(), name: z.string(), mime: z.string(), size: z.number().int().nonnegative(), uploadedBy: z.string().nullable().optional() }).passthrough();
+/** `uploadedBy` — файлыг байршуулсан хэрэглэгч (NFR-3: хавсаргахдаа эзэмшлийг шалгана); тодорхойгүй бол `null`. */
+export type FileMeta = Pick<z.infer<typeof DmsFileMeta>, 'id' | 'name' | 'mime' | 'size'> & { uploadedBy: string | null };
 
 /** origination → dms (sync REST). Файл олдохгүй (эсвэл өөр байгууллагын) бол `null`. Тестэд солигдоно. */
 export interface FilePort {
@@ -19,7 +20,7 @@ export class HttpFilePort implements FilePort {
   async getMeta(ctx: RequestContext, fileId: string): Promise<FileMeta | null> {
     try {
       const f = await callUpstream('dms', () => this.http.get('dms', `/api/files/${encodeURIComponent(fileId)}`, { ctx, timeoutMs: this.timeoutMs, schema: DmsFileMeta }));
-      return { id: f.id, name: f.name, mime: f.mime, size: f.size };
+      return { id: f.id, name: f.name, mime: f.mime, size: f.size, uploadedBy: f.uploadedBy ?? null };
     } catch (e) {
       if (e instanceof DomainError && e.getStatus() === 404) return null;
       throw e;

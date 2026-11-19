@@ -28,6 +28,11 @@ export function advisoryLockKey(name: string): bigint {
   return createHash('sha256').update(name, 'utf8').digest().readBigInt64BE(0);
 }
 
+/** Түгжээ авах боломжтой клиент эсэх. DB-гүй горимын stub (`{}`) эсвэл байхгүй бол false → дуудагч түгжээгүй (нэг процесс) ажиллана. */
+export function isAdvisoryLockClient(db: unknown): db is AdvisoryLockClient {
+  return typeof (db as { $transaction?: unknown } | null | undefined)?.$transaction === 'function';
+}
+
 /**
  * `name` түгжээг авч чадвал `work`-ийг гүйцэтгэнэ (`{ ran: true, value }`); өөр pod барьж байвал хүлээхгүй, `{ ran: false }`.
  * `work`-ийн алдаа дамжина (түгжээ rollback-аар чөлөөлөгдөнө).

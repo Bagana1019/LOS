@@ -17,6 +17,8 @@
   "auth.role.OFFICER": "Зээлийн эдийн засагч",
   "auth.role.BRANCH_MANAGER": "Салбарын захирал",
   "auth.role.COMPLIANCE": "Комплаенс",
+  "auth.role.MERCHANT_ADMIN": "Мерчантын админ",
+  "auth.role.MERCHANT_STAFF": "Кассир",
   "auth.role.APPROVER": "Батлагч",
   "auth.role.ADMIN": "Админ",
   "auth.scope.NONE": "Хандах эрхгүй",

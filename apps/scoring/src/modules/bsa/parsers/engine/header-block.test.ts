@@ -1,7 +1,7 @@
 // header-block — толгой хэсгийн талбарууд (Монгол + Англи шошго; утга ижил нүдэнд / дараагийн нүдэнд / дараагийн мөрөнд). SYNTHETIC.
 import { describe, expect, it } from 'vitest';
 import { ENGINE_DEFAULTS as cfg } from './defaults';
-import { compileHeaderExtractor, type ZoneLine } from './header-block';
+import { compileHeaderExtractor, currencyCodes, type ZoneLine } from './header-block';
 import { WarningCollector } from './warnings';
 
 const extractor = compileHeaderExtractor(cfg, { dateOrder: 'DMY' });
@@ -165,5 +165,43 @@ describe('extractFooterLine', () => {
 
   it('a footer label without a readable value is still "matched" (not a description continuation)', () => {
     expect(footer(['Эцсийн үлдэгдэл: n/a'])).toMatchObject({ matched: true, fields: { closingBalance: null } });
+  });
+});
+
+describe('currencyCodes (M12: валютыг хэзээ ч чимээгүй MNT болгохгүй)', () => {
+  it('reads ISO codes, Mongolian/English words and symbols', () => {
+    expect(currencyCodes('MNT')).toEqual(['MNT']);
+    expect(currencyCodes('Төгрөг (MNT)')).toEqual(['MNT']);
+    expect(currencyCodes('₮')).toEqual(['MNT']);
+    expect(currencyCodes('Ам.доллар')).toEqual(['USD']);
+    expect(currencyCodes('US $')).toEqual(['USD']);
+    expect(currencyCodes('Евро')).toEqual(['EUR']);
+  });
+  it('returns every distinct code of a mixed value; nothing for an unreadable one', () => {
+    expect(currencyCodes('MNT, USD')).toEqual(['MNT', 'USD']);
+    expect(currencyCodes('—')).toEqual([]);
+  });
+});
+
+describe('currency label (M12 security: fail closed)', () => {
+  const codesOf = (w: { code: string }[]) => w.map((x) => x.code);
+  it('label with unreadable text → no currency and CURRENCY_UNREADABLE (never MNT)', () => {
+    const { fields, warnings } = run(zone(['Валют: ???']));
+    expect(fields.currency).toBeNull();
+    expect(codesOf(warnings)).toContain('CURRENCY_UNREADABLE');
+  });
+  it('label with MNT → MNT, no warning; USD → USD', () => {
+    const mnt = run(zone(['Валют: MNT']));
+    expect(mnt.fields.currency).toBe('MNT');
+    expect(codesOf(mnt.warnings)).not.toContain('CURRENCY_UNREADABLE');
+    expect(run(zone(['Currency: USD'])).fields.currency).toBe('USD');
+  });
+  it('"MNT/USD" → CURRENCY_MIXED', () => {
+    expect(codesOf(run(zone(['Валют: MNT/USD'])).warnings)).toContain('CURRENCY_MIXED');
+  });
+  it('no currency label → nothing set here (the engine applies the default)', () => {
+    const { fields, warnings } = run(zone(['Дансны дугаар: 5011223344']));
+    expect(fields.currency).toBeNull();
+    expect(codesOf(warnings)).not.toContain('CURRENCY_UNREADABLE');
   });
 });

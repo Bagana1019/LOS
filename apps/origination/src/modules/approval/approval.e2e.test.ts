@@ -48,8 +48,12 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     await level(2, 'Төв', 5_000_000, 30_000_000, ['ap-1']);
     await level(3, 'Зээлийн хороо', 30_000_000, null, ['ap-1', 'ap-2', 'ap-3']);
     await t.prisma.contractNumberCounter.deleteMany({});
+    await setBranchCodes({ 'branch-1': 'BRANCH1' }); // BR-11: {BRANCH} нь тохируулсан кодоос л (UUID-аас гаргахгүй)
     t.clock.set(new Date('2026-11-03T02:00:00Z'));
   });
+
+  const setBranchCodes = (codes: Record<string, string>) =>
+    t.prisma.setting.upsert({ where: { orgId_key: { orgId: ORG, key: 'contract.branch_codes' } }, create: { orgId: ORG, key: 'contract.branch_codes', valueJson: codes }, update: { valueJson: codes } });
 
   const STEP_KEYS = ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score', 'document', 'decision', 'contract', 'official_documents', 'disburse'];
   /** G1 AML: үндсэн зээлдэгч; updated_at тестийн цагаас өмнө — шалгалт «хуучирсан» гэж үзэгдэхгүй */
@@ -91,7 +95,7 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     v = DecisionView.parse(res.body);
     expect(v.status).toBe('APPROVED');
     const row = await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: app.id } });
-    expect(row.contractNo).toBe('BBRANCH126110301'); // {PREFIX}B + {BRANCH}BRANCH1 + {YYMMDD}261103 + {SEQ:2}01
+    expect(row.contractNo).toBe('BBRANCH126110301'); // {PREFIX}B + {BRANCH}BRANCH1 (contract.branch_codes) + {YYMMDD}261103 + {SEQ:2}01
     expect(row.decidedAt).not.toBeNull();
     expect(v.decisionRecord).toMatchObject({ decisionNo: `${app.appNo}/V1`, contractNo: row.contractNo });
     expect(v.decisionRecord?.minutesText).toContain('bm-1');
@@ -306,6 +310,37 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     await t.prisma.setting.upsert({ where: { orgId_key: { orgId: ORG, key: 'contract.branch_codes' } }, create: { orgId: ORG, key: 'contract.branch_codes', valueJson: { 'branch-1': '10026' } }, update: { valueJson: { 'branch-1': '10026' } } });
     const a = await draft(1_000_000); await submit(a.id); await vote(a.id, bm, 'APPROVE').expect(200);
     expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } })).contractNo).toBe('B1002626110301');
+  });
+
+  it('{BRANCH} код тохируулаагүй салбар → 422 BRANCH_CODE_MISSING; батлалт хийгдэхгүй, UUID-аас дугаар гаргахгүй, тоолуур зарцуулахгүй', async () => {
+    await setBranchCodes({ 'other-branch': '300' });
+    const a = await draft(1_000_000); await submit(a.id);
+    const res = await vote(a.id, bm, 'APPROVE');
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('BRANCH_CODE_MISSING');
+    expect(res.body.message).toMatch(/салбар/i);
+    const row = await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } });
+    expect(row.contractNo).toBeNull();
+    expect(row.status).toBe('IN_APPROVAL');
+    expect(await t.prisma.contractNumberCounter.count()).toBe(0);
+    expect(await t.prisma.decisionRecord.count({ where: { applicationId: a.id } })).toBe(0);
+    // Код тохируулсны дараа ижил санал амжилттай
+    await setBranchCodes({ 'branch-1': '777' });
+    await vote(a.id, bm, 'APPROVE').expect(200);
+    expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } })).contractNo).toBe('B77726110301');
+  });
+
+  it('загварт {BRANCH} байхгүй бол салбарын кодгүй ч батлагдана', async () => {
+    await t.prisma.setting.deleteMany({ where: { orgId: ORG, key: 'contract.branch_codes' } });
+    const tpl = await t.prisma.contractNumberTemplate.findFirstOrThrow({ where: { orgId: ORG }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+    await t.prisma.contractNumberTemplate.update({ where: { id: tpl.id }, data: { pattern: '{PREFIX}-{YYMMDD}-{SEQ:3}' } });
+    try {
+      const a = await draft(1_000_000); await submit(a.id);
+      await vote(a.id, bm, 'APPROVE').expect(200);
+      expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } })).contractNo).toBe('B-261103-001');
+    } finally {
+      await t.prisma.contractNumberTemplate.update({ where: { id: tpl.id }, data: { pattern: tpl.pattern } });
+    }
   });
 
   it('гэрээний дугаар: нэг өдөр 01, 02 дарааллаар; маргааш (DAY хүрээ) дахин 01', async () => {

@@ -2,6 +2,7 @@
 import { hostname } from 'node:os';
 import { DomainEvent, EVENT_STREAM } from '@los/contracts';
 import { Redis } from 'ioredis';
+import { isTransientDbError } from './db-resilience';
 
 export const DEAD_LETTER_STREAM = `${EVENT_STREAM}:dlq`;
 
@@ -19,7 +20,8 @@ export interface SubscribeOptions {
   startId?: string;
   /**
    * Infrastructure fault (e.g. the subscriber's DB is unreachable) → `true`: the failure does NOT consume a delivery attempt, the message
-   * stays pending and is redelivered after retryAfterMs (never dead-lettered for it). Omitted → every error counts (previous behaviour).
+   * stays pending and is redelivered after retryAfterMs (never dead-lettered for it). Omitted → every error counts except a DB-unavailable
+   * error (`isTransientDbError`, M8), which is always treated as transient.
    * A throwing classifier counts as `false`.
    */
   isTransientError?: (err: unknown) => boolean;
@@ -83,7 +85,8 @@ export function createRedisEventBus(url: string, opts: { stream?: string; consum
       const maxDeliveries = so.maxDeliveries ?? 5;
       const retryAfterMs = so.retryAfterMs ?? 30_000;
       const blockMs = so.blockMs ?? 1000;
-      const isTransient = (err: unknown) => { try { return so.isTransientError?.(err) === true; } catch { return false; } };
+      // M8: DB түр унасан (subscriber-ийн өөрийн DB) нь хэзээ ч детерминист биш — тусгай ангилагчгүй ч delivery-г тоолохгүй (DLQ-д орохгүй)
+      const isTransient = (err: unknown) => { try { return isTransientDbError(err) || so.isTransientError?.(err) === true; } catch { return false; } };
 
       const handle = async (id: string, fields: string[]) => {
         const m = toMap(fields);

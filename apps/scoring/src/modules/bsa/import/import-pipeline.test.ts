@@ -328,6 +328,97 @@ describe('ImportPipelineService: verification failures (BSA-FR-2.2)', () => {
   });
 });
 
+describe('ImportPipelineService: statement currency (M12)', () => {
+  const fileIn = (currency: string, fileName: string) => buildStatementFile({
+    bank: 'MBANK', txns: accountBTxns(), opening: OPENING_B, accountNo: ACCOUNT_B, iban: null, holder: HOLDER, fileName, overrides: { header: { currency } },
+  });
+
+  it('a USD statement is NOT summed as MNT: job FAILED with UNSUPPORTED_CURRENCY, no rows, no summary', async () => {
+    const h = await createHarness();
+    const analysis = await h.createAnalysis();
+    await h.uploadFiles(analysis.id, [await fileIn('USD', 'usd.csv')]);
+    const [job] = await h.jobs(analysis.id);
+    expect(job.status).toBe('FAILED');
+    expect(codes(job.errors)).toEqual(['UNSUPPORTED_CURRENCY']);
+    expect(job.errors[0].message).toContain('USD');
+    expect(job.errors[0].message).toMatch(/төгрөг/);
+    expect(job.rowsDone).toBe(0);
+    expect(await h.memory.transactions.loadAll(analysis.id)).toHaveLength(0);
+    expect((await h.analysis.get(OFFICER, analysis.id)).summary).toBeNull();
+  });
+
+  it('a currency printed as a Mongolian word ("Ам.доллар") is still recognised and blocked, not assumed MNT', async () => {
+    const h = await createHarness();
+    const analysis = await h.createAnalysis();
+    await h.uploadFiles(analysis.id, [await fileIn('Ам.доллар', 'usd-mn.csv')]);
+    const [job] = await h.jobs(analysis.id);
+    expect(job.status).toBe('FAILED');
+    expect(codes(job.errors)).toEqual(['UNSUPPORTED_CURRENCY']);
+  });
+
+  it('an MNT statement (code or "₮") imports unchanged', async () => {
+    for (const currency of ['MNT', 'Төгрөг (₮)']) {
+      const h = await createHarness();
+      const analysis = await h.createAnalysis();
+      await h.uploadFiles(analysis.id, [await fileIn(currency, 'mnt.csv')]);
+      expect((await h.jobs(analysis.id))[0], currency).toMatchObject({ status: 'COMPLETED', rowsDone: 9 });
+    }
+  });
+
+  it('mixed files: MNT is imported, USD is refused; totals contain only the MNT rows', async () => {
+    const h = await createHarness();
+    const analysis = await h.createAnalysis();
+    const usd = await buildStatementFile({
+      bank: 'TDB', txns: accountATxns(), opening: OPENING_A, accountNo: ACCOUNT_A, iban: null, holder: HOLDER, fileName: 'a-usd.csv', overrides: { header: { currency: 'USD' } },
+    });
+    await h.uploadFiles(analysis.id, [await fileIn('MNT', 'b-mnt.csv'), usd]);
+    const jobs = (await h.jobs(analysis.id)).sort((x, y) => x.fileName.localeCompare(y.fileName));
+    expect(jobs.map((j) => [j.fileName, j.status])).toEqual([['a-usd.csv', 'FAILED'], ['b-mnt.csv', 'COMPLETED']]);
+    expect(await h.memory.transactions.loadAll(analysis.id)).toHaveLength(9);
+  });
+
+  it('security: a currency label with unreadable text is refused (fail closed), never defaulted to MNT', async () => {
+    for (const garbled of ['???', '—', '##']) {
+      const h = await createHarness();
+      const analysis = await h.createAnalysis();
+      await h.uploadFiles(analysis.id, [await fileIn(garbled, 'garbled.csv')]);
+      const [job] = await h.jobs(analysis.id);
+      expect(job.status, garbled).toBe('FAILED');
+      expect(codes(job.errors), garbled).toEqual(['UNSUPPORTED_CURRENCY']);
+      expect(job.errors[0].message).toMatch(/уншиж чадсангүй/);
+      expect(await h.memory.transactions.loadAll(analysis.id)).toHaveLength(0);
+    }
+  });
+
+  it('no currency label at all → MNT is assumed as before, with a CURRENCY_ASSUMED warning', async () => {
+    const h = await createHarness();
+    const analysis = await h.createAnalysis();
+    await h.uploadFiles(analysis.id, [await fileIn('', 'nolabel.csv')]);
+    const [job] = await h.jobs(analysis.id);
+    expect(job).toMatchObject({ status: 'COMPLETED', rowsDone: 9 });
+    expect(codes(job.warnings)).toContain('CURRENCY_ASSUMED');
+  });
+
+  it('"MNT/USD" in one label is refused as mixed', async () => {
+    const h = await createHarness();
+    const analysis = await h.createAnalysis();
+    await h.uploadFiles(analysis.id, [await fileIn('MNT/USD', 'slash.csv')]);
+    const [job] = await h.jobs(analysis.id);
+    expect(job.status).toBe('FAILED');
+    expect(codes(job.errors)).toEqual(['UNSUPPORTED_CURRENCY']);
+  });
+
+  it('a statement printing two different currencies (mixed) is refused', async () => {
+    const h = await createHarness();
+    const analysis = await h.createAnalysis();
+    await h.uploadFiles(analysis.id, [await fileIn('MNT, USD', 'mixed.csv')]);
+    const [job] = await h.jobs(analysis.id);
+    expect(job.status).toBe('FAILED');
+    expect(codes(job.errors)).toEqual(['UNSUPPORTED_CURRENCY']);
+    expect(await h.memory.transactions.loadAll(analysis.id)).toHaveLength(0);
+  });
+});
+
 describe('ImportPipelineService: retries (attempt-aware)', () => {
   /** Эхний `failures` удаагийн get() алдаатай; алдааны мессежид PII байгаа ч хадгалагдах ёсгүй */
   const flakyStore = (state: { failures: number; reads: number }) => (inner: ObjectStore): ObjectStore => ({

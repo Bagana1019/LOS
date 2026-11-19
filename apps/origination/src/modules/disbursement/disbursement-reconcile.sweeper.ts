@@ -1,5 +1,10 @@
-import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { runExclusive } from '@los/database';
+import { PrismaService } from '../../prisma.service';
 import { DisbursementService } from './disbursement.service';
+
+/** M9: rows are already CAS-leased; the lock additionally stops N pods issuing duplicate Core lookups each tick. */
+export const DISBURSEMENT_RECONCILE_LOCK = 'origination:disbursement-reconcile-sweeper';
 
 const DEFAULT_SECONDS = 300;
 const MAX_SECONDS = 3600;
@@ -21,7 +26,7 @@ export class DisbursementReconcileSweeper implements OnModuleInit, OnModuleDestr
   private readonly log = new Logger(DisbursementReconcileSweeper.name);
   private timer?: NodeJS.Timeout;
   private running = false;
-  constructor(private readonly disbursement: DisbursementService) {}
+  constructor(@Inject(DisbursementService) private readonly disbursement: DisbursementService, @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService) {}
 
   onModuleInit() {
     const seconds = parseReconcileSeconds(process.env.DISBURSEMENT_RECONCILE_SWEEP_SECONDS);
@@ -34,6 +39,10 @@ export class DisbursementReconcileSweeper implements OnModuleInit, OnModuleDestr
   async tick(): Promise<number> {
     if (this.running) return 0;
     this.running = true;
-    try { return await this.disbursement.reconcileStale(); } catch (e) { this.log.error(`disbursement reconcile sweep failed: ${e instanceof Error ? e.name : typeof e}`); return 0; } finally { this.running = false; }
+    try {
+      if (!this.prisma) return await this.disbursement.reconcileStale();
+      const r = await runExclusive(this.prisma, DISBURSEMENT_RECONCILE_LOCK, () => this.disbursement.reconcileStale());
+      return r.ran ? r.value : 0;
+    } catch (e) { this.log.error(`disbursement reconcile sweep failed: ${e instanceof Error ? e.name : typeof e}`); return 0; } finally { this.running = false; }
   }
 }

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { purgeAuditLogForTests } from '@los/database';
 import request from 'supertest';
 import { createApplication, hasTestDb } from '../../test-utils/factories';
 import { createTestApp, type TestApp } from '../../test-utils/test-app';
@@ -32,7 +33,7 @@ describe.skipIf(!hasTestDb)('admin API (DB)', () => {
     await t.prisma.approvalLevel.deleteMany({ where: { orgId: ORG } });
     await t.prisma.contractNumberTemplate.deleteMany({ where: { orgId: ORG } });
     await t.prisma.setting.deleteMany({ where: { orgId: ORG } });
-    await t.prisma.auditLog.deleteMany({ where: { orgId: ORG } });
+    await purgeAuditLogForTests(t.prisma, (tx) => tx.auditLog.deleteMany({ where: { orgId: ORG } }));
   };
   beforeAll(async () => { t = await createTestApp([AdminModule, SettingsModule]); });
   afterAll(async () => { await t.close(); });
@@ -210,6 +211,6 @@ describe.skipIf(!hasTestDb)('admin API (DB)', () => {
     expect(page.body.items).toHaveLength(1);
     expect(page.body.items[0].afterJson).toEqual({ value: 40 });
     expect((await http().get('/api/audit-logs').query({ action: 'NOPE' }).set(admin())).body.total).toBe(0);
-    await t.prisma.auditLog.deleteMany({ where: { orgId: 'org-other' } });
+    await purgeAuditLogForTests(t.prisma, (tx) => tx.auditLog.deleteMany({ where: { orgId: 'org-other' } }));
   });
 });

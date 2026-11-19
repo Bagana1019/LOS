@@ -86,3 +86,12 @@ export function canEditCustomer(
   if (customer.branchId !== null && customer.branchId !== me.user.branchId) return { editable: false, reason: 'OTHER_BRANCH' };
   return { editable: true, reason: null };
 }
+
+/** Сервер (`xyp-mapper` AUTHORITATIVE) ХУР-ын утгыг эрх бүхий гэж үздэг талбарууд — өөр утга илгээвэл 400 `XYP_FIELD_READONLY`. */
+const XYP_OWNED = ['lastName', 'firstName', 'clanName', 'civilId', 'birthDate', 'officialAddress'] as const;
+
+/** M5: ХУР-аас бөглөгдсөн (`prefilledFields`, жишээ `officialAddress.province`) эрх бүхий талбарууд — маягтад зөвхөн унших. */
+export function xypLockedFields(prefilled: readonly string[]): ReadonlySet<string> {
+  const tops = new Set(prefilled.map((p) => p.split('.')[0]));
+  return new Set(XYP_OWNED.filter((k) => tops.has(k)));
+}
