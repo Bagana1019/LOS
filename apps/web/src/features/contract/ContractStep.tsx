@@ -3,7 +3,7 @@ import { Alert, Button, Card, Descriptions, Flex, Skeleton, Tag, Typography, App
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { ContractSigningPanel } from '../contract-signing';
 import { FileUploadButton } from '../documents/shared/FileUploadButton';
-import { downloadDmsFile, uploadDmsFile } from '../documents/shared/files';
+import { downloadApplicationFile, uploadDmsFile } from '../documents/shared/files';
 import { formatDateTime } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { useAttachSigned, useContractDocs, useGenerateContract } from './contract.api';
@@ -33,8 +33,8 @@ export function ContractStep({ applicationId, onChanged }: Props) {
         </Descriptions>
         <Flex gap={8} wrap style={{ marginTop: 12 }}>
           {signed ? null : <Button type="primary" loading={generate.isPending} data-testid="contract-generate" onClick={() => generate.mutateAsync().then(() => void message.success(t('cstep.generatedOk'))).catch(() => undefined)}>{c?.generatedFileId ? t('cstep.regenerate') : t('cstep.generate')}</Button>}
-          {c?.generatedFileId ? <Button onClick={() => void downloadDmsFile(c.generatedFileId as string, `${c.contractNo}.pdf`).catch(fail)}>{t('cstep.download')}</Button> : null}
-          {c?.signedFileId ? <Button onClick={() => void downloadDmsFile(c.signedFileId as string, `${c.contractNo}-signed.pdf`).catch(fail)}>{t('cstep.downloadSigned')}</Button> : null}
+          {c?.generatedFileId ? <Button onClick={() => void downloadApplicationFile(applicationId, c.generatedFileId as string, `${c.contractNo}.pdf`).catch(fail)}>{t('cstep.download')}</Button> : null}
+          {c?.signedFileId ? <Button onClick={() => void downloadApplicationFile(applicationId, c.signedFileId as string, `${c.contractNo}-signed.pdf`).catch(fail)}>{t('cstep.downloadSigned')}</Button> : null}
         </Flex>
         {generate.error ? <div style={{ marginTop: 12 }}><ApiErrorAlert error={generate.error} /></div> : null}
       </Card>

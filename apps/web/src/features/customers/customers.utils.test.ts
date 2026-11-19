@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { XYP_OTP_RESEND_COOLDOWN_SEC, buildPayload, canEditCustomer, isValidXypOtp, issuePath, normalizeOtpInput, otpResendRemainingSec, pruneEmpty, validateCustomer, xypOtpToFetchResult } from './customers.utils';
+import { XYP_OTP_RESEND_COOLDOWN_SEC, buildPayload, canEditCustomer, isValidXypOtp, issuePath, normalizeOtpInput, otpResendRemainingSec, pruneEmpty, validateCustomer, xypLockedFields, xypOtpToFetchResult } from './customers.utils';
 
 const fixed = { customerType: 'INDIVIDUAL', registerNo: 'УБ90010112' };
 const addr = { province: 'УБ', district: 'БЗД', khoroo: '1', detail: 'Байр 1' };
@@ -86,4 +86,16 @@ describe('canEditCustomer', () => {
   it('a legacy customer without an owner is editable by any writer', () => expect(canEditCustomer(me('B2'), { branchId: null }).editable).toBe(true));
   it('no customer:write gives NO_PERMISSION regardless of branch', () => expect(canEditCustomer(me('B1', ['customer:read']), { branchId: 'B1' })).toEqual({ editable: false, reason: 'NO_PERMISSION' }));
   it('not signed in yet is not editable', () => expect(canEditCustomer(null, { branchId: 'B1' }).editable).toBe(false));
+});
+
+describe('xypLockedFields (M5: ХУР-ын эзэмшдэг талбар засагдахгүй)', () => {
+  it('locks the official address and identity fields that XYP filled; leaves officer-owned and fill-only fields editable', () => {
+    const locked = xypLockedFields(['officialAddress.province', 'officialAddress.detail', 'lastName', 'firstName', 'birthDate', 'maritalStatus', 'familySize', 'segment']);
+    expect([...locked].sort()).toEqual(['birthDate', 'firstName', 'lastName', 'officialAddress']);
+  });
+
+  it('nothing is locked for a manual entry or when XYP returned no address', () => {
+    expect(xypLockedFields([]).size).toBe(0);
+    expect(xypLockedFields(['firstName']).has('officialAddress')).toBe(false);
+  });
 });

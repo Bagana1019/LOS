@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Module } from '@nestjs/common';
+import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { bootstrapService } from './bootstrap';
@@ -49,5 +49,31 @@ describe('bootstrapService (H2: fail fast on a missing INTERNAL_AUTH_SECRET in p
     } finally {
       await app.close();
     }
+  });
+});
+
+// M8: DB connect retry budget exhausted in onModuleInit → sanitized log + non-zero exit so the orchestrator restarts the pod.
+@Injectable()
+class DbDownService implements OnModuleInit {
+  async onModuleInit() { throw Object.assign(new Error("Can't reach database server at postgresql://los:secret@db:5432"), { name: 'PrismaClientInitializationError', errorCode: 'P1001' }); }
+}
+@Module({ providers: [DbDownService] })
+class DbDownModule {}
+
+describe('bootstrapService (M8: startup failure exits non-zero)', () => {
+  it('exits with code 1 and never logs the connection string', async () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => { throw new Error(`exit:${code}`); }) as never);
+    const writes: string[] = [];
+    const capture = (chunk: unknown) => { writes.push(String(chunk)); return true; };
+    vi.spyOn(process.stdout, 'write').mockImplementation(capture as never);
+    vi.spyOn(process.stderr, 'write').mockImplementation(capture as never);
+    for (const m of ['log', 'error', 'warn'] as const) vi.spyOn(console, m).mockImplementation((...a: unknown[]) => { writes.push(a.map(String).join(' ')); });
+    await expect(bootstrapService({ service: 'm8-test', module: DbDownModule, portEnv: 'M8_TEST_PORT', defaultPort: 0 })).rejects.toThrow('exit:1');
+    expect(exit).toHaveBeenCalledWith(1);
+    const out = writes.join('\n');
+    expect(out).toContain('P1001');
+    expect(out).not.toContain('secret');
+    expect(out).not.toContain('postgresql://');
   });
 });

@@ -13,7 +13,7 @@ import { auditSnapshot, toRawInput, toSummary, toView } from './customer.mapper'
 import { claimConsentAttempt, recordConsentOutcome } from './xyp-consent';
 import { XYP_LOOKUP, type XypLookup } from './xyp-lookup';
 import { openXypSnapshot, sealXypSnapshot } from './xyp-snapshot';
-import { citizenPrefill, leafPaths, mergeXyp } from './xyp-mapper';
+import { citizenPrefill, leafPaths, mergeXyp, xypConflicts } from './xyp-mapper';
 
 export interface ListQuery { q?: string; registerNo?: string; customerType?: 'INDIVIDUAL' | 'LEGAL_ENTITY'; page: number; pageSize: number }
 
@@ -145,6 +145,10 @@ export class CustomerService {
     if (source === 'XYP') {
       // Иргэний код нэг удаагийнх: ХУР-ыг дахин дуудахгүй, `xyp-fetch`-ийн битүүмжилсэн тэмдгийг нээнэ (өөр хэрэглэгч / регистр / хугацаа дууссан → 400 XYP_SNAPSHOT_INVALID).
       const citizen = openXypSnapshot(ctx, registerNo, xypSnapshotToken, Date.now());
+      const conflicts = xypConflicts(raw as Omit<CreateCustomerRequest, 'source'>, citizen);
+      if (conflicts.length) {
+        throw new DomainError('XYP_FIELD_READONLY', 'ХУР-аас татсан талбарыг (албан ёсны хаяг, овог нэр, төрсөн огноо г.м.) өөрчлөх боломжгүй. ХУР-ын утгыг хэвээр үлдээнэ үү', 400, { fields: conflicts });
+      }
       raw = mergeXyp(raw as Omit<CreateCustomerRequest, 'source'>, citizen);
       xypFetchedAt = new Date(citizen.fetchedAt);
     }

@@ -48,6 +48,8 @@ model File {
   uploadedBy     String?   @map("uploaded_by")
   retentionUntil DateTime? @map("retention_until")
   purgedAt       DateTime? @map("purged_at")
+  /// M10: хууль ёсны саатуулга — true бол retention sweeper устгахгүй
+  legalHold      Boolean   @default(false) @map("legal_hold")
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
   createdBy      String?   @map("created_by")

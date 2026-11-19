@@ -3,10 +3,12 @@ import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { SEED } from '@los/database';
 import request from 'supertest';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
 import { OBJECT_STORAGE, type MemoryStorage } from '../src/modules/file/storage';
+import { MALWARE_SCANNER, MalwareScannerUnavailableError, type MalwareScanner } from '../src/integrations/malware/malware-scanner';
+import { EICAR_TEST_STRING } from '../src/integrations/malware/malware.mock';
 
 const HAS_DB = !!process.env.TEST_DATABASE_URL;
 const as = (u: keyof typeof SEED.users, org: string = SEED.org.id) => ({ 'x-user-id': SEED.users[u].id, 'x-roles': SEED.users[u].roles.join(','), 'x-org-id': org });
@@ -46,7 +48,7 @@ describe.skipIf(!HAS_DB)('dms files (Module 0: MinIO file upload)', () => {
 
   it('downloads the exact bytes with safe headers', async () => {
     const up = await api().post('/api/files').set(as('officerA')).attach('file', PDF, { filename: 'гэрээ.pdf', contentType: 'application/pdf' });
-    const res = await api().get(`/api/files/${up.body.id}/content`).set(as('manager')).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+    const res = await api().get(`/api/files/${up.body.id}/content`).set({ 'x-user-id': 'svc:origination-files', 'x-roles': '', 'x-org-id': SEED.org.id }).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
     expect(res.status).toBe(200);
     expect(res.body).toEqual(PDF);
     expect(res.headers['content-type']).toBe('application/pdf');
@@ -111,9 +113,13 @@ describe.skipIf(!HAS_DB)('dms files (Module 0: MinIO file upload)', () => {
       expect((await api().get(`/api/files/${id}/content`).set({ ...svc(), 'x-customer-id': 'cust-1' })).status).toBe(403);
     });
 
-    it('every staff role that reads applications can still download', async () => {
+    it('no staff role — even with application:read — can download directly (they go through origination)', async () => {
       const id = await upload();
-      for (const u of ['officerA', 'manager', 'admin'] as const) expect((await api().get(`/api/files/${id}/content`).set(as(u))).status, u).toBe(200);
+      for (const u of ['officerA', 'manager', 'admin'] as const) {
+        const res = await api().get(`/api/files/${id}/content`).set(as(u));
+        expect(res.status, u).toBe(403);
+        expect(res.body.code, u).toBe('FILE_ACCESS_DENIED');
+      }
     });
   });
 
@@ -130,5 +136,51 @@ describe.skipIf(!HAS_DB)('dms files (Module 0: MinIO file upload)', () => {
       expect(res.status).toBe(500);
     } finally { (db.file as { create: unknown }).create = spy; }
     expect(storage.objects.size).toBe(before);
+  });
+
+  describe('M10: malware scan before the file is stored', () => {
+    const INFECTED = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.from(EICAR_TEST_STRING, 'latin1'), Buffer.from('\n%%EOF')]);
+    const counts = async () => ({ rows: await db.file.count(), objects: storage.objects.size });
+
+    it('an infected file (EICAR) is refused with 422 FILE_INFECTED; no row and no object are stored', async () => {
+      const before = await counts();
+      const res = await api().post('/api/files').set(as('officerA')).attach('file', INFECTED, { filename: 'virus.pdf', contentType: 'application/pdf' });
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe('FILE_INFECTED');
+      expect(res.body.message).toMatch(/хортой/);
+      expect(await counts()).toEqual(before);
+    });
+
+    it('scanner unavailable → 503 MALWARE_SCAN_UNAVAILABLE (fail closed by default); nothing stored', async () => {
+      const scanner = app.get<MalwareScanner>(MALWARE_SCANNER);
+      const spy = vi.spyOn(scanner, 'scan').mockRejectedValue(new MalwareScannerUnavailableError('down'));
+      try {
+        const before = await counts();
+        const res = await api().post('/api/files').set(as('officerA')).attach('file', PDF, { filename: 'ok.pdf', contentType: 'application/pdf' });
+        expect(res.status).toBe(503);
+        expect(res.body.code).toBe('MALWARE_SCAN_UNAVAILABLE');
+        expect(await counts()).toEqual(before);
+      } finally { spy.mockRestore(); }
+    });
+
+    it('MALWARE_SCAN_FAIL_OPEN=true accepts the file when the scanner is down (explicit opt-in only)', async () => {
+      const scanner = app.get<MalwareScanner>(MALWARE_SCANNER);
+      const spy = vi.spyOn(scanner, 'scan').mockRejectedValue(new MalwareScannerUnavailableError('down'));
+      process.env.MALWARE_SCAN_FAIL_OPEN = 'true';
+      try {
+        const res = await api().post('/api/files').set(as('officerA')).attach('file', PDF, { filename: 'ok.pdf', contentType: 'application/pdf' });
+        expect(res.status).toBe(201);
+      } finally { delete process.env.MALWARE_SCAN_FAIL_OPEN; spy.mockRestore(); }
+    });
+
+    it('a clean file is scanned exactly once and stored', async () => {
+      const scanner = app.get<MalwareScanner>(MALWARE_SCANNER);
+      const spy = vi.spyOn(scanner, 'scan');
+      try {
+        const res = await api().post('/api/files').set(as('officerA')).attach('file', PDF, { filename: 'clean.pdf', contentType: 'application/pdf' });
+        expect(res.status).toBe(201);
+        expect(spy).toHaveBeenCalledTimes(1);
+      } finally { spy.mockRestore(); }
+    });
   });
 });

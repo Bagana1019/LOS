@@ -9,7 +9,7 @@ import { EsignModule } from './modules/esign/esign.module';
 import { OcrModule } from './modules/ocr/ocr.module';
 import { DocumentModule } from './modules/document/document.module';
 import { TemplateModule } from './modules/template/template.module';
-// import { RetentionModule } from './modules/retention/retention.module';
+import { RetentionModule } from './modules/retention/retention.module';
 
 @Module({
   imports: [
@@ -24,7 +24,7 @@ import { TemplateModule } from './modules/template/template.module';
     OcrModule,
     DocumentModule,
     TemplateModule,
-    // RetentionModule,
+    RetentionModule,
   ],
 })
 export class AppModule {}

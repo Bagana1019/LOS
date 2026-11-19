@@ -6,7 +6,7 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "test": "vitest run --passWithNoTests",
-    "lint": "eslint src",
+    "lint": "eslint src test",
     "db:generate": "node ../../scripts/prisma.mjs kyc generate",
     "db:migrate": "node ../../scripts/prisma.mjs kyc migrate deploy",
     "db:migrate:dev": "node ../../scripts/prisma.mjs kyc migrate dev",

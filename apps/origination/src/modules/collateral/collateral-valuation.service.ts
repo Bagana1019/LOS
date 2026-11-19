@@ -3,7 +3,7 @@ import type {
   AssetType, CollateralMutationResponse, CollateralValuationRecord, ExternalValuationRequest, RecordExternalValuationRequest, RequestContext, SaveCollateralValuationRequest,
   SaveValuationRequest, SuggestValuationRequest, SuggestValuationResponse, ValuationHistoryResponse,
 } from '@los/contracts';
-import { Clock, DomainError } from '@los/nest-common';
+import { Clock, DomainError, assertFileUploadedByCaller } from '@los/nest-common';
 import type { LoanApplication, Prisma } from '.prisma/client-origination';
 import { PrismaService, type Tx } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
@@ -70,7 +70,9 @@ export class CollateralValuationService {
     if (input.valuedAt > todayUB(this.clock)) throw new DomainError('VALUATION_DATE_IN_FUTURE', 'Үнэлгээний огноо ирээдүйд байж болохгүй', 422);
     if (input.validUntil && input.validUntil < input.valuedAt) throw new DomainError('VALIDITY_BEFORE_VALUATION', 'Хүчинтэй хугацаа үнэлгээний огнооноос өмнө байж болохгүй', 422);
     // Тайлан (dms файл) заавал байх ёстой — valuation дуудахаас өмнө шалгана
-    if (!(await this.files.getMeta(ctx, input.reportFileId))) throw new DomainError('REPORT_FILE_NOT_FOUND', 'Үнэлгээний тайлангийн файл олдсонгүй. Эхлээд файлыг байршуулна уу', 422);
+    const report = await this.files.getMeta(ctx, input.reportFileId);
+    if (!report) throw new DomainError('REPORT_FILE_NOT_FOUND', 'Үнэлгээний тайлангийн файл олдсонгүй. Эхлээд файлыг байршуулна уу', 422);
+    assertFileUploadedByCaller(ctx, report.uploadedBy); // NFR-3
     const request: RecordExternalValuationRequest = {
       ...(await this.buildRequest(app, row, 'external')),
       appraiser: input.appraiser, valuedAt: input.valuedAt, marketValue: input.marketValue, reportFileId: input.reportFileId,

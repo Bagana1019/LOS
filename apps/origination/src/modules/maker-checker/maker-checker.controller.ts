@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
   ApproveChangeRequest, CancelChangeRequest, ListChangeRequestsQuery, MakerCheckerPolicy, RejectChangeRequest, SubmitChangeRequest,
 } from '@los/contracts';
-import { ZodValidationPipe } from '@los/nest-common';
+import { Permissions, ZodValidationPipe } from '@los/nest-common';
 import { CurrentActor, type Actor } from './actor';
 import { MakerCheckerService } from './maker-checker.service';
 
@@ -57,7 +57,8 @@ export class MakerCheckerController {
   policies(@CurrentActor() actor: Actor) { return this.svc.listPolicies(actor); }
 
   /** Policy өөрчлөх нь өөрөө 4 нүдтэй хүсэлт (MC-BR-8) → 202 */
-  @Put('policies/:targetType/:action')
+  // Gateway route-policy-тэй ижил (settings:manage = зөвхөн ADMIN); service мөн maker=ADMIN-ийг шалгана (MC-BR-8)
+  @Put('policies/:targetType/:action') @Permissions('settings:manage')
   async changePolicy(
     @CurrentActor() actor: Actor, @Param(new ZodValidationPipe(PolicyParams)) params: z.infer<typeof PolicyParams>,
     @Body(new ZodValidationPipe(PolicyBody)) body: z.infer<typeof PolicyBody>, @Res({ passthrough: true }) res: StatusRes,

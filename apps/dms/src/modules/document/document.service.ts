@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DocumentView, type CreateDocumentRequest, type DocumentListQuery, type DocumentRelatedEntity, type RequestContext } from '@los/contracts';
 import { buildEvent, enqueueOutbox } from '@los/database';
-import { DomainError } from '@los/nest-common';
+import { DomainError, assertFileUploadedByCaller } from '@los/nest-common';
 import { detectOcrMime, OcrError, type DocumentExtraction, type OcrDocType } from '@los/ocr';
 import type { Document as DocumentRow, File as FileRow } from '.prisma/client-dms';
 import { PrismaService } from '../../prisma.service';
@@ -67,6 +67,7 @@ export class DocumentService {
       // purge хийгдсэн эсвэл өөр байгууллагын файл нь "байхгүй" файлтай адил — оршихуйг задруулахгүй
       const file = await tx.file.findFirst({ where: { id: data.fileId, orgId: ctx.orgId, purgedAt: null } });
       if (!file) throw fileNotFound();
+      assertFileUploadedByCaller(ctx, file.uploadedBy); // NFR-3: өөр хүний файлын id-г өөрийн хүсэлтэд хавсаргаж болохгүй
       const row = await tx.document.create({
         data: {
           orgId: ctx.orgId, applicationId: data.applicationId, type: data.type, relatedEntity: data.relatedEntity, relatedId: data.relatedId,

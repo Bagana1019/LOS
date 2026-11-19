@@ -244,9 +244,9 @@ test.describe('Баримтын үйлдлүүд', () => {
     const download = page.waitForEvent('download');
     await row(page, 'income_proof').getByRole('button', { name: 'Татах: income.pdf' }).click();
     expect((await download).suggestedFilename()).toBe('income.pdf');
-    expect(api.callsTo('GET', '/dms/files/:id/content')).toHaveLength(1);
-    expect(api.lastCall('GET', '/dms/files/:id/content')?.params.id).toBe('0a1b2c3d-4444-4a44-8a44-000000000001');
-    expect(api.lastCall('GET', '/dms/files/:id/content')?.headers.authorization).toMatch(/^Bearer token-/);
+    expect(api.callsTo('GET', '/applications/:applicationId/files/:id/content')).toHaveLength(1);
+    expect(api.lastCall('GET', '/applications/:applicationId/files/:id/content')?.params.id).toBe('0a1b2c3d-4444-4a44-8a44-000000000001');
+    expect(api.lastCall('GET', '/applications/:applicationId/files/:id/content')?.headers.authorization).toMatch(/^Bearer token-/);
     expectClean(guard, api);
   });
 

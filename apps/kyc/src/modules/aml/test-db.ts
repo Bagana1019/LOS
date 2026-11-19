@@ -1,4 +1,5 @@
 // Postgres-тэй тестийн нийтлэг helper (aml.e2e.test.ts, prisma-aml.repository.int.test.ts). Production код үүнийг импортлохгүй.
+import { purgeAuditLogForTests } from '@los/database';
 
 /** Тестэд TRUNCATE хийдэг хүснэгтүүд (kyc schema). */
 export const KYC_TEST_TABLES = ['kyc.aml_hit', 'kyc.aml_check', 'kyc.blacklist_projection', 'kyc.processed_events', 'kyc.outbox', 'kyc.audit_log'] as const;
@@ -25,8 +26,10 @@ export function assertTestDatabase(url: string | undefined = process.env.DATABAS
   }
 }
 
-/** Тестийн өмнө хүснэгтүүдийг цэвэрлэнэ; guard-ийг ЗААВАЛ эхэлж шалгана. */
-export async function truncateKycTables(db: { $executeRawUnsafe(query: string): Promise<unknown> }, url: string | undefined = process.env.DATABASE_URL): Promise<void> {
+type RawDb = { $executeRawUnsafe(query: string): Promise<unknown> };
+
+/** Тестийн өмнө хүснэгтүүдийг цэвэрлэнэ; guard-ийг ЗААВАЛ эхэлж шалгана. M10: kyc.audit_log append-only тул purgeAuditLogForTests дотор. */
+export async function truncateKycTables(db: RawDb & { $transaction<R>(fn: (tx: RawDb) => Promise<R>): Promise<R> }, url: string | undefined = process.env.DATABASE_URL): Promise<void> {
   assertTestDatabase(url);
-  await db.$executeRawUnsafe(`TRUNCATE ${KYC_TEST_TABLES.join(', ')} CASCADE`);
+  await purgeAuditLogForTests(db, (tx: RawDb) => tx.$executeRawUnsafe(`TRUNCATE ${KYC_TEST_TABLES.join(', ')} CASCADE`));
 }

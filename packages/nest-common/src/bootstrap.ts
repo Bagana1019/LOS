@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { type INestApplication, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { describeDbError } from '@los/database';
 import { assertInternalAuthSecret } from './auth/internal-secret';
 import { loadEnvFiles } from './config';
 import { JsonLogger } from './logging/json-logger';
@@ -24,14 +25,22 @@ export async function bootstrapService(opts: BootstrapOptions): Promise<INestApp
   loadEnvFiles();
   assertInternalAuthSecret(); // H2: production-д нууцгүйгээр эхлэхгүй (NestFactory.create-ээс ӨМНӨ)
   const logger = new JsonLogger(opts.service);
-  const app = await NestFactory.create(opts.module, { bufferLogs: true, bodyParser: opts.bodyParser ?? true, rawBody: opts.rawBody });
-  app.useLogger(logger);
-  app.setGlobalPrefix('api');
-  app.enableShutdownHooks();
-  if (opts.cors) app.enableCors({ origin: opts.cors.origin, credentials: opts.cors.credentials ?? false });
-  await opts.configure?.(app);
-  const port = Number(process.env[opts.portEnv] ?? opts.defaultPort);
-  await app.listen(port);
-  logger.log(`${opts.service} listening on :${port}`, 'Bootstrap');
-  return app;
+  let app: INestApplication | undefined;
+  try {
+    app = await NestFactory.create(opts.module, { bufferLogs: true, bodyParser: opts.bodyParser ?? true, rawBody: opts.rawBody, abortOnError: false });
+    app.useLogger(logger);
+    app.setGlobalPrefix('api');
+    app.enableShutdownHooks();
+    if (opts.cors) app.enableCors({ origin: opts.cors.origin, credentials: opts.cors.credentials ?? false });
+    await opts.configure?.(app);
+    const port = Number(process.env[opts.portEnv] ?? opts.defaultPort);
+    await app.listen(port); // onModuleInit (PrismaService: connect retry, M8) энд ажиллана
+    logger.log(`${opts.service} listening on :${port}`, 'Bootstrap');
+    return app;
+  } catch (err) {
+    // M8: DB connect-ийн төсөв дууссан г.м — non-zero exit → orchestrator restart. Мессеж/stack хэвлэхгүй (connection string агуулж болно).
+    logger.error(`${opts.service} failed to start: ${describeDbError(err)}`, undefined, 'Bootstrap');
+    await app?.close().catch(() => undefined);
+    return process.exit(1);
+  }
 }

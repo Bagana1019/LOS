@@ -192,7 +192,14 @@ describe('mutated valid statements (structure-aware fuzz)', () => {
   });
 });
 
-describe('performance (20k rows < 3 s)', () => {
+/**
+ * Хугацааны төсөв CI-д тохирсон: turbo нь багцуудыг зэрэг ажиллуулдаг, 0.4 сек-ийн ажил runner дээр 3.1 сек болсон (3000-ыг хэтэрсэн).
+ * Эдгээр шалгалт квадрат хугацаа/backtracking-ийг (20k мөрөнд минут) барих зорилготой тул 10 сек-д ч тэр чадвараа хадгална.
+ */
+const PARSE_BUDGET_MS = 10_000;
+const DETECT_BUDGET_MS = 3_000;
+
+describe('performance (20k rows < 10 s)', () => {
   const BIG = 20_000;
   const time = <T>(fn: () => T): { ms: number; value: T } => {
     const t = Date.now();
@@ -207,7 +214,7 @@ describe('performance (20k rows < 3 s)', () => {
     const { ms, value } = time(() => spec.parser.parse(text));
     expect(value.transactions).toHaveLength(BIG);
     expect(value.transactions.at(-1)?.balanceAfter).toBe(expected.transactions.at(-1)?.balanceAfter);
-    expect(ms).toBeLessThan(3000);
+    expect(ms).toBeLessThan(PARSE_BUDGET_MS);
   });
 
   it('TDB-like layout with dropped empty cells, wrapped descriptions, subtotals and footers (alignment fallback): 20k rows', () => {
@@ -215,7 +222,7 @@ describe('performance (20k rows < 3 s)', () => {
     const { text } = bankStatement(spec, bigTxns(true), { wrapAt: 14, subtotalRows: true, pageFooters: true, rowsPerPage: 40 });
     const { ms, value } = time(() => spec.parser.parse(text));
     expect(value.transactions).toHaveLength(BIG);
-    expect(ms).toBeLessThan(3000);
+    expect(ms).toBeLessThan(PARSE_BUDGET_MS);
   });
 
   it('single text cell per line (token mode): 20k rows', () => {
@@ -223,7 +230,7 @@ describe('performance (20k rows < 3 s)', () => {
     const { text } = bankStatement(spec, bigTxns(true), { textMode: 'single', amountStyle: 'space', rowsPerPage: 100 });
     const { ms, value } = time(() => spec.parser.parse(text));
     expect(value.transactions).toHaveLength(BIG);
-    expect(ms).toBeLessThan(3000);
+    expect(ms).toBeLessThan(PARSE_BUDGET_MS);
   });
 
   it('newest-first 20k rows are reversed correctly within the limit', () => {
@@ -232,7 +239,7 @@ describe('performance (20k rows < 3 s)', () => {
     const { ms, value } = time(() => spec.parser.parse(text));
     expect(value.transactions).toHaveLength(BIG);
     expect(value.warnings.map((w) => w.code)).toContain('REVERSED_ORDER');
-    expect(ms).toBeLessThan(3000);
+    expect(ms).toBeLessThan(PARSE_BUDGET_MS);
   });
 
   it('detect + verify of 20k rows are fast too', () => {
@@ -240,16 +247,16 @@ describe('performance (20k rows < 3 s)', () => {
     const { text } = bankStatement(spec, bigTxns(false), { header: { showClosing: true, showCount: true, footerSummary: true } });
     const detect = time(() => registry.detect(text));
     expect(detect.value.parser.bank).toBe('GOLOMT');
-    expect(detect.ms).toBeLessThan(1000);
+    expect(detect.ms).toBeLessThan(DETECT_BUDGET_MS);
     const parsed = spec.parser.parse(text);
     const verify = time(() => verifyStatement(parsed, {}, META));
     expect(verify.value.verifierOk).toBe(true);
-    expect(verify.ms).toBeLessThan(3000);
+    expect(verify.ms).toBeLessThan(PARSE_BUDGET_MS);
   });
 
   it('coverage and dedupe of large inputs', () => {
     const periods = Array.from({ length: 20_000 }, (_, i) => ({ from: '2024-01-01', to: '2024-01-31', account: String(i % 100) }));
-    expect(time(() => analyzeCoverage(periods, { from: '2024-01-01', to: '2024-12-31' })).ms).toBeLessThan(3000);
+    expect(time(() => analyzeCoverage(periods, { from: '2024-01-01', to: '2024-12-31' })).ms).toBeLessThan(PARSE_BUDGET_MS);
     const rows = generateTransactions({ seed: 5, count: 20_000, startDate: '2024-01-01', withTime: true }, SPEC_OPENING).map((t) => ({
       txnDate: t.date,
       txnTime: t.time ?? null,
@@ -260,7 +267,7 @@ describe('performance (20k rows < 3 s)', () => {
     }));
     const d = time(() => dedupeAcrossStatements([rows, rows]));
     expect(d.value.dropped).toBe(20_000);
-    expect(d.ms).toBeLessThan(3000);
+    expect(d.ms).toBeLessThan(PARSE_BUDGET_MS);
   });
 });
 

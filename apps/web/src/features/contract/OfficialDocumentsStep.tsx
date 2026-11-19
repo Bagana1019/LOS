@@ -1,7 +1,7 @@
 'use client';
 import { Alert, Button, Card, Empty, Flex, List, Skeleton, Tag, Typography, App as AntApp } from 'antd';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
-import { downloadDmsFile } from '../documents/shared/files';
+import { downloadApplicationFile } from '../documents/shared/files';
 import { formatDateTime } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { useContractDocs, useCreateLetter, usePrintLetter } from './contract.api';
@@ -30,7 +30,7 @@ export function OfficialDocumentsStep({ applicationId, onChanged }: Props) {
         {letters.length === 0 ? <Empty description={t('letters.empty')} /> : (
           <List dataSource={letters} renderItem={(l, i) => (
             <List.Item actions={[
-              l.generatedFileId ? <Button key="d" size="small" onClick={() => void downloadDmsFile(l.generatedFileId as string, `letter-${i + 1}.pdf`).catch(fail)}>{t('cstep.download')}</Button> : null,
+              l.generatedFileId ? <Button key="d" size="small" onClick={() => void downloadApplicationFile(applicationId, l.generatedFileId as string, `letter-${i + 1}.pdf`).catch(fail)}>{t('cstep.download')}</Button> : null,
               l.printedAt ? null : <Button key="p" size="small" loading={print.isPending} onClick={() => print.mutate(l.id)}>{t('letters.markPrinted')}</Button>,
             ].filter(Boolean)}>
               <span>№{i + 1} · {formatDateTime(l.createdAt)} {l.printedAt ? <Tag color="success">{t('letters.printed')}</Tag> : <Tag>{t('letters.notPrinted')}</Tag>}</span>

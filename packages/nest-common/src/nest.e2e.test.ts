@@ -26,10 +26,18 @@ class TestController {
   @Get('too-large') tooLarge() { throw Object.assign(new Error('request entity too large: body of 99999 bytes'), { status: 413, statusCode: 413, expose: true }); }
   @Get('boom') boom() { throw new Error('secret db password leaked'); }
   @Get('app/:officer') app(@Ctx() ctx: RequestContext) { assertInScope(ctx, { officerId: 'someone-else', branchId: 'b1', orgId: ctx.orgId }); return {}; }
+  @Get('db-down') dbDown() { throw Object.assign(new Error("Can't reach database server at db:5432 password=secret"), { name: 'PrismaClientInitializationError', errorCode: 'P1001' }); }
+  @Get('db-shutdown') dbShutdown() { throw Object.assign(new Error('terminating connection due to administrator command'), { name: 'PrismaClientKnownRequestError', code: 'P2010', meta: { code: '57P01' } }); }
+  @Get('db-validation') dbValidation() { throw Object.assign(new Error('Argument x missing'), { name: 'PrismaClientValidationError' }); }
+  @Get('db-not-found') dbNotFound() { throw Object.assign(new Error('x'), { name: 'PrismaClientKnownRequestError', code: 'P2025' }); }
   @Get('prisma') prisma() { throw Object.assign(new Error('x'), { name: 'PrismaClientKnownRequestError', code: 'P2002', meta: { target: ['register_no_hash'] } }); }
 }
 @Module({ imports: [CommonModule.forRoot(), HealthModule.forService('test', { db: async () => {}, redis: async () => { throw new Error('down'); } })], controllers: [TestController] })
 class TestAppModule {}
+
+let dbReachable = true;
+@Module({ imports: [HealthModule.forService('flip', { db: async () => { if (!dbReachable) throw Object.assign(new Error('x'), { code: 'ECONNREFUSED' }); } })] })
+class FlipHealthModule {}
 
 const as = (roles: string, extra: Record<string, string> = {}) => ({ 'x-user-id': 'u1', 'x-roles': roles, 'x-org-id': 'o1', 'x-branch-id': 'b1', ...extra });
 let app: INestApplication;
@@ -124,6 +132,37 @@ describe('CommonModule (guard, filter, context)', () => {
     const r = await request(app.getHttpServer()).get('/api/health/ready');
     expect(r.status).toBe(503);
     expect(r.body.details.checks).toEqual({ db: 'up', redis: 'down' });
+  });
+  it('M8: a transient DB error -> 503 DB_UNAVAILABLE envelope with Retry-After and no internals', async () => {
+    for (const path of ['/api/t/db-down', '/api/t/db-shutdown']) {
+      const r = await request(app.getHttpServer()).get(path).set(as('OFFICER')).set('x-correlation-id', 'corr-m8');
+      expect(r.status).toBe(503);
+      expect(r.headers['retry-after']).toBe('5');
+      expect(r.body).toEqual({ code: 'DB_UNAVAILABLE', message: expect.stringMatching(/[А-Яа-яӨөҮү]/), correlationId: 'corr-m8' });
+      expect(JSON.stringify(r.body)).not.toMatch(/secret|db:5432|administrator/);
+    }
+  });
+  it('M8: non-transient DB errors keep their status (validation 500, P2025 404, P2002 409) and no Retry-After', async () => {
+    const v = await request(app.getHttpServer()).get('/api/t/db-validation').set(as('OFFICER'));
+    expect(v.status).toBe(500);
+    expect(v.headers['retry-after']).toBeUndefined();
+    expect((await request(app.getHttpServer()).get('/api/t/db-not-found').set(as('OFFICER'))).status).toBe(404);
+    expect((await request(app.getHttpServer()).get('/api/t/prisma').set(as('OFFICER'))).status).toBe(409);
+  });
+  it('M8: readiness follows DB reachability (up -> down -> up) while liveness stays 200', async () => {
+    const m = await Test.createTestingModule({ imports: [FlipHealthModule] }).compile();
+    const a = m.createNestApplication(); a.setGlobalPrefix('api'); await a.init();
+    try {
+      dbReachable = true;
+      expect((await request(a.getHttpServer()).get('/api/health/ready')).status).toBe(200);
+      dbReachable = false;
+      const down = await request(a.getHttpServer()).get('/api/health/ready');
+      expect(down.status).toBe(503);
+      expect(down.body.details.checks).toEqual({ db: 'down' });
+      expect((await request(a.getHttpServer()).get('/api/health')).status).toBe(200);
+      dbReachable = true;
+      expect((await request(a.getHttpServer()).get('/api/health/ready')).body).toMatchObject({ ok: true, checks: { db: 'up' } });
+    } finally { dbReachable = true; await a.close(); }
   });
   it('INTERNAL_AUTH_SECRET blocks calls that bypass the gateway', async () => {
     process.env.INTERNAL_AUTH_SECRET = 'topsecret';

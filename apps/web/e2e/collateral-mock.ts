@@ -302,6 +302,6 @@ export function installDms(api: MockApi, uploads: Array<{ id: string; name: stri
     uploads.push({ id, name });
     return { status: 201, json: { id, name, mime: name.endsWith('.png') ? 'image/png' : 'application/pdf', size: 2048 } };
   });
-  api.get('/dms/files/:id/content', () => ({ json: { content: 'DEMO: файлын агуулга' } }));
+  api.get('/applications/:applicationId/files/:id/content', () => ({ json: { content: 'DEMO: файлын агуулга' } }));
 }
 
