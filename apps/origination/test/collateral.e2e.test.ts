@@ -412,6 +412,11 @@ describe.skipIf(!hasTestDb)('collateral API (DB)', () => {
       const noFile = await post(url(s.app.id, c.id, 'valuation/external'), { appraiser: 'Үнэлгээ ХХК', licenseNo: 'L-1', valuedAt: '2026-10-27', marketValue: 120_000_000, reportFileId });
       expect([noFile.status, noFile.body.code]).toEqual([422, 'REPORT_FILE_NOT_FOUND']);
       expect(k.valuation.externalRequests).toHaveLength(0);
+      const foreignReport = '55555555-5555-4555-8555-555555555555';
+      k.files.add({ id: foreignReport, name: 'foreign.pdf', uploadedBy: 'someone-else' });
+      const notMine = await post(url(s.app.id, c.id, 'valuation/external'), { appraiser: 'Үнэлгээ ХХК', licenseNo: 'L-1', valuedAt: '2026-10-27', marketValue: 120_000_000, reportFileId: foreignReport });
+      expect([notMine.status, notMine.body.code]).toEqual([403, 'FILE_NOT_OWNED']);
+      expect(k.valuation.externalRequests).toHaveLength(0);
       k.files.add({ id: reportFileId, name: 'report.pdf' });
       const future = await post(url(s.app.id, c.id, 'valuation/external'), { appraiser: 'Үнэлгээ ХХК', valuedAt: '2026-10-29', marketValue: 120_000_000, reportFileId });
       expect([future.status, future.body.code]).toEqual([422, 'VALUATION_DATE_IN_FUTURE']);
@@ -498,6 +503,16 @@ describe.skipIf(!hasTestDb)('collateral API (DB)', () => {
       expect(other.collateral.extraDocuments).toHaveLength(1);
       expect(other.collateral.extraDocuments[0]).toMatchObject({ checklistKey: 'other', fileName: 'x.pdf', mime: 'application/pdf', size: 1234, note: 'Урд тал' });
       expect(other.collateral.checklist.every((x) => !x.satisfied)).toBe(true);
+    });
+
+    it('өөр хүний байршуулсан файлыг хавсаргах нь 403 FILE_NOT_OWNED (NFR-3); нэмэгдэхгүй', async () => {
+      const s = await seedScenario(prisma());
+      const c = await addVehicle(s);
+      const fileId = '44444444-4444-4444-8444-444444444444';
+      k.files.add({ id: fileId, uploadedBy: 'someone-else' });
+      const res = await post(url(s.app.id, c.id, 'documents'), { checklistKey: 'insurance', fileId });
+      expect([res.status, res.body.code]).toEqual([403, 'FILE_NOT_OWNED']);
+      expect(await prisma().collateralDocument.count({ where: { collateralId: c.id } })).toBe(0);
     });
 
     it('dms-д олдохгүй файл 422 FILE_NOT_FOUND; давхар файл 409; хасахад checklist дахин дутуу болно', async () => {

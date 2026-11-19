@@ -657,6 +657,17 @@ describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
     dms.templates.add('OFFICIAL_LETTER');
   });
 
+  it('өөр хүний байршуулсан скан хавсаргах нь 403 FILE_NOT_OWNED (NFR-3); гэрээ гарын үсэггүй хэвээр', async () => {
+    const app = await approvedApp();
+    await http().post(`${base(app.id)}/contract/generate`).set(officer);
+    const foreignScan = '66666666-6666-4666-8666-666666666666';
+    dms.files.add(foreignScan);
+    dms.uploaders.set(foreignScan, 'someone-else');
+    const res = await http().post(`${base(app.id)}/contract/signed`).set(officer).send({ fileId: foreignScan });
+    expect([res.status, res.body.code]).toEqual([403, 'FILE_NOT_OWNED']);
+    expect((await http().get(`${base(app.id)}/contract`).set(officer)).body.signedFileId ?? null).toBeNull();
+  });
+
   it('гарын үсэгтэй гэрээг дахин үүсгэхгүй (409); олдохгүй файл 422', async () => {
     const app = await approvedApp();
     await http().post(`${base(app.id)}/contract/generate`).set(officer);

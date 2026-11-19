@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import type { ContractView, CreateOfficialLetterRequest, OfficialLetterView, RequestContext } from '@los/contracts';
 import { recordAudit } from '@los/database';
-import { Clock, DomainError } from '@los/nest-common';
+import { Clock, DomainError, assertFileUploadedByCaller } from '@los/nest-common';
 import type { Contract, LoanApplication, OfficialLetter } from '.prisma/client-origination';
 import { PrismaService } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
@@ -69,7 +69,9 @@ export class ContractDocumentsService {
     if (!c?.generatedFileId) throw new ConflictException({ code: 'CONTRACT_NOT_GENERATED', message: 'Эхлээд гэрээг үүсгэнэ үү' });
     if (c.signedFileId) throw new ConflictException({ code: 'CONTRACT_ALREADY_SIGNED', message: 'Гэрээнд аль хэдийн гарын үсэг зурагдсан байна' });
     if (c.signingStatus && ACTIVE_SIGNING.includes(c.signingStatus)) throw new ConflictException({ code: 'CONTRACT_SIGNING_IN_PROGRESS', message: 'Цахим гарын үсгийн хүсэлт идэвхтэй байна' });
-    if (!(await this.dms.fileExists(fileId, ctx))) throw new DomainError('FILE_NOT_FOUND', 'Файл олдсонгүй', 422);
+    const file = await this.dms.fileInfo(fileId, ctx);
+    if (!file) throw new DomainError('FILE_NOT_FOUND', 'Файл олдсонгүй', 422);
+    assertFileUploadedByCaller(ctx, file.uploadedBy); // NFR-3: өөр хүний файлын id-г хавсаргаж болохгүй
     const now = this.clock.now();
     const row = await this.prisma.$transaction(async (tx) => {
       const res = await tx.contract.updateMany({ where: { id: c.id, signedFileId: null }, data: { signedFileId: fileId, signedAt: now, signChannel: 'PAPER', updatedBy: ctx.userId } });

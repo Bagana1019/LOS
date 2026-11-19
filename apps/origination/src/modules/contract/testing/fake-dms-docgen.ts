@@ -7,6 +7,8 @@ import type { DmsDocgenPort } from '../dms-docgen.port';
 export class FakeDmsDocgen implements DmsDocgenPort {
   readonly renders: RenderTemplateRequest[] = [];
   readonly files = new Set<string>();
+  /** Файлын байршуулагч; бүртгээгүй бол дуудагч өөрөө (upload → attach урсгал). */
+  readonly uploaders = new Map<string, string | null>();
   templates = new Set<ContractTemplateType>(['LOAN_CONTRACT', 'OFFICIAL_LETTER']);
   async render(req: RenderTemplateRequest, _ctx: RequestContext) {
     if (!this.templates.has(req.type)) throw new DomainError('TEMPLATE_NOT_CONFIGURED', 'Энэ төрлийн идэвхтэй загвар тохируулаагүй байна', 422);
@@ -15,6 +17,9 @@ export class FakeDmsDocgen implements DmsDocgenPort {
     this.files.add(pdfFileId);
     return { templateId: randomUUID(), templateVersion: 1, docxFileId: randomUUID(), pdfFileId };
   }
-  async fileExists(fileId: string) { return this.files.has(fileId); }
+  async fileInfo(fileId: string, ctx: RequestContext) {
+    if (!this.files.has(fileId)) return null;
+    return { uploadedBy: this.uploaders.has(fileId) ? (this.uploaders.get(fileId) ?? null) : ctx.userId };
+  }
   async hasTemplate(type: ContractTemplateType) { return this.templates.has(type); }
 }
