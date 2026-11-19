@@ -96,7 +96,9 @@ function mapRow(item: Row, today: Date, policy: CibPolicy, acc: Acc): void {
     disbursedAmount: adv, outstanding: balance, openedOn: text(item.adv_date) || null, maturityOn: text(item.maturity_date) || null, overdueClass: cls,
   };
 
-  if (closedDate !== '' || (!isLine && balance !== null && balance <= 0)) {
+  // closed_date + үлдэгдэл > 0 = зөрчилтэй өгөгдөл (дахин бүтэцлэсэн / шилжүүлсэн …): хаагдсан гэж таамаглахгүй, идэвхтэй гэж тоолж анхааруулна.
+  const closedWithBalance = closedDate !== '' && balance !== null && balance > 0;
+  if ((closedDate !== '' && !closedWithBalance) || (!isLine && balance !== null && balance <= 0)) {
     acc.closed++;
     acc.loans.push({ ...base, status: 'CLOSED', monthlyPayment: 0, annualRatePct: null, rateSource: null });
     return;
@@ -109,7 +111,8 @@ function mapRow(item: Row, today: Date, policy: CibPolicy, acc: Acc): void {
   if (cls === null) acc.attention = true;
   else acc.overdueDaysMax = Math.max(acc.overdueDaysMax, cls === 2 ? 91 : cls === 1 ? 1 : 0);
 
-  const extra: Record<string, unknown> = {};
+  const extra: Record<string, unknown> = closedWithBalance ? { closedDateWithBalance: true } : {};
+  if (closedWithBalance) acc.attention = true;
   let monthly = 0;
   let annualRatePct: number | null = null;
   let rateSource: RateSource | null = null;
@@ -124,11 +127,11 @@ function mapRow(item: Row, today: Date, policy: CibPolicy, acc: Acc): void {
   } else {
     const priced = priceTerm(item, balance as number, adv, today, policy);
     if (priced.kind === 'UNPARSEABLE_MATURITY') { acc.skipped.push({ loancode, dutytype, reason: 'UNPARSEABLE_MATURITY_DATE' }); acc.paymentComplete = false; }
-    else if (priced.kind === 'MATURED') { extra.matured = true; acc.attention = true; }
     else {
       ({ annualRatePct, rateSource } = priced);
       monthly = annuityPayment(balance as number, priced.annualRatePct, priced.remainingMonths);
       if (priced.rateSource === 'UNKNOWN') acc.attention = true; // 0% = зөвхөн үндсэн төлбөр → дутуу байж болзошгүй
+      if (priced.matured) { extra.matured = true; acc.attention = true; } // хугацаа дууссан боловч үлдэгдэлтэй: 0 БИШ, 1 сарын дотор төлөх үүрэг
     }
   }
 
@@ -140,24 +143,26 @@ function mapRow(item: Row, today: Date, policy: CibPolicy, acc: Acc): void {
   acc.loans.push({ ...base, status: 'ACTIVE', monthlyPayment: monthly, annualRatePct, rateSource, ...extra });
 }
 
-type Priced = { kind: 'UNPARSEABLE_MATURITY' } | { kind: 'MATURED' } | { kind: 'PRICED'; remainingMonths: number; annualRatePct: number; rateSource: RateSource };
+type Priced = { kind: 'UNPARSEABLE_MATURITY' } | { kind: 'PRICED'; remainingMonths: number; annualRatePct: number; rateSource: RateSource; matured: boolean };
 
 /** LN/LS: үлдсэн сар (сарын зөрүү, өдрийг үл тооно) ба хүүг тодорхойлно. */
 function priceTerm(item: Row, balance: number, adv: number | null, today: Date, policy: CibPolicy): Priced {
   const maturity = parseMaturity(item.maturity_date);
   if (!maturity) return { kind: 'UNPARSEABLE_MATURITY' };
-  const remainingMonths = (maturity.year - today.getUTCFullYear()) * 12 + (maturity.month - (today.getUTCMonth() + 1));
-  if (remainingMonths <= 0) return { kind: 'MATURED' };
+  const monthsToMaturity = (maturity.year - today.getUTCFullYear()) * 12 + (maturity.month - (today.getUTCMonth() + 1));
+  // Хугацаа дууссан / энэ сард дуусах (≤ 0): үлдэгдэл ЯГ ОДОО төлөгдөх үүрэг → 1 сарын дотор (0 БИШ). Дараа сарын (үлдсэн 1 сар) дүнтэй тасралтгүй.
+  const matured = monthsToMaturity <= 0;
+  const remainingMonths = Math.max(monthsToMaturity, 1);
 
   const vendorRate = num(item.int_rate);
   const stated = vendorRate !== null && vendorRate > 0;
-  if (stated) return { kind: 'PRICED', remainingMonths, annualRatePct: vendorRate, rateSource: 'VENDOR' };
+  if (stated) return { kind: 'PRICED', remainingMonths, matured, annualRatePct: vendorRate, rateSource: 'VENDOR' };
   if (item.dutytype === 'LN') {
     // Хүүгүй / 0% LN: 0% нь зөвхөн үндсэн төлбөрт буулган чадавхийг хэтрүүлнэ → таамагласан хүү (Python-той ижил)
     const size = adv ?? balance;
     const monthlyPct = size >= policy.largeLoanThresholdMnt ? policy.largeLoanMonthlyRatePct : policy.assumedMonthlyRatePct;
-    return { kind: 'PRICED', remainingMonths, annualRatePct: annual(monthlyPct), rateSource: 'ASSUMED' };
+    return { kind: 'PRICED', remainingMonths, matured, annualRatePct: annual(monthlyPct), rateSource: 'ASSUMED' };
   }
   // LS: vendor 0% гэж тодорхой өгсөн бол тэр (VENDOR 0), үгүй бол мэдэгдэхгүй (UNKNOWN, 0%)
-  return { kind: 'PRICED', remainingMonths, annualRatePct: 0, rateSource: vendorRate === 0 ? 'VENDOR' : 'UNKNOWN' };
+  return { kind: 'PRICED', remainingMonths, matured, annualRatePct: 0, rateSource: vendorRate === 0 ? 'VENDOR' : 'UNKNOWN' };
 }

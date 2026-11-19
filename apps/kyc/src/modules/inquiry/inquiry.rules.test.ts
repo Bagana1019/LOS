@@ -6,7 +6,23 @@ import { blacklistInquiry, creditHistoryFrom, expiresAt, inquiryFailureFrom, lat
 
 const rec = (customerId: string, source: (typeof INQUIRY_SOURCES)[number], fetchedAt: string, summary: Record<string, unknown> = {}) => ({ customerId, source, fetchedAt, summary });
 
-// Provider-ийн алдаа → эх сурвалж тус бүрийн failure (бусад эх сурвалжийг үргэлжлүүлнэ); танигдаагүй алдаа → null (дуудагч шиднэ).
+// Review H1: CIB-ийн summary `payment_complete=false` (FX зээл, задлагдаагүй мөр …) бол сарын төлбөр ДУТУУ → тооцоололд ДҮН ӨГӨХГҮЙ (null = мэдэгдэхгүй; underwriting зогсоно).
+describe('creditHistoryFrom — payment_complete', () => {
+  const cib = (summary: Record<string, unknown>) => [{ source: 'CIB' as const, summary }];
+  it('payment_complete=false → existingDebtServiceMonthly=null (бүртгэлгүй зээлтэй ч «доод хэмжээ» гэж дутуу дүн өгөхгүй)', () => {
+    expect(creditHistoryFrom(cib({ monthly_payment: 400_000, active_loan_count: 2, payment_complete: false }), []).existingDebtServiceMonthly).toBeNull();
+    expect(creditHistoryFrom(cib({ monthly_payment: 400_000, payment_complete: false }), [{ monthlyPayment: 100_000 }]).existingDebtServiceMonthly).toBeNull();
+  });
+  it('payment_complete=false үед ч бусад талбар (зээлийн тоо) хэвээр', () => {
+    expect(creditHistoryFrom(cib({ monthly_payment: 400_000, active_loan_count: 2, payment_complete: false }), []).activeLoanCount).toBe(2);
+  });
+  it('payment_complete=true эсвэл байхгүй (хуучин бичлэг) → өмнөх зан төлөв: CIB + бүртгэлгүй зээлийн нийлбэр', () => {
+    expect(creditHistoryFrom(cib({ monthly_payment: 400_000, payment_complete: true }), [{ monthlyPayment: 100_000 }]).existingDebtServiceMonthly).toBe(500_000);
+    expect(creditHistoryFrom(cib({ monthly_payment: 400_000 }), []).existingDebtServiceMonthly).toBe(400_000);
+  });
+});
+
+// Provider-ийн алдаа → эх сурвалж тус бүрийн failure (бусдыг үргэлжлүүлнэ); танигдаагүй алдаа → null (дуудагч шиднэ).
 describe('inquiryFailureFrom', () => {
   it('түр ажиллахгүй → INQUIRY_UNAVAILABLE (мессежийг хадгална)', () => {
     expect(inquiryFailureFrom('CIB', new InquiryUnavailableError('CIB', 'CIB түр ажиллахгүй'))).toEqual({ source: 'CIB', code: 'INQUIRY_UNAVAILABLE', message: 'CIB түр ажиллахгүй' });

@@ -51,10 +51,12 @@ export function creditHistoryFrom(latest: ReadonlyArray<Pick<InquiryRecord, 'sou
   const fico = latest.find((r) => r.source === 'FICO')?.summary;
   const unregistered = loans.reduce((s, l) => s + l.monthlyPayment, 0);
   const cibMonthly = num(cib?.monthly_payment);
+  // CIB-ийн сарын төлбөр ДУТУУ (FX зээл, задлагдаагүй мөр …) гэж тэмдэглэгдсэн бол дүн ӨГӨХГҮЙ: null = мэдэгдэхгүй → underwriting зогсоно, дутуу дүнгээр чадавхийг хэтрүүлэхгүй.
+  const cibIncomplete = cib?.payment_complete === false;
   return {
     ficoScore: num(fico?.fico_score),
     activeLoanCount: num(cib?.active_loan_count),
     overdueHistoryMonths: num(cib?.overdue_months),
-    existingDebtServiceMonthly: cibMonthly === null && loans.length === 0 ? null : Math.round(((cibMonthly ?? 0) + unregistered) * 100) / 100,
+    existingDebtServiceMonthly: cibIncomplete || (cibMonthly === null && loans.length === 0) ? null : Math.round(((cibMonthly ?? 0) + unregistered) * 100) / 100,
   };
 }

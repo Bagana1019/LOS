@@ -69,7 +69,7 @@ describe('mapCibRows — зээлийн шугам (LINE), хаагдсан, т�
     expect(loans(r)[0]).toMatchObject({ kind: 'LINE', monthlyPayment: 2_000_000 });
   });
   it('хаагдсан LINE → closed; үүрэг тооцохгүй', () => {
-    const r = map([open({ dutytype: 'LINE', adv_amount: 2_000_000, closed_date: '2024-12-01' })]);
+    const r = map([open({ dutytype: 'LINE', adv_amount: 2_000_000, balance: 0, closed_date: '2024-12-01' })]);
     expect(r.summary).toMatchObject({ active_loan_count: 0, closed_loan_count: 1, monthly_payment: 0 });
   });
   it.each([[-5], ['abc'], [null]])('LINE adv_amount=%j (үнэлэх боломжгүй/сөрөг) → алгасаж, payment_complete=false, WARNING (үүргийг дутуу тооцохгүйн тулд)', (adv) => {
@@ -79,12 +79,23 @@ describe('mapCibRows — зээлийн шугам (LINE), хаагдсан, т�
     expect(r.detail.skipped).toEqual([{ loancode: 'L-1', dutytype: 'LINE', reason: 'UNPARSEABLE_ADV_AMOUNT' }]);
   });
   it('closed_date-тэй LN → closed_loan_count; нийлбэрт орохгүй', () => {
-    const r = map([open({ closed_date: '2024-12-01' })]);
+    const r = map([open({ closed_date: '2024-12-01', balance: 0 })]);
     expect(r.summary).toMatchObject({ active_loan_count: 0, closed_loan_count: 1, total_disbursed: 0, outstanding: 0, monthly_payment: 0 });
     expect(loans(r)[0]).toMatchObject({ status: 'CLOSED' });
   });
   it('LN-ийн үлдэгдэл ≤ 0 (closed_date байхгүй) → хаагдсан гэж үзнэ', () => {
     expect(map([open({ balance: 0 })]).summary).toMatchObject({ active_loan_count: 0, closed_loan_count: 1 });
+  });
+  // Review M2: closed_date байгаа ч үлдэгдэл > 0 (дахин бүтэцлэсэн / шилжүүлсэн зээл г.м.) = зөрчилтэй өгөгдөл → хаагдсан гэж таамаглахгүй.
+  it('closed_date-тэй ч үлдэгдэл > 0: идэвхтэй гэж тоолж, төлбөрийг оруулна, closedDateWithBalance + WARNING', () => {
+    const r = map([open({ closed_date: '2026-10-01' })]);
+    expect(r.summary).toMatchObject({ active_loan_count: 1, closed_loan_count: 0, outstanding: 3_500_000 });
+    expect(r.summary.monthly_payment as number).toBeGreaterThan(0);
+    expect(loans(r)[0]).toMatchObject({ status: 'ACTIVE', closedDateWithBalance: true });
+    expect(r.warningLevel).toBe('WARNING');
+  });
+  it('closed_date-тэй, үлдэгдэл задлагдахгүй (null) → хаагдсан (өөр мэдээлэл байхгүй)', () => {
+    expect(map([open({ closed_date: '2024-12-01', balance: null })]).summary).toMatchObject({ active_loan_count: 0, closed_loan_count: 1 });
   });
 });
 
@@ -114,11 +125,20 @@ describe('mapCibRows — бусад хоцрогдол', () => {
   it('YYYY.MM.DD хэлбэрийг зөвшөөрнө', () => {
     expect(map([open({ maturity_date: '2025.11.08' })]).summary.monthly_payment).toBe(annuityPayment(3_500_000, 5, 10));
   });
-  it('хугацаа хэтэрсэн (matured) боловч үлдэгдэлтэй: идэвхтэй, сарын төлбөр 0, matured=true, WARNING', () => {
+  // Review H2: хугацаа дууссан / энэ сард дуусах зээлийн үлдэгдэл ЯГ ОДОО төлөгдөх ёстой → 0 гэж тоолохгүй; дараа сарын (үлдсэн 1 сар) дүнтэй тасралтгүй.
+  it('хугацаа хэтэрсэн (matured) боловч үлдэгдэлтэй: үлдэгдлийг 1 сарын дотор төлөх үүрэг (0 БИШ), matured=true, WARNING', () => {
     const r = map([open({ maturity_date: '2024-12-31' })]);
-    expect(r.summary).toMatchObject({ active_loan_count: 1, monthly_payment: 0, outstanding: 3_500_000 });
+    expect(r.summary).toMatchObject({ active_loan_count: 1, outstanding: 3_500_000, monthly_payment: annuityPayment(3_500_000, 5, 1) });
+    expect(r.summary.monthly_payment as number).toBeGreaterThanOrEqual(3_500_000);
     expect(loans(r)[0]).toMatchObject({ matured: true });
     expect(r.warningLevel).toBe('WARNING');
+  });
+  it('энэ сард дуусах зээл (үлдсэн 0 сар) нь дараа сарын (үлдсэн 1 сар) зээлтэй ижил дүнтэй — сарын хил дээр огцом үсрэлтгүй', () => {
+    const thisMonth = map([open({ maturity_date: '2025-01-31' })]);
+    const nextMonth = map([open({ maturity_date: '2025-02-28' })]);
+    expect(thisMonth.summary.monthly_payment).toBe(nextMonth.summary.monthly_payment);
+    expect(loans(thisMonth)[0]).toMatchObject({ matured: true });
+    expect(loans(nextMonth)[0]).not.toHaveProperty('matured');
   });
   it('зээл биш dutytype (жишээ нь карт) → тоолохгүй, detail.skipped-д', () => {
     const r = map([open({ dutytype: 'CARD' })]);

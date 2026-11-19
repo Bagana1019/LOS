@@ -14,7 +14,7 @@ const json = (status: number, body: unknown) => new Response(JSON.stringify(body
 const loginOk = (token = 'TOKEN-1') => json(200, { success: true, msg: 'ok', user: { id: 1 }, token });
 const inquiryOk = (rows: unknown[] = [{ dutytype: 'LN', balance: 1 }]) => json(200, { responsecode: 'SR0000', responsemsg: 'OK', decision: 'APPROVED', inquiry: rows });
 
-function harness(routes: Record<string, Handler | Handler[]>, opts: { nowMs?: () => number; timeoutMs?: number; maxLoginRetries?: number; baseUrl?: string } = {}) {
+function harness(routes: Record<string, Handler | Handler[]>, opts: { nowMs?: () => number; timeoutMs?: number; maxLoginRetries?: number; baseUrl?: string; deadlineMs?: number; minInquiryBudgetMs?: number } = {}) {
   const calls: Call[] = [];
   const counts = new Map<string, number>();
   const sleeps: number[] = [];
@@ -31,7 +31,7 @@ function harness(routes: Record<string, Handler | Handler[]>, opts: { nowMs?: ()
     if (r instanceof Error) throw r;
     return r;
   }) as typeof fetch;
-  const client = new SainScoreClient({ baseUrl: opts.baseUrl ?? BASE, username: 'lender', passwordHash: PASSWORD_HASH, fetchImpl, sleep: async (ms) => { sleeps.push(ms); }, now: opts.nowMs, timeoutMs: opts.timeoutMs, maxLoginRetries: opts.maxLoginRetries });
+  const client = new SainScoreClient({ baseUrl: opts.baseUrl ?? BASE, username: 'lender', passwordHash: PASSWORD_HASH, fetchImpl, sleep: async (ms) => { sleeps.push(ms); }, now: opts.nowMs, timeoutMs: opts.timeoutMs, maxLoginRetries: opts.maxLoginRetries, deadlineMs: opts.deadlineMs, minInquiryBudgetMs: opts.minInquiryBudgetMs });
   return { client, calls, sleeps, count: (k: string) => counts.get(k) ?? 0 };
 }
 const messageOf = async (p: Promise<unknown>): Promise<string> => { try { await p; } catch (e) { return (e as Error).message; } throw new Error('expected a rejection'); };
@@ -191,10 +191,59 @@ describe('SainScoreClient — vendor responsecode', () => {
     expect(h.count('POST /inquiry')).toBe(1);
   });
 
+  // Review M1: responsecode байхгүй = амжилт БИШ (gateway/алдааны JSON хоосон зээлийн түүх гэж буруу ойлгогдож чадавхийг хэтрүүлэхээс сэргийлнэ).
+  it.each([[{ inquiry: [] }], [{ responsecode: null, inquiry: [] }]])('responsecode байхгүй / null %j → Unavailable (хоосон түүх гэж таамаглахгүй)', async (body) => {
+    const h = harness({ 'POST /login': () => loginOk(), 'POST /inquiry': () => json(200, body) });
+    await expect(h.client.inquiry('CIB', REQ)).rejects.toBeInstanceOf(InquiryUnavailableError);
+  });
+
   it('vendor-ийн мессежийг 200 тэмдэгтэд тайрна', async () => {
     const h = harness({ 'POST /login': () => loginOk(), 'POST /inquiry': () => json(200, { responsecode: 'SR0999', responsemsg: 'x'.repeat(500) }) });
     const err = await h.client.inquiry('CIB', REQ).catch((e) => e);
     expect(err.message.length).toBeLessThan(260);
+  });
+});
+
+// Review H3: origination kyc-г 15с-д хүлээдэг. kyc-ийн нийт хугацаа (login + хураамжтай /inquiry) түүнээс богино байх ёстой, эс бөгөөс origination timeout-д орж
+// хэрэглэгч дахин дарахад kyc-д аль хэдийн төлөгдсөн лавлагаа ДАХИН төлөгдөнө.
+describe('SainScoreClient — нийт хугацааны төсөв (deadline)', () => {
+  const slowLogin = (ms: number): Handler => async () => { await new Promise((r) => setTimeout(r, ms)); return loginOk(); };
+
+  it('login төсвийг барсан бол хураамжтай /inquiry-г ЯВУУЛАХГҮЙ (төлбөргүй түр алдаа)', async () => {
+    const h = harness({ 'POST /login': slowLogin(300), 'POST /inquiry': () => inquiryOk() }, { deadlineMs: 1000, minInquiryBudgetMs: 2000 });
+    await expect(h.client.inquiry('CIB', REQ)).rejects.toBeInstanceOf(InquiryUnavailableError);
+    expect(h.count('POST /inquiry')).toBe(0);
+  });
+
+  it('төсөв хангалттай бол /inquiry явна', async () => {
+    const h = harness({ 'POST /login': slowLogin(50), 'POST /inquiry': () => inquiryOk() }, { deadlineMs: 5000, minInquiryBudgetMs: 2000 });
+    await h.client.inquiry('CIB', REQ);
+    expect(h.count('POST /inquiry')).toBe(1);
+  });
+
+  it('/inquiry удаавал нийт хугацаа deadline-аас хэтрэхгүй (timeout-ийг үлдсэн төсвөөр хязгаарлана), дахин илгээхгүй', async () => {
+    // AbortSignal-ийг хүндэтгэдэг fetch (harness-ийнх хүндэтгэдэггүй): /inquiry 3с удаан хариулна.
+    let inquiryCalls = 0;
+    const fetchImpl = ((url: string, init?: RequestInit) => {
+      if (url.endsWith('/login')) return Promise.resolve(loginOk());
+      inquiryCalls++;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(inquiryOk()), 3000);
+        init?.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); });
+      });
+    }) as unknown as typeof fetch;
+    const client = new SainScoreClient({ baseUrl: BASE, username: 'u', passwordHash: 'h', fetchImpl, sleep: async () => undefined, timeoutMs: 20_000, deadlineMs: 700, minInquiryBudgetMs: 100 });
+    const started = Date.now();
+    await expect(client.inquiry('CIB', REQ)).rejects.toBeInstanceOf(InquiryUnavailableError);
+    expect(Date.now() - started).toBeLessThan(1800); // timeoutMs=20с байсан ч нийт төсвөөр (0.7с) таслагдана
+    expect(inquiryCalls).toBe(1);
+  });
+
+  it('токен cache-тэй үед login-д төсөв зарцуулахгүй', async () => {
+    const h = harness({ 'POST /login': () => loginOk(), 'POST /inquiry': () => inquiryOk() }, { deadlineMs: 2500, minInquiryBudgetMs: 2000 });
+    await h.client.inquiry('CIB', REQ);
+    await h.client.inquiry('CIB', REQ);
+    expect(h.count('POST /inquiry')).toBe(2);
   });
 });
 

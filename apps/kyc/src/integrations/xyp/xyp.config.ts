@@ -19,7 +19,22 @@ export interface XypConfig {
   accessToken: string;
   privateKey: KeyObject;
   citizenWsdlUrl: string;
+  /** SOAP endpoint-ийн тодорхой override. Байхгүй бол WSDL-ийн зарласан endpoint (WSDL-ийн хостой ижил, production-д https байх шаардлагатай) ашиглана. */
+  endpointOverride?: string;
   timeoutMs: number;
+}
+
+/** Хоосон → undefined; http(s) URL биш бол "(invalid)". */
+function readEndpointOverride(env: Env): string | undefined {
+  const raw = env.XYP_CITIZEN_ENDPOINT_URL?.trim();
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return raw;
+  } catch {
+    /* доорх алдаа */
+  }
+  throw new IntegrationNotConfiguredError('xyp', ['XYP_CITIZEN_ENDPOINT_URL (invalid)']);
 }
 
 function readTimeoutMs(env: Env): number {
@@ -45,7 +60,7 @@ export function loadXypConfig(env: Env = process.env, readFile: ReadFile = (path
     throw new IntegrationNotConfiguredError('xyp', ['XYP_PRIVATE_KEY_PATH (invalid)']);
   }
   const wsdl = env.XYP_CITIZEN_WSDL_URL?.trim();
-  return { accessToken: e.XYP_ACCESS_TOKEN!, privateKey, citizenWsdlUrl: wsdl ? wsdl : XYP_DEFAULT_CITIZEN_WSDL, timeoutMs: readTimeoutMs(env) };
+  return { accessToken: e.XYP_ACCESS_TOKEN!, privateKey, citizenWsdlUrl: wsdl ? wsdl : XYP_DEFAULT_CITIZEN_WSDL, endpointOverride: readEndpointOverride(env), timeoutMs: readTimeoutMs(env) };
 }
 
 /**
@@ -63,4 +78,6 @@ export function assertXypProductionConfig(env: Env = process.env, readFile?: Rea
     throw new Error('XYP_CITIZEN_WSDL_URL is not a valid URL. Refusing to start');
   }
   if (url.protocol !== 'https:') throw new Error('XYP_CITIZEN_WSDL_URL must use https in production. Refusing to start');
+  // Тодорхой endpoint өгсөн бол https (accessToken, гарын үсэг, регистр http-ээр явахгүй). Өгөөгүй бол WSDL-ийн зарласан endpoint-ийг ажиллах үед transport шалгана.
+  if (cfg.endpointOverride && new URL(cfg.endpointOverride).protocol !== 'https:') throw new Error('XYP_CITIZEN_ENDPOINT_URL must use https in production. Refusing to start');
 }

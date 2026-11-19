@@ -49,6 +49,22 @@ describe('loadXypConfig', () => {
   });
 });
 
+describe('XYP_CITIZEN_ENDPOINT_URL (SOAP endpoint-ийн тодорхой override)', () => {
+  it('анхдагчаар байхгүй (undefined) — WSDL-ийн зарласан endpoint шалгагдана', () => {
+    expect(loadXypConfig(ENV, readOk).endpointOverride).toBeUndefined();
+  });
+  it('тохируулсан бол уншигдана (төгсгөлийн хоосон зайг тайрна)', () => {
+    expect(loadXypConfig({ ...ENV, XYP_CITIZEN_ENDPOINT_URL: ' https://xyp.example/citizen/ws ' }, readOk).endpointOverride).toBe('https://xyp.example/citizen/ws');
+  });
+  it.each([['not a url'], ['ftp://x.example/ws']])('буруу утга %j → "(invalid)"', (bad) => {
+    expect(messageOf(() => loadXypConfig({ ...ENV, XYP_CITIZEN_ENDPOINT_URL: bad }, readOk))).toContain('XYP_CITIZEN_ENDPOINT_URL (invalid)');
+  });
+  it('production + real: override http бол эхлэхгүй; https бол зөвшөөрнө', () => {
+    expect(() => assertXypProductionConfig({ ...PROD, XYP_CITIZEN_ENDPOINT_URL: 'http://xyp.example/ws' }, readOk)).toThrow(/XYP_CITIZEN_ENDPOINT_URL/);
+    expect(() => assertXypProductionConfig({ ...PROD, XYP_CITIZEN_ENDPOINT_URL: 'https://xyp.example/ws' }, readOk)).not.toThrow();
+  });
+});
+
 describe('assertXypProductionConfig (phase 5: production + real-д эхлэхээс сэргийлнэ)', () => {
   it('production биш / mock үед юу ч шалгахгүй (түлхүүрийн файл унших ч үгүй)', () => {
     const boom = (): Buffer => { throw new Error('must not read'); };
