@@ -22,6 +22,9 @@ export const PII_MARKERS: readonly string[] = [
 export const withoutRandomIds = (text: string): string =>
   text.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '').replace(/[0-9a-f]{16,}/gi, '');
 
+/** Шифртекст (санамсаргүй base64) дотор 'ZXQ', 'Bold' мэт 3-4 тэмдэгт ~5% магадлалтай тохиолддог (flaky). `row_to_json` dump-аас `*_encrypted` баганын утгыг хасна */
+export const withoutCiphertext = (dump: string): string => dump.replace(/"[a-z0-9_]+_encrypted":"[^"]*"/g, '""');
+
 const MONTHS = ['04', '05', '06'] as const;
 
 const txn = (date: string, time: string, direction: TxnDirection, amount: number, description: string): SynTxn => ({
