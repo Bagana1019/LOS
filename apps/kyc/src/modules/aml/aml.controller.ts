@@ -17,10 +17,12 @@ const HitQuery = z.object({
 const RescreenBody = z.object({ limit: z.number().int().min(1).max(500).default(50) });
 const RefreshBody = z.object({ list: z.enum(['UN_SC', 'FATF']).optional() });
 /**
- * Hit шийдвэрлэгч (§7): ADMIN, APPROVER + COMPLIANCE (DECISIONS P4C-1). Бүтээгдэхүүний зам (web → gateway) нь route-policy `aml:review`-ээр
- * зөвхөн COMPLIANCE-д нээлттэй; энд ADMIN/APPROVER-ийг дотоод/хуучин дуудагчийн нийцтэй байдлын үүднээс хадгалсан.
+ * Hit шийдвэрлэгч (§7, Q-137): зөвхөн COMPLIANCE. Gateway route-policy (`aml:review`) ба дэлгэцтэй нэг дүрэм.
+ * ADMIN/APPROVER шийдэхгүй: APPROVER зээл батлагч тул хоригийн тохирлыг өөрөө цэвэрлэх нь ашиг сонирхлын зөрчил.
  */
-const REVIEWER_ROLES = ['ADMIN', 'APPROVER', 'COMPLIANCE'] as const;
+const REVIEWER_ROLES = ['COMPLIANCE'] as const;
+/** Жагсаалтын хувилбарын төлөв: шинэчлэгч ADMIN хэрэгтэй тул ADMIN-д нээлттэй (hit харахгүй). */
+const LIST_STATUS_ROLES = ['ADMIN', 'COMPLIANCE'] as const;
 
 /** Compliance & AML (FR-2.5, FR-3.4, BR-9). Эрх gateway-д шийдэгдэнэ; энд зөвхөн дүрийн шалгалт (CLAUDE.md §3.2.9). */
 @Controller('aml')
@@ -60,7 +62,7 @@ export class AmlController {
   }
 
   @Get('lists')
-  @Roles(...REVIEWER_ROLES)
+  @Roles(...LIST_STATUS_ROLES)
   lists(@Ctx() ctx: RequestContext) {
     return this.aml.listStatuses(ctx.orgId);
   }

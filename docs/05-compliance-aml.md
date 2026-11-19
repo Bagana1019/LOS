@@ -169,7 +169,7 @@ CLAUDE.md §3.2-ийн дүрмийг дагасан: origination → kyc sync R
 
 Төлөв нь hit-үүдээс дараах давамгайллаар үүснэ: BLOCKING+`CONFIRMED` байвал `CONFIRMED_MATCH`; үгүй бол BLOCKING+`OPEN` байвал `REVIEW_REQUIRED`; үгүй бол `FALSE_POSITIVE` биш hit байвал `WARNING`; үгүй бол (бүгд `FALSE_POSITIVE`) `CLEARED_AFTER_REVIEW`; hit байхгүй бол `CLEAR`.
 
-- Hit-ийг `ADMIN` эсвэл `APPROVER` шийднэ: `POST /api/aml/hits/:id/review` `{decision: CONFIRMED|FALSE_POSITIVE, comment}` — тайлбар заавал (trim-ийн дараа 5–2000 тэмдэгт). Алдаа: 404 (олдохгүй, өөр org, uuid биш), 409 (аль хэдийн шийдвэрлэгдсэн, эсвэл screening-ийг шинэ шалгалт сольсон — доорх "Хуучирсан шалгалт"), 403 (дүр, эсвэл доорх segregation of duties).
+- Hit-ийг зөвхөн `COMPLIANCE` шийднэ (Q-137; ADMIN, APPROVER шийдэхгүй — зээл батлагч хоригийн тохирлыг өөрөө цэвэрлэх нь ашиг сонирхлын зөрчил): `POST /api/aml/hits/:id/review` `{decision: CONFIRMED|FALSE_POSITIVE, comment}` — тайлбар заавал (trim-ийн дараа 5–2000 тэмдэгт). Алдаа: 404 (олдохгүй, өөр org, uuid биш), 409 (аль хэдийн шийдвэрлэгдсэн, эсвэл screening-ийг шинэ шалгалт сольсон — доорх "Хуучирсан шалгалт"), 403 (дүр, эсвэл доорх segregation of duties).
 - Шийдвэр **өөрчлөгдөхгүй** (`CONFIRMED`-ийг `FALSE_POSITIVE` болгох, эсрэгээр нь ч үгүй — 409). Хоёр хүн нэг hit-ийг зэрэг шийдвэрлэвэл нэгдүгээр нь ялна (compare-and-set), хоёр дахь нь 409.
 - **Шийдвэрлэлт атомик.** Нэг DB транзакцид: харилцагчийн (org, `customerId`) advisory түгжээ (`pg_advisory_xact_lock`) → screening-ийн мөрийг түгжинэ (`SELECT … FOR UPDATE`) → screening одоо ч харилцагчийн сүүлийнх эсэхийг шалгана → hit-ийг `status=OPEN` нөхцөлөөр compare-and-set → screening-ийн БҮХ hit-ийг дахин уншина → төлөв, `blocking`, эрсдэлийг DB-ийн одоогийн төлвөөс гаргана → screening шинэчилнэ → `AmlHitReviewed`-ийг outbox-д бичнэ. Иймд нэг screening-ийн өөр өөр hit-ийг хоёр хүн зэрэг шийдвэрлэхэд эцсийн төлөв хоёр шийдвэрийг хоёуланг нь тусгана (хуучирсан snapshot-оос бодсон нэгтгэл нөгөөгийнхөө үр дүнг дарахгүй). Түгжээний дараалал (харилцагч → screening мөр) `saveScreening`-д мөн ижил.
 - **Хуучирсан (superseded) шалгалт.** Харилцагчийн (org + `customerId`) `screened_at`, `id` буурахаар хамгийн сүүлийн шалгалт л "одоогийнх"; өмнөхүүд нь superseded (тусдаа багана байхгүй, эрэмбээр тодорхойлогдоно). Superseded шалгалтын hit `GET /aml/hits` дараалалд (нийт тоонд ч) орохгүй, шийдвэрлэвэл `409 Screening is superseded by a newer one; review the hits of the latest screening`. Шалгалт service дээр ба repository транзакц дотор түгжээтэйгээр давтан хийгдэнэ (review ба шинэ шалгалтын уралдаан): эс бөгөөс хуучин screening-ийн hit-ийг цэвэрлэхэд `AmlHitReviewed {blocking:false}` гарч, блоклосон харилцагчийг consumer чөлөөлчихнө.
@@ -206,9 +206,9 @@ kyc (`/api`). Хүсэлт эхлээд глобал `ContextAuthGuard`-ыг, д
 | --- | --- | --- |
 | `POST /aml/screen` | дурын нэвтэрсэн | 201. `AmlScreenRequest` → `AmlScreeningResult` |
 | `GET /aml/screenings/:id`, `GET /aml/customers/:customerId/latest` | дурын нэвтэрсэн | Түүх / wizard-ийн "Лавлагаа" алхам. `screenings/:id` нэмж `subject` (регистргүй, төрсөн он, alias, улс, PEP — `AmlScreeningDetail`) буцаана |
-| `GET /aml/hits?status=OPEN&list=&limit=&offset=` | ADMIN, APPROVER, COMPLIANCE (gateway: зөвхөн COMPLIANCE, `aml:review`) | Шийдвэрлэх дараалал: харилцагч тутмын ОДООГИЙН (сүүлийн) шалгалтын hit л. `limit` 1–100 (анхдагч 20), `offset` 0–1 000 000 |
-| `POST /aml/hits/:id/review` | ADMIN, APPROVER, COMPLIANCE (gateway: зөвхөн COMPLIANCE, `aml:review`) | 200. Шийдвэрлэх (§5); хариу нь хадгалагдсан screening. Шийдвэр бүр `kyc.audit_log`-д (entity `aml_hit`, `AML_HIT_REVIEWED`, тайлбаргүй) нэг транзакцид |
-| `GET /aml/lists`, `POST /aml/lists/refresh` | ADMIN, APPROVER, COMPLIANCE / ADMIN | Жагсаалтын хувилбар (`UN_SC`, `FATF`), шинэчлэх (албадан, backoff-д хамаарахгүй) |
+| `GET /aml/hits?status=OPEN&list=&limit=&offset=` | COMPLIANCE (gateway ба kyc хоёул, `aml:review`) | Шийдвэрлэх дараалал: харилцагч тутмын ОДООГИЙН (сүүлийн) шалгалтын hit л. `limit` 1–100 (анхдагч 20), `offset` 0–1 000 000 |
+| `POST /aml/hits/:id/review` | COMPLIANCE (gateway ба kyc хоёул, `aml:review`) | 200. Шийдвэрлэх (§5); хариу нь хадгалагдсан screening. Шийдвэр бүр `kyc.audit_log`-д (entity `aml_hit`, `AML_HIT_REVIEWED`, тайлбаргүй) нэг транзакцид |
+| `GET /aml/lists`, `POST /aml/lists/refresh` | ADMIN, COMPLIANCE / ADMIN | Жагсаалтын хувилбар (`UN_SC`, `FATF`), шинэчлэх (албадан, backoff-д хамаарахгүй) |
 | `POST /aml/rescreen` | ADMIN | Хуучирсан шалгалтуудыг дахин хийх (§6). Хариу `{checked, rescreened, failed, skipped}`; жагсаалт унасан бол 503 |
 
 `POST /aml/screen`-ий алдаа:
@@ -388,5 +388,5 @@ Q-133: Идэвхгүй болгохдоо шалтгаан заавал бич�
 Q-134: «Эх сурвалж» тусдаа талбар (шүүх, ЗМС, дотоод, өөр ББСБ, ТБХ) болгох уу? Тийм: жагсаалт ______ / Үгүй, тайлбарт бичнэ.
 Q-135: AML эрсдэлийн оноонд Хар, Саарал өөр жинтэй байх уу? Хар=___, Саарал=___ (одоо хоёул 20).
 Q-136: Харилцагчид хар/саарал жагсаалтад орсныг мэдэгдэх, мэдээлэл хадгалах хугацаа, хувь хүний мэдээлэл хамгаалах хуулийн шаардлага: ______ (хуулийн зөвлөхтэй)
-Q-137: AML hit-ийг шийдвэрлэх дүр: зөвхөн COMPLIANCE (kyc-ээс ADMIN/APPROVER-ийг хасна). / COMPLIANCE + ______ (одоо: UI/gateway — COMPLIANCE, kyc — ADMIN, APPROVER, COMPLIANCE; DECISIONS P4C-1)
+Q-137: AML hit-ийг шийдвэрлэх дүр: ШИЙДСЭН 2026-11-19 — зөвхөн COMPLIANCE (gateway, дэлгэц, kyc гурвуулаа). ADMIN зөвхөн жагсаалтын хувилбар харж/шинэчилнэ, hit харахгүй. DECISIONS P4C-2.
 ```
