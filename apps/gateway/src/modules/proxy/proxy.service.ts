@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CTX_HEADERS } from '@los/contracts';
+import { CTX_HEADERS, DIRECTORY_TOKEN_HEADER } from '@los/contracts';
 import { contextOf, serviceUrl, type ServiceName } from '@los/nest-common';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createProxyMiddleware, type RequestHandler } from 'http-proxy-middleware';
@@ -8,7 +8,7 @@ export const PROXIED_SERVICES = ['origination', 'kyc', 'scoring', 'valuation', '
 export type ProxiedService = typeof PROXIED_SERVICES[number];
 
 /** Клиентээс ирсэн бол ХЭЗЭЭ Ч дамжуулахгүй толгойнууд (identity нь зөвхөн gateway-ийн баталгаажуулсан утгаар). */
-const STRIP = ['authorization', 'cookie', ...Object.values(CTX_HEADERS)];
+const STRIP = ['authorization', 'cookie', DIRECTORY_TOKEN_HEADER, ...Object.values(CTX_HEADERS)];
 const HOP = ['connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'transfer-encoding', 'upgrade'];
 
 @Injectable()

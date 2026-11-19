@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CTX_HEADERS, type OrgDirectory, type RequestContext } from '@los/contracts';
-import { FixedClock, InternalHttpClient } from '@los/nest-common';
+import { CTX_HEADERS, DIRECTORY_TOKEN_HEADER, type OrgDirectory, type RequestContext } from '@los/contracts';
+import { FixedClock } from '@los/nest-common';
 import { HttpOrgDirectorySource, ORG_DIRECTORY_TTL_MS, OrgDirectoryService, directoryName, type OrgDirectorySource } from './org-directory';
 
 // Excel/CSV экспортын нэр: салбар, ЗЭЗ нь gateway-ийн `iam` schema-д. origination өөр schema уншихгүй — gateway-ийн дотоод лавлахаас
@@ -94,19 +94,48 @@ describe('OrgDirectoryService', () => {
 });
 
 describe('HttpOrgDirectorySource', () => {
-  const env = { INTERNAL_AUTH_SECRET: 's3cret', GATEWAY_URL: 'http://gw.test:4000' } as NodeJS.ProcessEnv;
-  const source = (fetchFn: typeof fetch) => new HttpOrgDirectorySource(new InternalHttpClient({ env, fetchFn, sleep: async () => undefined }));
+  const TOKEN = 'dir-token-0123456789abcd';
+  const env = { INTERNAL_AUTH_SECRET: 's3cret-internal', GATEWAY_DIRECTORY_TOKEN: TOKEN, GATEWAY_URL: 'http://gw.test:4000' } as NodeJS.ProcessEnv;
+  const source = (fetchFn: typeof fetch, e: NodeJS.ProcessEnv = env) => new HttpOrgDirectorySource({ env: e, fetchFn, sleep: async () => undefined });
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  type Call = [URL, RequestInit & { headers: Record<string, string> }];
 
-  it('gateway-ийн дотоод лавлах руу org-ийн толгой, дотоод токентой GET хийж OrgDirectory-г задлана', async () => {
+  it('gateway-ийн дотоод лавлах руу X-Directory-Token (өөрийн GATEWAY_DIRECTORY_TOKEN) + X-Org-Id-тай GET хийж OrgDirectory-г задлана', async () => {
     const fetchFn = vi.fn(async () => json(SNAPSHOT));
     const out = await source(fetchFn as unknown as typeof fetch).fetch(ctx('org-7'));
     expect(out).toEqual(SNAPSHOT);
-    const [url, init] = fetchFn.mock.calls[0] as unknown as [URL, RequestInit & { headers: Record<string, string> }];
+    const [url, init] = fetchFn.mock.calls[0] as unknown as Call;
     expect(String(url)).toBe('http://gw.test:4000/api/internal/directory');
     expect(init.method).toBe('GET');
     expect(init.headers[CTX_HEADERS.orgId]).toBe('org-7');
-    expect(init.headers[CTX_HEADERS.internalToken]).toBe('s3cret');
+    expect(init.headers[DIRECTORY_TOKEN_HEADER]).toBe(TOKEN);
+  });
+
+  it('INTERNAL_AUTH_SECRET-ийг gateway-ийн лавлах руу ХЭЗЭЭ Ч илгээхгүй (хоёр нууц тусдаа)', async () => {
+    const fetchFn = vi.fn(async () => json(SNAPSHOT));
+    await source(fetchFn as unknown as typeof fetch).fetch(ctx());
+    const [, init] = fetchFn.mock.calls[0] as unknown as Call;
+    expect(init.headers[CTX_HEADERS.internalToken]).toBeUndefined();
+    expect(JSON.stringify(init.headers)).not.toContain('s3cret-internal');
+  });
+
+  it('redirect дагахгүй (токен өөр хост руу алдагдахгүй): 3xx → алдаа', async () => {
+    const fetchFn = vi.fn(async () => json(SNAPSHOT));
+    await source(fetchFn as unknown as typeof fetch).fetch(ctx());
+    expect((fetchFn.mock.calls[0] as unknown as Call)[1].redirect).toBe('error');
+  });
+
+  it.each([['тохируулаагүй', undefined], ['хоосон', ''], ['хоосон зай', '   ']])('GATEWAY_DIRECTORY_TOKEN %s → сүлжээний дуудлагагүйгээр алдаа (дуудагч id-д буцна)', async (_n, value) => {
+    const fetchFn = vi.fn(async () => json(SNAPSHOT));
+    const e = { ...env, GATEWAY_DIRECTORY_TOKEN: value } as NodeJS.ProcessEnv;
+    await expect(source(fetchFn as unknown as typeof fetch, e).fetch(ctx())).rejects.toThrow(/GATEWAY_DIRECTORY_TOKEN/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it('токеныг trim хийж илгээнэ', async () => {
+    const fetchFn = vi.fn(async () => json(SNAPSHOT));
+    await source(fetchFn as unknown as typeof fetch, { ...env, GATEWAY_DIRECTORY_TOKEN: `  ${TOKEN}\n` } as NodeJS.ProcessEnv).fetch(ctx());
+    expect((fetchFn.mock.calls[0] as unknown as Call)[1].headers[DIRECTORY_TOKEN_HEADER]).toBe(TOKEN);
   });
 
   it('гэрээнд нийцэхгүй хариу (strict схем) → алдаа (дуудагч id-д буцна)', async () => {
@@ -114,8 +143,12 @@ describe('HttpOrgDirectorySource', () => {
     await expect(source(bad as unknown as typeof fetch).fetch(ctx())).rejects.toThrow();
   });
 
-  it('gateway 5xx / сүлжээний алдаа → алдаа шидэнэ', async () => {
-    await expect(source((async () => json({ code: 'X' }, 503)) as unknown as typeof fetch).fetch(ctx())).rejects.toThrow();
+  it('gateway 401/503/5xx / сүлжээний алдаа → алдаа шидэнэ; алдааны мессежид токен орохгүй', async () => {
+    for (const status of [401, 503]) {
+      const err = await source((async () => json({ code: 'X' }, status)) as unknown as typeof fetch).fetch(ctx()).catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(String((err as Error).message)).not.toContain(TOKEN);
+    }
     await expect(source((async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch).fetch(ctx())).rejects.toThrow();
   });
 });

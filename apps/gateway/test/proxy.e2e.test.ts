@@ -83,6 +83,44 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
     expect(h.cookie).toBeUndefined();
   });
 
+  describe('GATEWAY_DIRECTORY_TOKEN never fans out; /api/internal/* is never proxied', () => {
+    const DIR_TOKEN = 'directory-token-for-tests-0123';
+    const saved = process.env.GATEWAY_DIRECTORY_TOKEN;
+    beforeAll(() => { process.env.GATEWAY_DIRECTORY_TOKEN = DIR_TOKEN; });
+    afterAll(() => { if (saved === undefined) delete process.env.GATEWAY_DIRECTORY_TOKEN; else process.env.GATEWAY_DIRECTORY_TOKEN = saved; });
+
+    it('a client-sent X-Directory-Token on a proxied request is stripped: no service ever sees it', async () => {
+      await api().get('/api/origination/applications').set(bearer('officer.a')).set({ 'x-directory-token': DIR_TOKEN });
+      expect(seen).toHaveLength(1);
+      expect(seen[0]!.headers['x-directory-token']).toBeUndefined();
+      expect(JSON.stringify(seen[0]!.headers)).not.toContain(DIR_TOKEN);
+    });
+
+    it('the service receives INTERNAL_AUTH_SECRET only; the directory token is a different secret and is not set by the proxy', async () => {
+      await api().get('/api/kyc/anything').set(bearer('officer.a'));
+      const h = seen[0]!.headers;
+      expect(h['x-internal-token']).toBe(process.env.INTERNAL_AUTH_SECRET);
+      expect(process.env.INTERNAL_AUTH_SECRET).not.toBe(DIR_TOKEN);
+      expect(JSON.stringify(h)).not.toContain(DIR_TOKEN);
+    });
+
+    it.each([
+      '/api/internal/other', '/api/internal/portal/me', '/api/internal/directory/extra', '/api/internal',
+      '/api/origination/internal/portal/me', '/api/origination/%69nternal/portal/me', '/api/origination/INTERNAL/portal/me',
+    ])('%s with a valid directory token and a valid session never reaches a backend (404)', async (path) => {
+      const res = await api().get(path).set(bearer('officer.a')).set({ 'x-directory-token': DIR_TOKEN, 'x-org-id': SEED.org.id });
+      expect(res.status, path).toBe(404);
+      expect(seen, path).toHaveLength(0);
+    });
+
+    it('/api/internal/directory is answered by the gateway controller itself (200) and nothing is proxied', async () => {
+      const res = await api().get('/api/internal/directory').set({ 'x-directory-token': DIR_TOKEN, 'x-org-id': SEED.org.id });
+      expect(res.status).toBe(200);
+      expect(Object.keys(res.body).sort()).toEqual(['branches', 'users']);
+      expect(seen).toHaveLength(0);
+    });
+  });
+
   it('spoofed headers without a valid token are still a 401 (headers are not trusted at the edge)', async () => {
     const res = await api().get('/api/origination/applications').set({ 'x-user-id': SEED.users.admin.id, 'x-roles': 'ADMIN', 'x-org-id': SEED.org.id });
     expect(res.status).toBe(401);

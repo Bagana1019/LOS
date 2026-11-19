@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { OrgDirectory, type RequestContext } from '@los/contracts';
+import { DIRECTORY_TOKEN_HEADER, OrgDirectory, type RequestContext } from '@los/contracts';
 import { Clock, InternalHttpClient } from '@los/nest-common';
 
 /**
@@ -19,19 +19,38 @@ export interface OrgDirectorySource { fetch(ctx: RequestContext): Promise<OrgDir
 /** Нэр олдвол нэр, үгүй бол id. `Object.prototype`-ийн түлхүүр (constructor, __proto__) нэр болохгүй. */
 export const directoryName = (names: Readonly<Record<string, string>>, id: string): string => (Object.hasOwn(names, id) ? (names[id] as string) : id);
 
-/** Redirect дагахгүй: дотоод токен өөр хост руу алдагдахаас сэргийлнэ. */
-const noRedirectFetch: typeof fetch = (input, init) => fetch(input, { ...init, redirect: 'error' });
+export interface HttpOrgDirectoryOptions { env?: NodeJS.ProcessEnv; fetchFn?: typeof fetch; sleep?: (ms: number) => Promise<void> }
 
-/** origination → gateway (унших-зөвхөн). `GATEWAY_URL` (анхдагч http://localhost:4000). Хариуг `OrgDirectory` (strict) схемээр шалгана. */
+/**
+ * origination → gateway (унших-зөвхөн). `GATEWAY_URL` (анхдагч http://localhost:4000). Хариуг `OrgDirectory` (strict) схемээр шалгана.
+ * Нэвтрэлт: ЗӨВХӨН өөрийн `GATEWAY_DIRECTORY_TOKEN` (`X-Directory-Token`). `INTERNAL_AUTH_SECRET`-ийг энд илгээхгүй — gateway ч энэ замд хүлээн авдаггүй
+ * (proxy бүх backend-д тарааж өгдөг нууц). Токен тохируулаагүй бол сүлжээнд хандахгүйгээр алдаа → `OrgDirectoryService` id-д буцна.
+ * Redirect дагахгүй: токен өөр хост руу алдагдахаас сэргийлнэ.
+ */
 export class HttpOrgDirectorySource implements OrgDirectorySource {
-  constructor(private readonly http: InternalHttpClient) {}
+  private readonly env: NodeJS.ProcessEnv;
+  private readonly http: InternalHttpClient;
+
+  constructor(opts: HttpOrgDirectoryOptions = {}) {
+    this.env = opts.env ?? process.env;
+    const base = opts.fetchFn ?? fetch;
+    const withDirectoryToken: typeof fetch = (input, init) => {
+      const headers = { ...(init?.headers as Record<string, string> | undefined), [DIRECTORY_TOKEN_HEADER]: this.token() ?? '' };
+      return base(input, { ...init, headers, redirect: 'error' });
+    };
+    // INTERNAL_AUTH_SECRET-гүй env: InternalHttpClient `X-Internal-Token` нэмэхгүй
+    this.http = new InternalHttpClient({ env: { ...this.env, INTERNAL_AUTH_SECRET: undefined }, fetchFn: withDirectoryToken, sleep: opts.sleep });
+  }
+
+  private token(): string | null { return this.env.GATEWAY_DIRECTORY_TOKEN?.trim() || null; }
 
   fetch(ctx: RequestContext): Promise<OrgDirectory> {
+    if (!this.token()) return Promise.reject(new Error('GATEWAY_DIRECTORY_TOKEN is not configured'));
     return this.http.get('gateway', '/api/internal/directory', { ctx, timeoutMs: ORG_DIRECTORY_TIMEOUT_MS, schema: OrgDirectory });
   }
 }
 
-export const createOrgDirectorySource = (env: NodeJS.ProcessEnv = process.env): HttpOrgDirectorySource => new HttpOrgDirectorySource(new InternalHttpClient({ env, fetchFn: noRedirectFetch }));
+export const createOrgDirectorySource = (env: NodeJS.ProcessEnv = process.env): HttpOrgDirectorySource => new HttpOrgDirectorySource({ env });
 
 @Injectable()
 export class OrgDirectoryService {
