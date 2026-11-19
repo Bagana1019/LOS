@@ -140,9 +140,22 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       const officer = headers('officer-1', ['OFFICER']);
       await http().get('/api/aml/hits').set(officer).expect(403);
       await http().get('/api/aml/lists').set(officer).expect(403);
-      await http().post('/api/aml/lists/refresh').set(headers('approver-1', ['APPROVER'])).send({}).expect(403);
-      await http().post('/api/aml/rescreen').set(headers('approver-1', ['APPROVER'])).send({}).expect(403);
-      await http().get('/api/aml/hits').set(headers('approver-1', ['APPROVER'])).expect(200);
+      const approver = headers('approver-1', ['APPROVER']);
+      await http().post('/api/aml/lists/refresh').set(approver).send({}).expect(403);
+      await http().post('/api/aml/rescreen').set(approver).send({}).expect(403);
+      await http().get('/api/aml/hits').set(headers('compliance-1', ['COMPLIANCE'])).expect(200);
+    });
+    // Q-137: hit-ийг зөвхөн COMPLIANCE шийднэ. ADMIN жагсаалт шинэчилнэ, харин hit-ийн дараалал харахгүй/шийдэхгүй.
+    it('lets only COMPLIANCE read or decide hits (Q-137): ADMIN and APPROVER get 403', async () => {
+      const body = { decision: 'FALSE_POSITIVE', comment: 'Cleared by the wrong role' };
+      for (const roles of [['ADMIN'], ['APPROVER'], ['ADMIN', 'APPROVER']] as const) {
+        const h = headers('u-1', [...roles]);
+        await http().get('/api/aml/hits').set(h).expect(403);
+        await http().post('/api/aml/hits/00000000-0000-4000-8000-000000000001/review').set(h).send(body).expect(403);
+      }
+      expect((await http().get('/api/aml/lists').set(headers('admin-5', ['ADMIN'])).expect(200)).body).toBeInstanceOf(Array);
+      await http().get('/api/aml/lists').set(headers('approver-1', ['APPROVER'])).expect(403);
+      await http().post('/api/aml/lists/refresh').set(headers('admin-5', ['ADMIN'])).send({}).expect(200);
     });
     it('ignores unknown role names in X-Roles', async () => {
       await http().get('/api/aml/hits').set(headers('u', ['SUPERUSER', 'ROOT'])).expect(403);
@@ -319,7 +332,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
   describe('hit review', () => {
     const matchBody = () => screenBody({}, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ' });
-    const admin = headers('admin-1', ['ADMIN']);
+    const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
     const review = (hitId: string, body: unknown, h = admin) => http().post(`/api/aml/hits/${hitId}/review`).set(h).send(body as object);
     const completedEvent = (screeningId: string, over: Record<string, unknown> = {}) => ({
       type: 'AmlScreeningCompleted', eventId: expect.any(String), occurredAt: '2026-10-28T09:00:00.000Z', version: 1, orgId: 'org-1', actorId: 'officer-1',
@@ -353,7 +366,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
     it('confirms a match: CONFIRMED_MATCH, blocking, risk 100, persisted and published', async () => {
       const screened = (await screen(matchBody()).expect(201)).body;
-      const res = await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match the listed party' }, headers('approver-1', ['APPROVER'])).expect(200);
+      const res = await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match the listed party' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
       expect(res.body).toMatchObject({ status: 'CONFIRMED_MATCH', blocking: true, riskScore: 100, riskLevel: 'HIGH' });
       expect(res.body.riskFactors).toEqual([{ code: 'SANCTIONS_CONFIRMED', weight: 100 }]);
 
@@ -373,22 +386,22 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
     it('freezes the decision: a second review gets 409', async () => {
       const screened = (await screen(matchBody()).expect(201)).body;
       await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }).expect(200);
-      await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Changed my mind later' }, headers('admin-2', ['ADMIN'])).expect(409);
+      await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Changed my mind later' }, headers('admin-2', ['ADMIN', 'COMPLIANCE'])).expect(409);
       expect(await events('AmlHitReviewed')).toHaveLength(1);
     });
 
     it('requires a different person than the one who ran the screening, for either decision', async () => {
-      const screened = (await screen(matchBody(), headers('admin-1', ['ADMIN'])).expect(201)).body;
+      const screened = (await screen(matchBody(), headers('admin-1', ['ADMIN', 'COMPLIANCE'])).expect(201)).body;
       await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }).expect(403);
       // Эхлүүлсэн хүн CONFIRMED-ээр ч шийдвэрлэж болохгүй (код санаатайгаар ямар ч шийдвэрийг хаадаг).
       await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Confirmed by the same person' }).expect(403);
       expect((await repo.findScreening('org-1', screened.id))?.hits[0]).toMatchObject({ status: 'OPEN', reviewedBy: null });
       expect(await events('AmlHitReviewed')).toHaveLength(0);
       // Өөр хүн CONFIRMED-ээр шийдвэрлэж чадна.
-      await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Confirmed by a second person' }, headers('approver-1', ['APPROVER'])).expect(200);
+      await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Confirmed by a second person' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
       // Бодлого сулруулсан org-д эхлүүлсэн хүн өөрөө шийдвэрлэж болно.
       policy = AmlPolicy.parse({ requireSeparateReviewer: false });
-      const other = (await screen(screenBody({ customerId: 'cust-2' }, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ' }), headers('admin-1', ['ADMIN'])).expect(201)).body;
+      const other = (await screen(screenBody({ customerId: 'cust-2' }, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ' }), headers('admin-1', ['ADMIN', 'COMPLIANCE'])).expect(201)).body;
       await review(other.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }).expect(200);
     });
 
@@ -399,7 +412,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       await review(id, { decision: 'MAYBE', comment: 'Not a valid decision' }).expect(400);
       await review(id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('officer-2', ['OFFICER'])).expect(403);
       await review('00000000-0000-4000-8000-0000000fffff', { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }).expect(404);
-      await review(id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('admin-9', ['ADMIN'], 'org-2')).expect(404);
+      await review(id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('admin-9', ['ADMIN', 'COMPLIANCE'], 'org-2')).expect(404);
     });
 
     it('keeps a warning-level hit as WARNING after a blocking hit is cleared', async () => {
@@ -419,7 +432,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       expect(await events('AmlHitReviewed')).toEqual([reviewedEvent(screened.id, screened.hits[0].id, { riskScore: 25, riskLevel: 'LOW' })]);
 
       const second = (await screen(screenBody({ customerId: 'cust-2' }, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ', isPep: true })).expect(201)).body;
-      const confirmed = await review(second.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['APPROVER'])).expect(200);
+      const confirmed = await review(second.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
       expect(confirmed.body).toMatchObject({ status: 'CONFIRMED_MATCH', riskScore: 100, riskLevel: 'HIGH' }); // 25 + 100 → 100-аар хязгаарлагдана
       expect(confirmed.body.riskFactors).toEqual([{ code: 'PEP', weight: 25 }, { code: 'SANCTIONS_CONFIRMED', weight: 100 }]);
     });
@@ -429,8 +442,8 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       expect(screened.hits).toHaveLength(2);
       const body = { decision: 'FALSE_POSITIVE', comment: 'Different person entirely' };
       const [a, b] = await Promise.all([
-        review(screened.hits[0].id, body, headers('admin-1', ['ADMIN'])),
-        review(screened.hits[1].id, body, headers('approver-1', ['APPROVER'])),
+        review(screened.hits[0].id, body, headers('admin-1', ['ADMIN', 'COMPLIANCE'])),
+        review(screened.hits[1].id, body, headers('approver-1', ['COMPLIANCE'])),
       ]);
       expect([a.status, b.status]).toEqual([200, 200]);
 
@@ -494,9 +507,9 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       expect(res.body).toMatchObject({ status: 'CONFIRMED_MATCH', blocking: true, riskLevel: 'HIGH' });
     });
 
-    it('rejects non-reviewer roles with 403 (OFFICER, BRANCH_MANAGER, none)', async () => {
+    it('rejects non-reviewer roles with 403 (OFFICER, BRANCH_MANAGER, ADMIN, APPROVER, none)', async () => {
       const screened = (await screen(matchBody()).expect(201)).body;
-      for (const roles of [['OFFICER'], ['BRANCH_MANAGER'], []]) {
+      for (const roles of [['OFFICER'], ['BRANCH_MANAGER'], ['ADMIN'], ['APPROVER'], []]) {
         await http().get('/api/aml/hits').set(headers('u-1', roles)).expect(403);
         await review(screened.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('u-1', roles)).expect(403);
       }
@@ -553,7 +566,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
   describe('a blocking screening cannot be superseded by a different identity', () => {
     const matchBody = (over: Record<string, unknown> = {}, subjectOver: Record<string, unknown> = {}) => screenBody(over, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ', ...subjectOver });
-    const admin = headers('admin-1', ['ADMIN']);
+    const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
     const review = (hitId: string, body: unknown, h = admin) => http().post(`/api/aml/hits/${hitId}/review`).set(h).send(body as object);
 
     it('answers 409 and stores nothing when the register differs from a REVIEW_REQUIRED screening; the same identity may be re-screened', async () => {
@@ -574,7 +587,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
     it('also answers 409 after a CONFIRMED_MATCH, and keeps it when the same customer is screened again with a lists subset', async () => {
       const first = (await screen(matchBody()).expect(201)).body;
-      await review(first.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['APPROVER'])).expect(200);
+      await review(first.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
       await screen(screenBody({ lists: ['FATF'] }, { registerNo: OTHER_REGISTER })).expect(409);
       await screen(screenBody({}, { registerNo: OTHER_REGISTER, countries: ['KP'] })).expect(409);
 
@@ -623,17 +636,17 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
     it('keeps a CONFIRMED_MATCH through a rejected name swap: screening the true name again carries the confirmation', async () => {
       const first = (await screen(matchBody()).expect(201)).body;
-      await review(first.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['APPROVER'])).expect(200);
+      await review(first.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
       await screen(matchBody({}, { lastName: 'Иванов', firstName: 'Иван' })).expect(409);
       const again = (await screen(matchBody()).expect(201)).body;
       expect(again).toMatchObject({ status: 'CONFIRMED_MATCH', blocking: true });
       expect(again.hits[0]).toMatchObject({ status: 'CONFIRMED', reviewedBy: 'approver-1', details: { carriedOverFrom: first.hits[0].id } });
-      await review(again.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Trying to reverse it' }, headers('admin-2', ['ADMIN'])).expect(409);
+      await review(again.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Trying to reverse it' }, headers('admin-2', ['ADMIN', 'COMPLIANCE'])).expect(409);
     });
   });
 
   describe('concurrent screenings of one customer', () => {
-    const admin = headers('admin-1', ['ADMIN']);
+    const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
     const sanctioned = (over: Record<string, unknown> = {}) => screenBody(over, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ' });
     const clean = (over: Record<string, unknown> = {}) => screenBody(over, { registerNo: OTHER_REGISTER });
     const latest = async (customerId: string) => (await http().get(`/api/aml/customers/${customerId}/latest`).set(admin).expect(200)).body;
@@ -741,7 +754,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
   });
 
   describe('hits of superseded screenings', () => {
-    const admin = headers('admin-1', ['ADMIN']);
+    const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
     const matchBody = () => screenBody({}, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ' });
     const review = (hitId: string, body: unknown, h = admin) => http().post(`/api/aml/hits/${hitId}/review`).set(h).send(body as object);
     const queue = async (query = '') => (await http().get(`/api/aml/hits${query}`).set(admin).expect(200)).body;
@@ -765,20 +778,20 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
         expect(q.total).toBe(1);
         expect(q.items.map((i: { hit: { id: string } }) => i.hit.id)).toEqual([s2.hits[0].id]);
       }
-      const res = await review(s1.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('admin-2', ['ADMIN'])).expect(409);
+      const res = await review(s1.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('admin-2', ['ADMIN', 'COMPLIANCE'])).expect(409);
       expect(res.body.message).toMatch(SUPERSEDED);
-      await review(s1.hits[0].id, { decision: 'CONFIRMED', comment: 'Confirmed by compliance' }, headers('approver-1', ['APPROVER'])).expect(409);
+      await review(s1.hits[0].id, { decision: 'CONFIRMED', comment: 'Confirmed by compliance' }, headers('approver-1', ['COMPLIANCE'])).expect(409);
       expect((await repo.findHit('org-1', s1.hits[0].id))?.hit).toMatchObject({ status: 'OPEN', reviewedBy: null });
       expect(await events('AmlHitReviewed')).toHaveLength(0);
       // Сүүлийн screening-ийнх хэвийн шийдвэрлэгдэнэ; харилцагч блоклосон хэвээр байх ёстой байсан тул зөв event гарна.
-      await review(s2.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('admin-2', ['ADMIN'])).expect(200);
+      await review(s2.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('admin-2', ['ADMIN', 'COMPLIANCE'])).expect(200);
       expect(await events('AmlHitReviewed')).toHaveLength(1);
       expect((await queue('?status=OPEN')).total).toBe(0);
     });
 
     it('does not leave the superseded hits visible after a decided hit is carried over either', async () => {
       const s1 = (await screen(matchBody()).expect(201)).body;
-      await review(s1.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Different person entirely' }, headers('admin-2', ['ADMIN'])).expect(200);
+      await review(s1.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Different person entirely' }, headers('admin-2', ['ADMIN', 'COMPLIANCE'])).expect(200);
       un = unSnapshot('un-v2');
       now = new Date(now.getTime() + 2 * HOUR);
       await http().post('/api/aml/rescreen').set(admin).send({}).expect(200);
@@ -791,7 +804,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       const { s1 } = await supersede();
       vi.spyOn(repo, 'findLatestForCustomer').mockResolvedValueOnce(await repo.findScreening('org-1', s1.id)); // өмнөх шалгалтыг "хуурч" давуулна
       const apply = vi.spyOn(repo, 'applyHitReview');
-      const res = await review(s1.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('admin-2', ['ADMIN'])).expect(409);
+      const res = await review(s1.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Cleared by compliance' }, headers('admin-2', ['ADMIN', 'COMPLIANCE'])).expect(409);
       expect(res.body.message).toMatch(SUPERSEDED);
       expect(apply).toHaveBeenCalledTimes(1);
       expect(await apply.mock.results[0]?.value).toEqual({ outcome: 'superseded' });
@@ -806,7 +819,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       const res = await screen(screenBody()).expect(503);
       expect(res.body.message).toContain('UN_SC');
       expect(await events()).toHaveLength(0);
-      await http().get('/api/aml/customers/cust-1/latest').set(headers('admin-1', ['ADMIN'])).expect(404);
+      await http().get('/api/aml/customers/cust-1/latest').set(headers('admin-1', ['ADMIN', 'COMPLIANCE'])).expect(404);
     });
 
     it('falls back to a stale cache within maxStaleListHours and marks the screening', async () => {
@@ -820,7 +833,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
     });
 
     it('reports list status and refreshes on demand', async () => {
-      const admin = headers('admin-1', ['ADMIN']);
+      const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
       await screen(screenBody()).expect(201);
       un = unSnapshot('un-v2');
       const res = await http().post('/api/aml/lists/refresh').set(admin).send({ list: 'UN_SC' }).expect(200);
@@ -830,7 +843,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
     });
 
     describe('policy.maxStaleListHours is what bounds the stale cache', () => {
-      const admin = headers('admin-1', ['ADMIN']);
+      const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
 
       it('screen(): a 1 hour policy refuses a 2 hour old cache that the 72 hour default still accepts', async () => {
         policy = AmlPolicy.parse({ maxStaleListHours: 1 });
@@ -865,7 +878,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
   });
 
   describe('rescreen after a list update', () => {
-    const admin = headers('admin-1', ['ADMIN']);
+    const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
     const rescreen = (h = admin, body: object = {}) => http().post('/api/aml/rescreen').set(h).send(body);
     const review = (hitId: string, body: unknown, h = admin) => http().post(`/api/aml/hits/${hitId}/review`).set(h).send(body as object);
     const latest = async (customerId: string, h = admin) => (await http().get(`/api/aml/customers/${customerId}/latest`).set(h).expect(200)).body;
@@ -888,8 +901,8 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
     });
 
     it('keeps the original maker barred from reviewing a rescreened hit; the admin who ran the rescreen is only the event actor', async () => {
-      const maker = headers('admin-1', ['ADMIN']);
-      const other = headers('admin-2', ['ADMIN']);
+      const maker = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
+      const other = headers('admin-2', ['ADMIN', 'COMPLIANCE']);
       await screen(matchBody(), maker).expect(201);
       un = unSnapshot('un-v2');
       advance(2 * HOUR);
@@ -936,7 +949,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
       it('keeps a CONFIRMED match confirmed and blocking, and it cannot be reversed afterwards', async () => {
         const screened = (await screen(matchBody()).expect(201)).body;
-        await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['APPROVER'])).expect(200);
+        await review(screened.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
         un = unSnapshot('un-v2');
         advance(2 * HOUR);
         await rescreen().expect(200);
@@ -944,7 +957,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
         const after = await latest('cust-1');
         expect(after).toMatchObject({ trigger: 'LIST_UPDATE', status: 'CONFIRMED_MATCH', blocking: true, riskScore: 100, riskLevel: 'HIGH' });
         expect(after.hits[0]).toMatchObject({ status: 'CONFIRMED', reviewedBy: 'approver-1', reviewComment: 'Identity documents match', details: { carriedOverFrom: screened.hits[0].id } });
-        await review(after.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Trying to reverse it' }, headers('admin-2', ['ADMIN'])).expect(409);
+        await review(after.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Trying to reverse it' }, headers('admin-2', ['ADMIN', 'COMPLIANCE'])).expect(409);
         expect(await latest('cust-1')).toMatchObject({ status: 'CONFIRMED_MATCH', blocking: true });
       });
 
@@ -1058,7 +1071,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
       it('keeps a CONFIRMED match when an amendment turns the name match into a register match', async () => {
         const s1 = (await screen(body()).expect(201)).body;
         expect(s1.hits[0]).toMatchObject({ entryRef: 'T-NAME', matchType: 'NAME_EXACT' });
-        await review(s1.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['APPROVER'])).expect(200);
+        await review(s1.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
 
         un = withTName('un-v2', tName({ identifiers: [{ type: 'National Identification Number', value: REGISTER, country: 'MN' }] }));
         advance(2 * HOUR);
@@ -1068,13 +1081,13 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
         expect(after.hits[0]).toMatchObject({ entryRef: 'T-NAME', matchType: 'REGISTER_EXACT', status: 'CONFIRMED', reviewedBy: 'approver-1', details: { carriedOverFrom: s1.hits[0].id } });
         expect(after).toMatchObject({ status: 'CONFIRMED_MATCH', blocking: true, riskScore: 100 });
         // Ганц reviewer үүнийг "цэвэрлэж" чадахгүй.
-        await review(after.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Trying to clear it' }, headers('admin-2', ['ADMIN'])).expect(409);
+        await review(after.hits[0].id, { decision: 'FALSE_POSITIVE', comment: 'Trying to clear it' }, headers('admin-2', ['ADMIN', 'COMPLIANCE'])).expect(409);
         expect(await latest('cust-1')).toMatchObject({ status: 'CONFIRMED_MATCH', blocking: true });
       });
 
       it('keeps a CONFIRMED match when an amendment turns the exact name match into a fuzzy one', async () => {
         const s1 = (await screen(body()).expect(201)).body;
-        await review(s1.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['APPROVER'])).expect(200);
+        await review(s1.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
 
         un = withTName('un-v2', { ...tName(), names: [{ value: 'Bat Erdene Ganbolt', quality: 'PRIMARY' }] });
         advance(2 * HOUR);
@@ -1086,7 +1099,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
       it('lets a CONFIRMED match disappear when its entry no longer produces a hit (known limitation: delisting)', async () => {
         const s1 = (await screen(body()).expect(201)).body;
-        await review(s1.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['APPROVER'])).expect(200);
+        await review(s1.hits[0].id, { decision: 'CONFIRMED', comment: 'Identity documents match' }, headers('approver-1', ['COMPLIANCE'])).expect(200);
         un = { ...unSnapshot('un-v2'), entries: unSnapshot('un-v2').entries.slice(1) }; // T-NAME хасагдсан
         advance(2 * HOUR);
         await rescreen().expect(200);
@@ -1243,7 +1256,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
     });
 
     it('only touches the caller organisation', async () => {
-      const org2 = headers('admin-9', ['ADMIN'], 'org-2');
+      const org2 = headers('admin-9', ['ADMIN', 'COMPLIANCE'], 'org-2');
       await screen(screenBody()).expect(201);
       await screen(screenBody({ orgId: 'org-2' }), headers('officer-9', ['OFFICER'], 'org-2')).expect(201);
       un = unSnapshot('un-v2');
@@ -1259,8 +1272,8 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
   describe('tenant isolation', () => {
     const org2Officer = headers('officer-9', ['OFFICER'], 'org-2');
-    const org2Admin = headers('admin-9', ['ADMIN'], 'org-2');
-    const admin = headers('admin-1', ['ADMIN']);
+    const org2Admin = headers('admin-9', ['ADMIN', 'COMPLIANCE'], 'org-2');
+    const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
     const matching = (over: Record<string, unknown> = {}) => screenBody(over, { lastName: 'Ганболд', firstName: 'Бат-Эрдэнэ' });
 
     it('keeps latest results, the review queue, reviews and event org ids per organisation, even for the same customer id', async () => {
@@ -1300,8 +1313,8 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
 
     it('resolves the policy of the caller organisation for screening, review and list status', async () => {
       orgPolicies = { 'org-2': AmlPolicy.parse({ blockOnSanctionsHit: false, requireSeparateReviewer: false, maxStaleListHours: 1 }) };
-      const maker1 = headers('admin-1', ['ADMIN']);
-      const maker2 = headers('admin-2', ['ADMIN'], 'org-2');
+      const maker1 = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
+      const maker2 = headers('admin-2', ['ADMIN', 'COMPLIANCE'], 'org-2');
       const one = (await screen(matching(), maker1).expect(201)).body;
       const two = (await screen(matching({ orgId: 'org-2' }), maker2).expect(201)).body;
       // Ижил субъект: org-1-д блоклоно, org-2-ын бодлогоор зөвхөн анхааруулга.
@@ -1331,7 +1344,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
   });
 
   describe('input hardening', () => {
-    const admin = headers('admin-1', ['ADMIN']);
+    const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
 
     it('answers 400 (never CLEAR) when no name survives normalisation', async () => {
       for (const names of [{ lastName: '---', firstName: '...' }, { lastName: '​', firstName: '()' }, { lastName: '😀', firstName: '😀' }]) {
@@ -1441,7 +1454,7 @@ describe(`AML module (HTTP, ${useDb ? 'Postgres' : 'in-memory'} persistence)`, (
   });
 
   describe('documented paging limits', () => {
-    const admin = headers('admin-1', ['ADMIN']);
+    const admin = headers('admin-1', ['ADMIN', 'COMPLIANCE']);
 
     it('GET /aml/hits: limit defaults to 20 and may be 1..100; offset defaults to 0', async () => {
       const listHits = vi.spyOn(repo, 'listHits');

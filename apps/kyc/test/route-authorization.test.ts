@@ -11,11 +11,7 @@ const SERVICE = 'kyc';
 const MODULE_ROLE_KEYS: readonly string[] = ['aml:roles'];
 
 /** Баримтжуулсан зөрүү (DECISIONS-ийн ID-тай). Шинэ зөрүү гарах, эсвэл шийдэгдээд алга болох үед тест унана. */
-const KNOWN_DRIFT: readonly string[] = [
-  // P4C-1 / Q-137: gateway — зөвхөн COMPLIANCE (aml:review); kyc AmlAccessGuard — ADMIN, APPROVER, COMPLIANCE (docs/05 §7 гэрээ)
-  'SERVICE_DOES_NOT_ENFORCE aml:review GET /api/aml/hits',
-  'SERVICE_DOES_NOT_ENFORCE aml:review POST /api/aml/hits/:id/review',
-];
+const KNOWN_DRIFT: readonly string[] = [];
 
 /** "Нэвтэрсэн ажилтан бол хэн ч" — өгөгдлийн хүрээг сервис өөрөө шалгадаг, хянагдсан маршрутууд. Шинэ мөр нэмэх = security review. */
 const AUTHENTICATED_ONLY: readonly string[] = [
