@@ -136,6 +136,11 @@ describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
     expect(disb.accountNoEncrypted).not.toContain('5012345670'); // шифрлэгдсэн
     expect(done.history.map((h) => h.action)).toEqual(['DRAFT_UPDATED', 'SUBMITTED', 'APPROVED', 'SENT_TO_CORE']);
     expect(await t.prisma.erpEvent.count({ where: { applicationId: app.id, eventType: 'DISBURSEMENT' } })).toBe(1);
+    // N4: DWH dimension keys travel in the same outbox row (no PII)
+    const primary = await t.prisma.loanApplicationBorrower.findFirstOrThrow({ where: { applicationId: app.id, isPrimary: true } });
+    const outboxRow = await t.prisma.outbox.findFirstOrThrow({ where: { type: 'DisbursementApproved' } });
+    expect(outboxRow.payload).toMatchObject({ applicationId: app.id, branchId: app.branchId, productId: app.productId, customerId: primary.customerId });
+    expect(JSON.stringify(outboxRow.payload)).not.toMatch(/Дорж|Бат-Эрдэнэ|5012345670/);
     await t.app.get(await import('../../test-utils/test-app').then((m) => m.OutboxRelayService)).relayOnce();
     expect(t.bus.published.some((e) => e.type === 'DisbursementApproved' && (e as { coreLoanId: string | null }).coreLoanId === done.coreLoanId)).toBe(true);
     // давтан зөвшөөрөх боломжгүй

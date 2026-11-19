@@ -438,7 +438,8 @@ export class DisbursementService {
       if (res.count !== 1) throw new ConflictException({ code: 'STALE_STATE', message: 'Олголтыг өөр процесс дуусгасан байна' });
       await tx.loanApplication.update({ where: { id: app.id }, data: { disbursedAt: this.clock.now() } });
       await this.machine.apply(tx, ctx, app.id, 'ACTIVE', { via: 'SYSTEM' });
-      await this.events.publish(tx, { type: 'DisbursementApproved', applicationId: app.id, amount: num(fresh.disburseAmount), coreLoanId }, ctx);
+      // N4: DWH dimension keys (ids only) in the same outbox row
+      await this.events.publish(tx, { type: 'DisbursementApproved', applicationId: app.id, amount: num(fresh.disburseAmount), coreLoanId, branchId: app.branchId, productId: app.productId, customerId: customerId || null }, ctx);
       await this.erp.emitDisbursement({
         orgId: ctx.orgId, branchId: app.branchId, applicationId: app.id, contractNo: app.contractNo, coreLoanId, customerId: customerId || null, sourceId: id, currency: app.currency,
         businessDate: ymd(fresh.disburseDate) as string, amount: num(fresh.disburseAmount), correlationId: ctx.correlationId, actorId: ctx.userId,

@@ -64,9 +64,22 @@ export class ApplicationStateMachine {
       beforeJson: { status: from }, afterJson: { status: to, via: opts.via, reason: opts.reason ?? null }, applicationId, correlationId: ctx.correlationId,
     });
     await this.events.publish(tx, { type: 'ApplicationStatusChanged', applicationId, from, to }, ctx);
-    if (to === 'SUBMITTED') await this.events.publish(tx, { type: 'ApplicationSubmitted', applicationId, amount: Number(app.amount), productId: app.productId as string }, ctx);
+    if (to === 'SUBMITTED') await this.publishSubmitted(tx, ctx, app);
 
     return tx.loanApplication.findUniqueOrThrow({ where: { id: applicationId } });
+  }
+
+  /**
+   * N4: DWH dimensions ride on the same outbox row (same tx). Terms are editable only in DRAFT/RETURNED, so the locked row is the submitted
+   * version's truth. Ids and rate/term only — no PII (CLAUDE.md §6.5). customerId = primary borrower (null if none).
+   */
+  private async publishSubmitted(tx: Tx, ctx: RequestContext, app: LoanApplication): Promise<void> {
+    const primary = await tx.loanApplicationBorrower.findFirst({ where: { applicationId: app.id, isPrimary: true }, select: { customerId: true } });
+    await this.events.publish(tx, {
+      type: 'ApplicationSubmitted', applicationId: app.id, amount: Number(app.amount), productId: app.productId as string,
+      branchId: app.branchId, officerId: app.officerId, customerId: primary?.customerId ?? null,
+      interestRatePercent: app.interestRate == null ? null : Number(app.interestRate), termMonths: app.termMonths,
+    }, ctx);
   }
 }
 
