@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { hasPermission, type RequestContext } from '@los/contracts';
+import type { RequestContext } from '@los/contracts';
 import { DomainError } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
 import { MALWARE_SCANNER, MalwareScannerUnavailableError, type MalwareScanner } from '../../integrations/malware/malware-scanner';
@@ -18,13 +18,13 @@ export const maxFileBytes = (env: NodeJS.ProcessEnv = process.env) => Number(env
 const SERVICE_USER_PREFIX = 'svc:';
 
 /**
- * Файлын агуулга татах эрх (security): дотоод сервис (`svc:` хэрэглэгч, харилцагчийн контекстгүй) эсвэл баримт харах эрхтэй ажилтан —
- * dms-ийн баримтын замуудтай ижил `application:read`. Байгууллагын хязгаарлалтыг `find` өмнө нь шалгасан (өөр org → 404).
+ * Файлын агуулга татах эрх (security, NFR-3): ЗӨВХӨН дотоод сервис (`svc:` хэрэглэгч, харилцагчийн контекстгүй) — жишээ нь `svc:origination-files`
+ * (ажилтан), `svc:origination-portal` (харилцагч). dms хүсэлт/салбарыг мэдэхгүй тул ажилтан агуулгыг origination-оор
+ * (`GET /api/applications/:id/files/:fileId/content`: хүсэлтийн хүрээ + файлын холбоос шалгасан) татна. Байгууллагын хязгаарлалтыг `find` өмнө нь шалгасан (өөр org → 404).
  */
-export function canReadFileContent(ctx: Pick<RequestContext, 'userId' | 'roles' | 'customerId'>): boolean {
+export function canReadFileContent(ctx: Pick<RequestContext, 'userId' | 'customerId'>): boolean {
   if (ctx.customerId) return false;
-  if (ctx.userId?.startsWith(SERVICE_USER_PREFIX)) return true;
-  return hasPermission(ctx.roles, 'application:read');
+  return !!ctx.userId?.startsWith(SERVICE_USER_PREFIX);
 }
 
 /** Нэр: зам, удирдлагын тэмдэгт, `..`-гүй; multer UTF-8 нэрийг latin1 гэж задалдаг тул буцаан засна (монгол нэр). */
@@ -74,8 +74,15 @@ export class FileService {
     return view(await this.find(ctx, id));
   }
 
+  /** Дотоод унших (жишээ нь гэрээний загвар үүсгэх): зөвхөн байгууллага. HTTP-ийн эрхийн шалгалт `download`-д. */
   async open(ctx: RequestContext, id: string) {
-    const row = await this.find(ctx, id); // эхлээд org (404) — эрхгүй ч гэсэн өөр байгууллагын id-г 403-аар илрүүлэхгүй
+    const row = await this.find(ctx, id);
+    return { row, stream: await this.storage.get(row.storageKey) };
+  }
+
+  /** `GET /files/:id/content`: эхлээд байгууллага (404) — эрхгүй ч гэсэн өөр байгууллагын id-г 403-аар илрүүлэхгүй; дараа нь `canReadFileContent` (403). */
+  async download(ctx: RequestContext, id: string) {
+    const row = await this.find(ctx, id);
     if (!canReadFileContent(ctx)) throw new ForbiddenException({ code: 'FILE_ACCESS_DENIED', message: 'Энэ файлыг татах эрх хүрэхгүй' });
     return { row, stream: await this.storage.get(row.storageKey) };
   }

@@ -123,7 +123,7 @@ sequenceDiagram
 ## 4. REST API
 
 Бүх зам `/api` угтвартай (`bootstrapService` + `configureBsaApp`: `main.ts` ба e2e тест хоёр ижил). Gateway Модуль 0-ийн ерөнхий proxy-гоор дамжуулна: `/api/scoring/bsa/**` -> `/api/bsa/**`,
-`/api/dms/ocr/**` -> `/api/ocr/**` (шинэ route нэмэх шаардлагагүй; `/api/scoring/bsa/categories|rules` бичих хүсэлт `settings:manage`-д хязгаарлагдсан).
+`/api/dms/ocr/**` -> `/api/ocr/**` (шинэ route нэмэх шаардлагагүй; `/api/scoring/bsa/rules` бичих хүсэлт `settings:manage`-д хязгаарлагдсан).
 Хэрэглэгчийн контекст gateway-ийн толгойгоор: `X-User-Id` (заавал; байхгүй -> 401 `UNAUTHENTICATED`, глобал `CommonModule` guard), `X-Roles` (таслалаар; хоосон/үл мэдэгдэх -> 403),
 `X-Org-Id` (байхгүй бол `DEFAULT_ORG_ID`; хоёулаа байхгүй бол 401 `MISSING_ORG`), `X-Branch-Id`, `X-Correlation-Id`, `X-Internal-Token` (`INTERNAL_AUTH_SECRET` тохируулсан үед). Хариу бүрт `X-Correlation-Id` буцна.
 

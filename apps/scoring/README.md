@@ -53,7 +53,7 @@ Production-тэй адил (бодит MinIO + Redis + Tesseract):
 Модуль 0-ийн `CommonModule` (глобал middleware + guard + алдааны filter) нэвтрээгүй хүсэлтийг 401 (`UNAUTHENTICATED`), `X-Internal-Token` буруу бол 401
 (`INTERNAL_AUTH_SECRET` тохируулсан үед) болгоно. Сервис толгойг итгэж ашиглана (**сүлжээнд шууд ил гаргахгүй**):
 `X-User-Id` (заавал), `X-Roles` (таслалаар: `OFFICER`, `BRANCH_MANAGER`, `APPROVER`, `ADMIN`; BSA нь үл мэдэгдэх үүргийг 403-аар татгалзана), `X-Org-Id`,
-`X-Branch-Id`, `X-Correlation-Id`. Хариу бүрт `X-Correlation-Id` буцна. Gateway-ийн `route-policy.ts` нь `/api/scoring/bsa/categories|rules` бичих хүсэлтийг
+`X-Branch-Id`, `X-Correlation-Id`. Хариу бүрт `X-Correlation-Id` буцна. Gateway-ийн `route-policy.ts` нь `/api/scoring/bsa/rules` бичих хүсэлтийг
 `settings:manage`-д хязгаарлана (сервис дотор ADMIN-аар давхар шалгана).
 
 ## REST: маршрут тутмын үүрэг

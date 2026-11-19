@@ -48,7 +48,7 @@ describe.skipIf(!HAS_DB)('dms files (Module 0: MinIO file upload)', () => {
 
   it('downloads the exact bytes with safe headers', async () => {
     const up = await api().post('/api/files').set(as('officerA')).attach('file', PDF, { filename: 'гэрээ.pdf', contentType: 'application/pdf' });
-    const res = await api().get(`/api/files/${up.body.id}/content`).set(as('manager')).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+    const res = await api().get(`/api/files/${up.body.id}/content`).set({ 'x-user-id': 'svc:origination-files', 'x-roles': '', 'x-org-id': SEED.org.id }).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
     expect(res.status).toBe(200);
     expect(res.body).toEqual(PDF);
     expect(res.headers['content-type']).toBe('application/pdf');
@@ -113,9 +113,13 @@ describe.skipIf(!HAS_DB)('dms files (Module 0: MinIO file upload)', () => {
       expect((await api().get(`/api/files/${id}/content`).set({ ...svc(), 'x-customer-id': 'cust-1' })).status).toBe(403);
     });
 
-    it('every staff role that reads applications can still download', async () => {
+    it('no staff role — even with application:read — can download directly (they go through origination)', async () => {
       const id = await upload();
-      for (const u of ['officerA', 'manager', 'admin'] as const) expect((await api().get(`/api/files/${id}/content`).set(as(u))).status, u).toBe(200);
+      for (const u of ['officerA', 'manager', 'admin'] as const) {
+        const res = await api().get(`/api/files/${id}/content`).set(as(u));
+        expect(res.status, u).toBe(403);
+        expect(res.body.code, u).toBe('FILE_ACCESS_DENIED');
+      }
     });
   });
 

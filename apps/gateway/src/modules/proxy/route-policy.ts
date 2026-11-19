@@ -22,7 +22,6 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
   { service: 'kyc', prefix: '/api/kyc/aml/hits', permission: 'aml:review' },
   { service: 'dms', prefix: '/api/dms/templates', writeOnly: true, permission: 'settings:manage' }, // FR-11.2 загвар засварлагч
   { service: 'scoring', prefix: '/api/scoring/sosco/models', writeOnly: true, permission: 'settings:manage' },
-  { service: 'scoring', prefix: '/api/scoring/bsa/categories', writeOnly: true, permission: 'settings:manage' },
   { service: 'scoring', prefix: '/api/scoring/bsa/rules', writeOnly: true, permission: 'settings:manage' },
   { service: 'valuation', prefix: '/api/valuation/base-prices', writeOnly: true, permission: 'settings:manage' },
   { service: 'valuation', prefix: '/api/valuation/haircuts', writeOnly: true, permission: 'settings:manage' },

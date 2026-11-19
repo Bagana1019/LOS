@@ -1,5 +1,7 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { PUBLIC_PAYMENT_CALLBACKS, isAmbiguousPath, isInternalOnly, isMerchantPortalPath, requiredPermission } from './route-policy';
+import { PUBLIC_PAYMENT_CALLBACKS, ROUTE_POLICIES, isAmbiguousPath, isInternalOnly, isMerchantPortalPath, requiredPermission } from './route-policy';
 
 describe('isMerchantPortalPath (docs/05-merchant-pos.md §8: merchant principals reach ONLY the merchant portal)', () => {
   it.each([
@@ -133,5 +135,14 @@ describe('PUBLIC_PAYMENT_CALLBACKS (H9)', () => {
       'POST /api/origination/payments/callbacks/qpay -> /api/payments/callbacks/qpay',
       'POST /api/origination/payments/callbacks/socialpay -> /api/payments/callbacks/socialpay',
     ]);
+  });
+});
+
+describe('ROUTE_POLICIES (NFR-3 drift guard coverage)', () => {
+  it('every policy service has a route-authorization test that compares it with the service controllers', () => {
+    const services = [...new Set(ROUTE_POLICIES.map((p) => p.service))];
+    const testFile = (s: string) => resolve(__dirname, `../../../../${s}/test/route-authorization.test.ts`);
+    const missing = services.filter((s) => !existsSync(testFile(s)) || !readFileSync(testFile(s), 'utf8').includes('findPolicyDrift'));
+    expect(missing).toEqual([]);
   });
 });
