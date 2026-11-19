@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma, type LoanApplication } from '.prisma/client-origination';
-import { annuityPayment } from '@los/calc';
+import { annuityPayment, debtServicePayment, SCHEDULE_TYPES, scheduleDebtService, ScheduleError } from '@los/calc';
 import {
   ScoreTerms, StressPolicy, UnderwritingPolicy,
   type CalcMethod, type MethodReason, type RequestContext, type ScoreLimits, type ScorePreviewRequest, type ScoreRequest, type SoscoInput, type UnderwriteResult,
@@ -155,24 +155,55 @@ export function existingDebtService(credit: CreditHistory | null, bsa: BsaFacts)
   return money(nonNegative(new Prisma.Decimal(Math.max(credit?.existingDebtServiceMonthly ?? 0, bsa.existingDebtServiceMonthly ?? 0))));
 }
 
-export interface ScheduleFacts { isStale: boolean; rows: Array<{ principal: Num; total: Num }> }
-export interface NewPayment { value: number; source: 'SCHEDULE' | 'ANNUITY' }
+/** `repayment_schedule.params_json` (DB-ээс — баталгаажуулж уншина). */
+export interface StoredScheduleParams { startDate?: unknown; firstPaymentDate?: unknown; type?: unknown; graceMonths?: unknown; dayCount?: unknown; principal?: unknown; annualRate?: unknown; termMonths?: unknown }
+export interface ScheduleFacts { isStale: boolean; params: StoredScheduleParams | null; rows: Array<{ seq: number; dueDate: Date | string; principal: Num; interest: Num }> }
+export interface NewPayment { value: number; source: 'SCHEDULE' | 'SCHEDULE_PREVIEW' | 'ANNUITY' }
 
-/** Тэнцүү төлбөр гэж үзэх зөрүү (сүүлийн мөрийн бөөрөнхийлөлт ₮-өөр зөрж болно) */
-const CONSTANT_TOLERANCE = 1;
+/** Үндсэн төлбөрийн нийлбэр ≈ дүн гэж үзэх зөрүү (₮ бөөрөнхийлөлт) */
+const PRINCIPAL_TOLERANCE = 1;
+const ymdOf = (d: Date | string): string => (typeof d === 'string' ? d : d.toISOString().slice(0, 10));
+const str = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+/** Параметрт байгаа талбар бүр нөхцөлтэй таарна (хуучин/дутуу params_json-д байхгүй талбарыг isStale + үндсэн нийлбэрээр шалгана). */
+const matchesTerms = (p: StoredScheduleParams | null, t: ScoreTerms): boolean =>
+  !p || ((p.principal === undefined || Number(p.principal) === t.amount) && (p.annualRate === undefined || Number(p.annualRate) === t.interestRate) && (p.termMonths === undefined || Number(p.termMonths) === t.termMonths));
+
+/** Хадгалсан мөрүүдээс (хуучраагүй, нөхцөлтэй таарч, үндсэн нийлбэр ≈ дүн). Ашиглах боломжгүй бол null. */
+function fromStoredRows(terms: ScoreTerms, s: ScheduleFacts): number | null {
+  if (s.isStale || !matchesTerms(s.params, terms)) return null;
+  const pay = s.rows.filter((r) => r.seq > 0);
+  if (pay.length === 0 || sum(pay.map((r) => r.principal)).minus(terms.amount).abs().gt(PRINCIPAL_TOLERANCE)) return null;
+  const seq0 = s.rows.find((r) => r.seq === 0);
+  // Олголтын огноо мэдэгдэхгүй бол эхний үеийг 1 сар гэж үзнэ (консерватив: эквивалент төлбөрийг бууруулахгүй).
+  const start = seq0 ? ymdOf(seq0.dueDate) : (str(s.params?.startDate) ?? ymdOf(pay.reduce((a, r) => (ymdOf(r.dueDate) < ymdOf(a.dueDate) ? r : a)).dueDate));
+  return debtServicePayment(start, pay.map((r) => ({ dueDate: ymdOf(r.dueDate), principal: dec(r.principal).toNumber(), interest: dec(r.interest).toNumber() })));
+}
+
+/** Хадгалсан ЭТХ-ийн төрөл/огноо/хөнгөлөлтөөр одоогийн нөхцөлийн ЭТХ-ийг санах ойд үүсгэнэ (slider, хуучирсан ЭТХ). */
+function fromParams(terms: ScoreTerms, p: StoredScheduleParams): number | null {
+  const type = SCHEDULE_TYPES.find((t) => t === p.type);
+  const startDate = str(p.startDate);
+  const firstPaymentDate = str(p.firstPaymentDate);
+  if (!type || !startDate || !firstPaymentDate) return null;
+  const graceMonths = Number.isInteger(p.graceMonths) ? (p.graceMonths as number) : 0;
+  const dayCount = p.dayCount === '30/360' || p.dayCount === 'ACT/365' ? p.dayCount : undefined;
+  return scheduleDebtService({ principal: terms.amount, annualRate: terms.interestRate, termMonths: terms.termMonths, type, startDate, firstPaymentDate, graceMonths, dayCount });
+}
 
 /**
- * Шинэ зээлийн сарын төлбөр. TODO(M07): ЭТХ-ийн модуль ороход `buildSchedule`-аас шууд авна — одоо:
- *  - хадгалагдсан нөхцөлтэй ижил, хуучраагүй, мөр бүхий ЭТХ байгаа бөгөөд тэнцүү төлбөртэй (annuity-төст) бол эхний мөрийн `total`;
- *  - үгүй бол annuity (`annuityPayment`).
+ * M11 · BR-1/BR-2 (docs/01 §8 "шинэ зээлийн сарын төлөлт"): ЭТХ-ийн сарын эквивалент төлбөрийн оргил (`@los/calc` debtServicePayment).
+ *  1) хуучраагүй, нөхцөлтэй таарах хадгалсан ЭТХ → түүний мөрүүд (SCHEDULE);
+ *  2) slider/хуучирсан/зөрсөн → хадгалсан төрөл, огноо, хөнгөлөлтөөр одоогийн нөхцөлийн ЭТХ (SCHEDULE_PREVIEW);
+ *  3) ЭТХ-ийн төрөл мэдэгдэхгүй (ЭТХ үүсгээгүй) эсвэл параметр буруу → annuity (ANNUITY).
  */
 export function newMonthlyPayment(terms: ScoreTerms, schedule: ScheduleFacts | null, useSchedule: boolean): NewPayment {
-  if (useSchedule && schedule && !schedule.isStale && schedule.rows.length === terms.termMonths) {
-    const totals = schedule.rows.map((r) => dec(r.total));
-    const principal = sum(schedule.rows.map((r) => r.principal));
-    const first = totals[0]!;
-    const constant = totals.slice(0, -1).every((t) => t.minus(first).abs().lte(CONSTANT_TOLERANCE));
-    if (constant && principal.minus(terms.amount).abs().lte(CONSTANT_TOLERANCE) && first.gt(0)) return { value: money(first), source: 'SCHEDULE' };
+  try {
+    const stored = useSchedule && schedule ? fromStoredRows(terms, schedule) : null;
+    if (stored !== null) return { value: stored, source: 'SCHEDULE' };
+    const preview = schedule?.params ? fromParams(terms, schedule.params) : null;
+    if (preview !== null) return { value: preview, source: 'SCHEDULE_PREVIEW' };
+  } catch (e) {
+    if (!(e instanceof ScheduleError)) throw e;
   }
   return { value: money(new Prisma.Decimal(annuityPayment(terms.amount, terms.interestRate, terms.termMonths))), source: 'ANNUITY' };
 }
@@ -283,7 +314,8 @@ export class ScoreInputAssembler {
     const credit = await this.loadCredit(ctx, app.id, income.primaryCustomerId);
     if (!base.terms) return { ...base, applicationId: app.id, customerId: income.primaryCustomerId, request: null, credit, bsa, paymentSource: null };
 
-    const schedule = base.overridden ? null : await this.loadSchedule(app);
+    // M11: slider (override) үед ч хадгалсан ЭТХ-ийн төрөл/огноог preview-д ашиглана; мөрийг нь зөвхөн override-гүй үед.
+    const schedule = await this.loadSchedule(app);
     const payment = newMonthlyPayment(base.terms, schedule, !base.overridden);
     const [dtiMax, dscrMin, ltvMax, weightThreshold, rateDelta, incomeDelta] = await Promise.all([
       this.settings.get(app.orgId, 'br1.dti_max'), this.settings.get(app.orgId, 'br2.dscr_min'), this.settings.get(app.orgId, 'br3.ltv_max'),
@@ -314,8 +346,8 @@ export class ScoreInputAssembler {
   private loadSchedule(app: LoanApplication): Promise<ScheduleFacts | null> {
     return this.prisma.repaymentSchedule.findFirst({
       where: { applicationId: app.id, orgId: app.orgId }, orderBy: { generatedAt: 'desc' },
-      select: { isStale: true, rows: { orderBy: { seq: 'asc' }, select: { principal: true, total: true } } },
-    });
+      select: { isStale: true, paramsJson: true, rows: { orderBy: { seq: 'asc' }, select: { seq: true, dueDate: true, principal: true, interest: true } } },
+    }).then((s) => (s ? { isStale: s.isStale, params: (s.paramsJson && typeof s.paramsJson === 'object' && !Array.isArray(s.paramsJson) ? s.paramsJson : null) as StoredScheduleParams | null, rows: s.rows } : null));
   }
 
   /** ЗМС дуудлага унавал "мэдэгдэхгүй" (null) — зохиомол утгаар нөхөхгүй, тооцоолол үргэлжилнэ. */

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { StepStatus } from '../enums';
+import { SoscoScoreValue } from './pricing';
 
 // ── Модуль 5 · Зээлийн нөхцөл (FR-5.1…5.4) ─────────────────────────────────────────────────────────
 // Нэгж (pricing-тай ижил): interestRate = жилийн хувь (23.99); feeRate = бутархай (0.015 = 1.5%); мөнгө = валютын нэгж, 2 орон.
@@ -88,6 +89,8 @@ export const LoanTermsView = z.object({
   step: StepInfo.nullable(),
   /** 6-р алхам `installment` — нөхцөл өөрчлөгдвөл STALE (FR-7.3) */
   installmentStep: StepInfo.nullable(),
+  /** M11 · FR-5.5: хүсэлтийн сүүлийн Sosco Score (тооцооллын snapshot) — "Хүү санал болгох"-д quote руу дамжина; байхгүй бол null (default шатлал) */
+  soscoScore: SoscoScoreValue.nullable().optional(),
 });
 export type LoanTermsView = z.infer<typeof LoanTermsView>;
 

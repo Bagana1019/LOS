@@ -55,3 +55,67 @@ export function evaluateGate(g: GateInput): DisbursementCheck[] {
     chk('COLLATERAL_REGISTERED', (!g.requiresCollateral || g.collaterals.length > 0) && unregistered === 0, 'Барьцаа Эд хөрөнгийн бүртгэлд бүртгэгдсэн'),
   ];
 }
+
+// ── H1: тодорхойгүй Core үр дүнгийн дараах "олдсонгүй"-н баталгаа ──
+/**
+ * Settle цонх: Core-ийн клиент timeout 15с, lease 120с; Core тал дараалал/batch-аар хожуу боловсруулж болно.
+ * 900с = timeout-ийн 60×, lease-ийн 7.5×, sweeper-ийн (300с) 3 tick — Core-ийн боловсруулалтын цонхноос хол давна.
+ */
+export const DEFAULT_SETTLE_SECONDS = 900;
+const MIN_SETTLE_SECONDS = 120; // lease-ээс богино цонх утгагүй
+const MAX_SETTLE_SECONDS = 86_400;
+/**
+ * N = 2: нэг "олдсонгүй" нь Core-ийн replica/индексийн хоцрогдол эсвэл ганц алдаатай хариу байж болно; цонхны дараах,
+ * хоорондоо ≥ lease зайтай хоёр лавлагаа хоёулаа "олдсонгүй" бол санамсаргүй давхцал биш. Давтах тусам FAILED хойшлох тул 2-оор хязгаарлав.
+ */
+export const NOT_FOUND_MIN_LOOKUPS = 2;
+
+/**
+ * H1 инвариант: lease нь findLoan + openLoan (тус бүр ≤ callTimeout) + зайг багтаах ёстой (lease ≥ 3 × timeout).
+ * Буцаах утга = send deadline: lease эхэлснээс хойш openLoan-ийг ЭХЛҮҮЛЖ болох сүүлийн мөч = lease − timeout, тиймээс илгээсэн хүсэлт
+ * (клиентийн талаас) lease дуусахаас өмнө дуусна. Зөрчвөл модуль ачаалахад унана.
+ */
+export function assertCoreTiming(leaseMs: number, callTimeoutMs: number): number {
+  if (!(callTimeoutMs > 0) || leaseMs < 3 * callTimeoutMs) throw new Error(`H1: CORE_LEASE_MS (${leaseMs}) must be >= 3 × Core call timeout (${callTimeoutMs})`);
+  return leaseMs - callTimeoutMs;
+}
+
+/**
+ * claimStale-ийн settle эхлэл. Илгээх тамга (`core_unknown_at`) нь openLoan-оос өмнө fenced-ээр бичигддэг тул
+ * `unknownAt ≥ expiredLease` ⇔ тухайн lease дор openLoan илгээгдэж болсон. Тэгвэл илгээлт lease дуустал эхэлж болох байсан тул
+ * эхлэл = max(unknownAt, expiredLease + lease). Lookup-only lease (reconcile/sweeper claim) нь өөрийн lease-ээс өмнөх тамгатай
+ * (claim-ийн эхлэл ≤ өмнөх lease төгсгөл < шинэ lease) тул эхлэл хөдлөхгүй — sweeper цонхыг үүрд хойшлуулахгүй.
+ * Тамгагүй мөр (илгээгээгүй) → lease төгсгөл (консерватив); lease-гүй → одоо.
+ */
+export function settleAnchor(unknownAt: Date | null, expiredLease: Date | null, now: Date, leaseMs: number): Date {
+  if (!expiredLease) return unknownAt ?? now;
+  const leaseEnd = new Date(expiredLease.getTime() + leaseMs);
+  if (!unknownAt) return leaseEnd;
+  if (unknownAt.getTime() < expiredLease.getTime()) return unknownAt;
+  return unknownAt.getTime() > leaseEnd.getTime() ? unknownAt : leaseEnd;
+}
+
+export interface CoreSettlePolicy { settleMs: number; minLookups: number; lookupSpacingMs: number }
+/** `unknownAt` null = мөр тодорхойгүй үр дүнгүй (өмнөх зан төлөв: нэг "олдсонгүй" баталгаатай). */
+export interface NotFoundEvidence { unknownAt: Date | null; notFoundCount: number; lastNotFoundAt: Date | null }
+
+/** DISBURSEMENT_CORE_SETTLE_SECONDS: хоосон/буруу/сөрөг → 900; 120…86400-аар хязгаарлана. */
+export function parseSettleSeconds(raw: string | undefined): number {
+  const n = Number(raw?.trim() || DEFAULT_SETTLE_SECONDS);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_SETTLE_SECONDS;
+  return Math.min(Math.max(n, MIN_SETTLE_SECONDS), MAX_SETTLE_SECONDS);
+}
+
+const settled = (e: NotFoundEvidence, now: Date, p: CoreSettlePolicy): boolean => !!e.unknownAt && now.getTime() - e.unknownAt.getTime() >= p.settleMs;
+
+/** Нэг "олдсонгүй" лавлагааг бүртгэнэ (шинэ объект). Зөвхөн settle цонхны дараах, өмнөхөөс ≥ spacing зайтай лавлагаа тоологдоно. */
+export function recordNotFound(e: NotFoundEvidence, now: Date, p: CoreSettlePolicy): NotFoundEvidence {
+  if (!settled(e, now, p)) return e;
+  if (e.lastNotFoundAt && now.getTime() - e.lastNotFoundAt.getTime() < p.lookupSpacingMs) return e;
+  return { ...e, notFoundCount: e.notFoundCount + 1, lastNotFoundAt: now };
+}
+
+/** "Core-д данс байхгүй" нь баталгаатай эсэх: тодорхойгүй үр дүнгүй, эсвэл цонх өнгөрч ≥ N лавлагаа олдоогүй. */
+export function isNotFoundDefinitive(e: NotFoundEvidence, now: Date, p: CoreSettlePolicy): boolean {
+  return !e.unknownAt || (settled(e, now, p) && e.notFoundCount >= p.minLookups);
+}

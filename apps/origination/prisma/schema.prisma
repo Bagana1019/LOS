@@ -738,6 +738,14 @@ model DisbursementRequest {
   reconciliationJson Json?     @map("reconciliation_json")
   status             String    @default("DRAFT") // DisbursementStatus
   coreLoanId         String?   @map("core_loan_id")
+  /// H1: Core openLoan lease эхэлсэн хугацаа (APPROVED үед). Сэргээлтийн fencing token.
+  coreRequestedAt    DateTime? @map("core_requested_at")
+  /// H1: Core үр дүн тодорхойгүй болсон хугацаа (timeout/сүлжээ/5xx эсвэл унасан lease эзэмшигчийг орлосон). Settle цонх эндээс тоологдоно.
+  coreUnknownAt      DateTime? @map("core_unknown_at")
+  /// H1: settle цонхны дараах, хоорондоо зайтай "Core-д олдсонгүй" лавлагааны тоо (дараалсан).
+  coreNotFoundCount  Int       @default(0) @map("core_not_found_count")
+  /// H1: сүүлд тоологдсон "олдсонгүй" лавлагааны хугацаа (лавлагаа хоорондын зайг шалгана).
+  coreNotFoundAt     DateTime? @map("core_not_found_at")
   historyJson        Json?     @map("history_json")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
@@ -748,6 +756,7 @@ model DisbursementRequest {
 
   @@unique([applicationId])
   @@index([status, disburseDate])
+  @@index([status, coreRequestedAt])
   @@map("disbursement_request")
   @@schema("origination")
 }
@@ -1494,5 +1503,33 @@ model ContractNumberCounter {
 
   @@id([templateId, scopeKey])
   @@map("contract_number_counter")
+  @@schema("origination")
+}
+
+/// G1 (docs/01 §4, FR-3.4; docs/05-compliance-aml.md §5): илгээх үеийн AML шалгалтын лавлагаа — хүсэлт × харилцагч тутамд сүүлийн шийдвэр.
+/// kyc-ийн `aml_check`-ийг `screening_id` string-ээр (cross-schema FK байхгүй). Түүх нь audit_log (`AML_SCREENED`).
+model ApplicationAmlScreening {
+  id                 String   @id @default(uuid())
+  orgId              String   @map("org_id")
+  applicationId      String   @map("application_id")
+  customerId         String   @map("customer_id")
+  borrowerRole       String   @map("borrower_role") // BorrowerRole
+  screeningId        String   @map("screening_id") // kyc.aml_check.id
+  status             String // ScreeningStatus
+  blocking           Boolean
+  riskScore          Int      @map("risk_score")
+  riskLevel          String   @map("risk_level")
+  hitCount           Int      @map("hit_count")
+  listVersions       Json     @map("list_versions")
+  screenedAt         DateTime @map("screened_at")
+  reused             Boolean  @default(false) // true = aml.screening_reuse_hours дотор kyc-ийн сүүлийн шалгалтыг ашигласан
+  applicationVersion Int      @map("application_version")
+  checkedAt          DateTime @map("checked_at")
+  checkedBy          String?  @map("checked_by")
+  customerUpdatedAt  DateTime @map("customer_updated_at") // kyc-д илгээхээс ӨМНӨ уншсан customer.updated_at — түгжээн дотор одоогийнхтой тэнцүү байх ёстой
+
+  @@unique([applicationId, customerId])
+  @@index([orgId, screeningId])
+  @@map("application_aml_screening")
   @@schema("origination")
 }

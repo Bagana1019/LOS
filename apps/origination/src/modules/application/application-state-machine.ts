@@ -6,6 +6,7 @@ import type { LoanApplication } from '.prisma/client-origination';
 import type { Tx } from '../../prisma.service';
 import { DomainEvents } from '../../shared/domain-events';
 import { OrgSettings } from '../../shared/org-settings';
+import { AmlGateService } from '../aml/aml-gate.service';
 import { canTransition, isUserTransition, missingRequiredSteps, STEP_ORDER, TIMESTAMP_FIELD, unlocksStage2 } from './application.rules';
 
 export interface TransitionOptions {
@@ -20,7 +21,7 @@ export interface TransitionOptions {
  */
 @Injectable()
 export class ApplicationStateMachine {
-  constructor(private readonly events: DomainEvents, private readonly settings: OrgSettings, private readonly clock: Clock) {}
+  constructor(private readonly events: DomainEvents, private readonly settings: OrgSettings, private readonly clock: Clock, private readonly aml: AmlGateService) {}
 
   /** Мөрийг FOR UPDATE-ээр түгжиж, түгжээний дараах төлөвөөр уншина (READ COMMITTED). */
   async lock(tx: Tx, orgId: string, applicationId: string): Promise<LoanApplication> {
@@ -47,6 +48,8 @@ export class ApplicationStateMachine {
       const missing = missingRequiredSteps(steps, required);
       if (missing.length) throw new DomainError('STEPS_INCOMPLETE', 'Заавал алхмууд бүрдээгүй тул илгээх боломжгүй', 422, { missing });
       if (app.productId == null || app.amount == null) throw new DomainError('LOAN_TERMS_MISSING', 'Бүтээгдэхүүн, дүн тодорхойгүй тул илгээх боломжгүй', 422);
+      // G1 / FR-3.4: оролцогч бүрт хадгалсан, блоклохгүй, хуучраагүй AML шалгалт (урьдчилсан шалгалт — SubmitGateService). SYSTEM шилжилт ч тойрохгүй.
+      await this.aml.assertClear(tx, applicationId);
       if (from === 'RETURNED') { data.version = app.version + 1; data.returnedAt = null; } // дахин илгээлт = шинэ хувилбар (FR-10)
     }
 

@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import {
-  CIB_PURPOSES, type CibPurposesResponse, type LoanProductsResponse, type LoanProductView, type LoanTermsView, type ProductLimits, type RequestContext, type SaveLoanTermsRequest,
+  CIB_PURPOSES, SoscoScoreValue, type CibPurposesResponse, type LoanProductsResponse, type LoanProductView, type LoanTermsView, type ProductLimits, type RequestContext, type SaveLoanTermsRequest,
 } from '@los/contracts';
 import { recordAudit } from '@los/database';
 import { DomainError } from '@los/nest-common';
@@ -11,6 +11,7 @@ import { ApplicationStateMachine } from '../application/application-state-machin
 import { isEditable } from '../application/application.rules';
 import { BsaService } from '../bsa/bsa.service';
 import { CollateralGateService } from '../collateral/collateral-gate.service';
+import { readSnapshot } from '../score/score.rules';
 import { ScoreService } from '../score/score.service';
 import { checkLimits, INSTALLMENT_STEP, LOAN_STEP, planTermsSteps, termsChanged, type TermsCore } from './loan-terms.rules';
 import { PricingService } from './pricing/pricing.service';
@@ -23,7 +24,15 @@ export const limitsOf = (p: Pick<Product, 'minAmount' | 'maxAmount' | 'minTerm' 
   minAmount: Number(p.minAmount), maxAmount: Number(p.maxAmount), minTermMonths: p.minTerm, maxTermMonths: p.maxTerm,
   minRate: Number(p.minRate), maxRate: Number(p.maxRate), defaultFeeRate: num(p.defaultFeeRate),
 });
-const coreOf = (a: Pick<LoanApplication, 'productId' | 'currency' | 'amount' | 'termMonths' | 'interestRate' | 'feeRate'>): TermsCore => ({
+/**
+ * M11 · FR-5.5: хүсэлтийн сүүлийн Sosco Score — score.service-ийн бичдэг `calc_snapshot_json` (origination-ий өөрийн projection, `ScoringCompleted`-ээр
+ * шинэчлэгдэнэ). Сүлжээний дуудлагагүй; хүрээнээс гадуур/байхгүй бол null → default шатлал.
+ */
+export const soscoScoreOf = (a: Pick<LoanApplication, 'calcSnapshotJson'>): number | null => {
+  const parsed = SoscoScoreValue.safeParse(readSnapshot(a.calcSnapshotJson)?.soscoScore);
+  return parsed.success ? parsed.data : null;
+};
+const coreOf = (a:Pick<LoanApplication, 'productId' | 'currency' | 'amount' | 'termMonths' | 'interestRate' | 'feeRate'>): TermsCore => ({
   productId: a.productId, currency: a.currency, amount: num(a.amount), termMonths: a.termMonths, interestRate: num(a.interestRate), feeRate: num(a.feeRate),
 });
 
@@ -65,11 +74,11 @@ export class LoanTermsService {
     if (!product) throw new DomainError('PRODUCT_NOT_FOUND', 'Бүтээгдэхүүн олдсонгүй эсвэл идэвхгүй', 422);
     const limits = limitsOf(product);
 
-    // Хүү/шимтгэл хоосон бол FR-5.5-ын default шатлалаас (Sosco Score-гүй үеийн санал); шатлал тохируулагдаагүй бол бүтээгдэхүүний доод хүү.
+    // FR-5.5 / BR-14: хүү/шимтгэл хоосон бол хүсэлтийн сүүлийн Sosco Score-оор шатлалаас (оноогүй бол default шатлал); шатлал тохируулагдаагүй бол бүтээгдэхүүний доод хүү.
     let interestRate = input.interestRate;
     let feeRate = input.feeRate;
     if (interestRate === undefined || feeRate === undefined) {
-      const quote = await this.pricing.quote(ctx, { productId: product.id, soscoScore: null, amount: input.amount }).catch((e: unknown) => {
+      const quote = await this.pricing.quote(ctx, { productId: product.id, soscoScore: soscoScoreOf(before), amount: input.amount }).catch((e: unknown) => {
         if (e instanceof DomainError && e.code === 'PRICING_NOT_CONFIGURED') return null;
         throw e;
       });
@@ -145,6 +154,7 @@ export class LoanTermsService {
       downPayment: num(app.downPayment), charges: num(app.charges), insurance: num(app.insurance),
       purpose: app.purpose, purposeDetail: app.purposeDetail, cibPurposeCode: app.cibPurposeCode, cibSubCode: app.cibSubCode, officerNote: app.officerNote,
       limits: product ? limitsOf(product) : null, step: stepOf(LOAN_STEP), installmentStep: stepOf(INSTALLMENT_STEP),
+      soscoScore: soscoScoreOf(app),
     };
   }
 }

@@ -17,6 +17,7 @@ import { ApplicationStateMachine } from './application-state-machine';
 import { hashCreateRequest, keyReused } from './application.idempotency';
 import { canTransition, formatAppNo, initialStepStatus, isEditable, isHttpTransition, isUserTransition, missingRequiredSteps, stage1Progress, stageOf, STEP_ORDER } from './application.rules';
 import { resolveApplicationScope } from './application.scope';
+import { SubmitGateService } from './submit-gate.service';
 
 const TX_OPTIONS = { timeout: 15_000, maxWait: 10_000 };
 const EXPORT_LIMIT = 50_000;
@@ -41,6 +42,7 @@ export class ApplicationService {
     private readonly access: ApplicationAccessService,
     private readonly machine: ApplicationStateMachine,
     private readonly settings: OrgSettings,
+    private readonly submitGate: SubmitGateService,
     @Optional() @Inject(APPROVAL_FLOW) private readonly approval?: ApprovalFlowPort,
   ) {}
 
@@ -216,7 +218,8 @@ export class ApplicationService {
     const app = await this.access.load(ctx, applicationId, 'read');
     if (!canTransition(app.status as ApplicationStatus, input.to)) throw new DomainError('INVALID_TRANSITION', `"${app.status}" төлвөөс "${input.to}" төлөвт шилжих боломжгүй`, 400, { from: app.status, to: input.to });
     if (!isHttpTransition(app.status as ApplicationStatus, input.to)) throw new ForbiddenException({ code: 'TRANSITION_NOT_ALLOWED', message: `"${input.to}" төлөвт шилжилт нь системийн (батлах урсгал, олголт) үйлдэл`, details: { from: app.status, to: input.to } });
-    await this.access.load(ctx, applicationId, 'write');
+    const writable = await this.access.load(ctx, applicationId, 'write');
+    if (input.to === 'SUBMITTED') await this.submitGate.prepare(ctx, writable); // G1: FR-9.2 баримт + FR-3.4 AML (HTTP — түгжээний гадна)
     await this.prisma.$transaction(async (tx) => {
       await this.machine.apply(tx, ctx, applicationId, input.to, { via: 'USER', reason: input.reason });
       if (input.to === 'SUBMITTED') await this.approval?.start(tx, ctx, applicationId); // FR-10: илгээмэгц эхний түвшин нээгдэнэ (IN_APPROVAL)

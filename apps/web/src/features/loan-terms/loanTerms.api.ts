@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CibPurposesResponse, LoanProductsResponse, LoanTermsView, type SaveLoanTermsRequest } from '@los/contracts';
+import { CibPurposesResponse, LoanProductsResponse, LoanTermsView, PricingQuoteResponse, type PricingQuoteRequest, type SaveLoanTermsRequest } from '@los/contracts';
 import { originationFetch } from '../../lib/api';
 
 // FR-5: gateway → origination `/loan-terms/*`, `/applications/:id/loan-terms`.
@@ -9,6 +9,11 @@ export const termsKey = (id: string) => ['loan-terms', id] as const;
 export const useLoanTerms = (id: string) => useQuery({ queryKey: termsKey(id), queryFn: () => originationFetch(base(id), { schema: LoanTermsView }), retry: false });
 export const useProducts = () => useQuery({ queryKey: ['loan-terms', 'products'], queryFn: () => originationFetch('/loan-terms/products', { schema: LoanProductsResponse }), staleTime: 60_000 });
 export const useCibPurposes = () => useQuery({ queryKey: ['loan-terms', 'cib'], queryFn: () => originationFetch('/loan-terms/cib-purposes', { schema: CibPurposesResponse }), staleTime: 300_000 });
+
+/** M11 · FR-5.5: байгаа quote endpoint (`POST /loan-terms/pricing/quote`). Оноо = хүсэлтийн `LoanTermsView.soscoScore` (сервер талын snapshot). */
+export const fetchRateQuote = (body: PricingQuoteRequest): Promise<PricingQuoteResponse> =>
+  originationFetch('/loan-terms/pricing/quote', { method: 'POST', json: body, schema: PricingQuoteResponse });
+export const useRateQuote = () => useMutation({ mutationFn: fetchRateQuote });
 
 export function useSaveTerms(id: string, onChanged?: () => void) {
   const qc = useQueryClient();
