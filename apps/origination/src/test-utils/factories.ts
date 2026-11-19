@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { addDays, annuityPayment } from '@los/calc';
-import { blindIndex, encryptedField } from '@los/database';
+import { blindIndex, encryptedField, purgeAuditLogForTests } from '@los/database';
 import type { Customer, LoanApplication, Prisma } from '.prisma/client-origination';
 import { PrismaService } from '../prisma.service';
 
@@ -21,7 +21,8 @@ const KEEP_TABLES = new Set([
 
 export async function resetDb(prisma: PrismaService): Promise<void> {
   const tables = (await prisma.$queryRaw<Array<{ tablename: string }>>`SELECT tablename FROM pg_tables WHERE schemaname = 'origination'`).filter((t) => !KEEP_TABLES.has(t.tablename));
-  if (tables.length) await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tables.map((t) => `"origination"."${t.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`);
+  // M10: audit_log append-only (TRUNCATE-г trigger хориглоно) — тестийн purge транзакц дотор
+  if (tables.length) await purgeAuditLogForTests(prisma, (tx: PrismaService) => tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables.map((t) => `"origination"."${t.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`));
   await prisma.setting.deleteMany({ where: { orgId: ORG } });
   await prisma.product.deleteMany({ where: { orgId: ORG } });
 }

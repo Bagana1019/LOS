@@ -1,5 +1,5 @@
 import { type INestApplication } from '@nestjs/common';
-import { SEED } from '@los/database';
+import { SEED, purgeAuditLogForTests } from '@los/database';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PrismaService } from '../src/prisma.service';
@@ -21,7 +21,7 @@ describe.skipIf(!HAS_DB)('gateway admin management (branches, users)', () => {
   });
   afterAll(async () => {
     await prisma.session.deleteMany({ where: { userId: { in: created.users } } });
-    await prisma.auditLog.deleteMany({ where: { entityId: { in: [...created.users, ...created.branches] } } });
+    await purgeAuditLogForTests(prisma, (tx) => tx.auditLog.deleteMany({ where: { entityId: { in: [...created.users, ...created.branches] } } }));
     await prisma.user.deleteMany({ where: { id: { in: created.users } } });
     await prisma.branch.deleteMany({ where: { id: { in: created.branches } } });
     await app.close();

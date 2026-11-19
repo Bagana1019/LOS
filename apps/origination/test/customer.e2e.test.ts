@@ -3,7 +3,7 @@ import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { type XypCitizen } from '@los/contracts';
-import { SEED, blindIndex, decryptedField, isEncryptedField } from '@los/database';
+import { SEED, blindIndex, decryptedField, isEncryptedField, purgeAuditLogForTests } from '@los/database';
 import { DomainError } from '@los/nest-common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
@@ -54,7 +54,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
     await db.loanApplication.deleteMany();
     await db.customer.deleteMany(); // contacts cascade
     await db.blacklist.deleteMany();
-    await db.auditLog.deleteMany({ where: { entity: 'CUSTOMER' } });
+    await purgeAuditLogForTests(db, (tx) => tx.auditLog.deleteMany({ where: { entity: 'CUSTOMER' } }));
   });
 
   const create = (body: unknown, who: Parameters<typeof as>[0] = 'officerA') => http().post('/api/customers').set(as(who)).send(body as object);
