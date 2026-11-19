@@ -7,7 +7,7 @@ import { Button, Grid, Layout, Result, Spin, theme } from 'antd';
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
 import type { MeResponse } from '@los/contracts';
 import { t } from '@los/ui';
-import { canAccess, hasOwnShell, isPublicPath, isStandalonePath, safeNext } from '../../lib/access';
+import { canAccess, hasOwnShell, isPublicPath, isStandalonePath, landingFor, merchantRedirect } from '../../lib/access';
 import { useAuth } from '../../lib/auth/auth-context';
 import { ForcedPasswordChange } from '../../features/admin/ForcedPasswordChange';
 import { NotificationBellContainer } from '../../features/notifications/NotificationBellContainer';
@@ -72,9 +72,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       const here = `${pathname}${window.location.search}`;
       router.replace(reason === 'signed_out' || here === '/' ? '/login' : `/login?next=${encodeURIComponent(here)}`);
     } else if (status === 'authenticated' && isPublic) {
-      router.replace(safeNext(new URLSearchParams(window.location.search).get('next')));
+      router.replace(landingFor(me?.user.roles ?? [], new URLSearchParams(window.location.search).get('next')));
+    } else if (status === 'authenticated' && me) {
+      // docs/05-merchant-pos.md §12: мерчант хэрэглэгч ажилтны shell-д орохгүй
+      const to = merchantRedirect(me.user.roles, pathname);
+      if (to) router.replace(to);
     }
-  }, [status, isPublic, standalone, pathname, reason, router]);
+  }, [status, isPublic, standalone, pathname, reason, router, me]);
 
   if (standalone) return <>{children}</>;
   if (status === 'booting') return <Loading />;
@@ -86,5 +90,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   // FR-13: түр нууц үгтэй хэрэглэгч нууц үгээ солтол өөр юу ч харахгүй (gateway мөн 403 PASSWORD_CHANGE_REQUIRED өгнө)
   if (me.mustChangePassword) return <ForcedPasswordChange onDone={logout} />;
   if (hasOwnShell(pathname)) return <>{children}</>;
+  if (merchantRedirect(me.user.roles, pathname)) return <Loading />;
   return <Frame me={me}>{children}</Frame>;
 }

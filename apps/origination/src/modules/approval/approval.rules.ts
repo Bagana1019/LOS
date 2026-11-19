@@ -44,6 +44,13 @@ export function isLevelMember(members: readonly MemberLike[], user: Pick<Request
 }
 
 /** SLA дуусах хугацаа (FR-10.2). */
+/**
+ * FR-1.5: санал өгөгчийн ХАРСАН түвшин / хувилбар одоогийн төлөвтэй зөрвөл хоцрогдсон (түвшин ахисан, буцаж дахин илгээгдсэн). Өгөөгүй талбарыг шалгахгүй
+ * — хуучин дуудлага (өгөөгүй) одоогийн төлөвт санал өгнө.
+ */
+export const isVoteTargetStale = (expected: { levelNo?: number; version?: number }, current: { levelNo: number; version: number }): boolean =>
+  (expected.levelNo !== undefined && expected.levelNo !== current.levelNo) || (expected.version !== undefined && expected.version !== current.version);
+
 export const dueAt = (from: Date, slaHours: number): Date => new Date(from.getTime() + slaHours * 3_600_000);
 export const isOverdue = (due: Date | null, now: Date): boolean => !!due && due.getTime() < now.getTime();
 
@@ -70,5 +77,5 @@ export function counterScopeKey(scope: string, branchId: string, yyyymmdd: strin
   return scope === 'DAY' ? yyyymmdd : scope === 'BRANCH' ? branchId : 'ALL';
 }
 
-/** Салбарын кодыг загварт оруулах: DEMO — branchId-ийн үсэг/тооноос бусдыг хасна (iam.branch код origination-д байхгүй). */
-export const branchCodeOf = (branchId: string): string => branchId.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+/** Загварт `{BRANCH}` хэсэг байгаа эсэх (байвал салбарын тохируулсан код заавал). */
+export const hasBranchToken = (pattern: string): boolean => pattern.includes('{BRANCH}');

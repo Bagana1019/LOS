@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { COLLATERAL_OTHER_DOC_KEY, type AssetType, type AttachCollateralDocumentRequest, type CollateralMutationResponse, type RequestContext } from '@los/contracts';
-import { DomainError } from '@los/nest-common';
+import { DomainError, assertFileUploadedByCaller } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
 import { auditSnapshot } from './collateral-data';
@@ -35,6 +35,7 @@ export class CollateralDocumentService {
     }
     const file = await this.files.getMeta(ctx, input.fileId);
     if (!file) throw new DomainError('FILE_NOT_FOUND', 'Файл олдсонгүй. Эхлээд файлыг байршуулна уу', 422);
+    assertFileUploadedByCaller(ctx, file.uploadedBy); // NFR-3: өөр хүний файлын id-г хавсаргаж болохгүй
 
     return this.prisma.$transaction(async (db) => {
       const lockedApp = await this.tx.begin(db, ctx, applicationId, RULE_EDITABLE);

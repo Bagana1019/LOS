@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isProduction, unsetIfBlank } from '../../shared/integration-mode';
 import { MockErpClient } from './mock.client';
 import { RealErpClient } from './real.client';
 import type { ErpGateway } from './erp.interface';
@@ -16,17 +17,24 @@ const Env = z.object({
 export type ErpEnv = Omit<z.infer<typeof Env>, 'INTEGRATION_MODE'> & { INTEGRATION_MODE: 'mock' | 'real' };
 
 // Production-д INTEGRATION_MODE заавал тодорхой: орхигдуулсан бол чимээгүй mock болж үйл явдал огт илгээгдэхгүй байхаас сэргийлнэ
+// Хоосон ('' / зөвхөн хоосон зай) = орхигдуулсан (`.env.example`-ийн `KEY=` мөрүүд)
 export function resolveIntegrationMode(env: Record<string, string | undefined>, errorPrefix = 'invalid ERP integration config'): 'mock' | 'real' {
-  const m = env.INTEGRATION_MODE;
+  const m = unsetIfBlank(env.INTEGRATION_MODE);
   if (m === undefined) {
-    if (env.NODE_ENV === 'production') throw new Error('INTEGRATION_MODE must be set explicitly (mock | real) in production');
+    if (isProduction(env)) throw new Error('INTEGRATION_MODE must be set explicitly (mock | real) in production');
     return 'mock';
   }
   if (m !== 'mock' && m !== 'real') throw new Error(`${errorPrefix}: INTEGRATION_MODE`);
   return m;
 }
 
-export function parseErpEnv(env: Record<string, string | undefined>): ErpEnv {
+/** `.env.example` нь `ERP_API_URL=` гэх мэтийг хоосон тавьдаг: хоосон/зөвхөн хоосон зайтай утга = тохируулаагүй (zod-д url/min(1)-ээр унаж, апп босохгүй байсан — H6). */
+function withoutBlankValues(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  return Object.fromEntries(Object.entries(env).map(([key, value]) => [key, unsetIfBlank(value)]));
+}
+
+export function parseErpEnv(rawEnv: Record<string, string | undefined>): ErpEnv {
+  const env = withoutBlankValues(rawEnv);
   const parsed = Env.safeParse(env);
   if (!parsed.success) throw new Error(`invalid ERP integration config: ${parsed.error.issues.map((i) => i.path.join('.')).join(', ')}`);
   return { ...parsed.data, INTEGRATION_MODE: resolveIntegrationMode(env) };

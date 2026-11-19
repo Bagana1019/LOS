@@ -14,7 +14,7 @@ import { CollateralGateService } from '../collateral/collateral-gate.service';
 import { missingRequiredSteps } from '../application/application.rules';
 import { customerDisplayName, customerRegisterNoMasked } from '../borrower/customer-directory';
 import { NotificationService } from '../notification/notification.service';
-import { dueAt, evaluateLevel, isLevelMember, isOverdue, requiredVotes, selectLevels, type LevelLike } from './approval.rules';
+import { dueAt, evaluateLevel, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, type LevelLike } from './approval.rules';
 import { ContractNumberService } from './contract-number.service';
 
 const TX_OPTIONS = { timeout: 15_000, maxWait: 10_000 };
@@ -77,7 +77,13 @@ export class ApprovalService {
       const reqs = await tx.approvalRequest.findMany({ where: { applicationId, version: app.version }, include: { votes: true }, orderBy: { levelNo: 'asc' } });
       const active = this.activeOf(reqs);
       if (!active) throw new ConflictException({ code: 'NO_ACTIVE_LEVEL', message: 'Идэвхтэй батлах түвшин олдсонгүй' });
-      const level = (await this.levelPool(tx, app)).find((l) => l.levelNo === active.levelNo);
+      // FR-1.5: санал өгөгчийн харсан түвшин / хувилбар одоогийнхоос өөр (жагсаалт хоцорсон) бол өөр шийдвэрт санал бүртгэхгүй. Эрхийн шалгалтаас өмнө:
+      // түвшин ахисан тохиолдолд "түвшний батлагч биш" гэсэн төөрөгдүүлсэн 403-аас "өөрчлөгдсөн, шинэчил" 409 илүү зөв. Өгөөгүй бол шалгахгүй.
+      const current = { levelNo: active.levelNo, version: app.version };
+      if (isVoteTargetStale(input, current)) {
+        throw new ConflictException({ code: 'VOTE_TARGET_CHANGED', message: 'Хүсэлтийн батлах түвшин эсвэл хувилбар өөрчлөгдсөн байна. Жагсаалтыг шинэчлээд дахин шалгана уу', details: { expected: { levelNo: input.levelNo, version: input.version }, current } });
+      }
+      const level =(await this.levelPool(tx, app)).find((l) => l.levelNo === active.levelNo);
       if (!level || !isLevelMember(level.members, ctx, app.branchId)) throw new ForbiddenException({ code: 'NOT_LEVEL_APPROVER', message: `Та "${level?.name ?? active.levelNo}" түвшний батлагч биш` });
       if (active.votes.some((v) => v.approverId === userId)) throw new ConflictException({ code: 'ALREADY_VOTED', message: 'Та энэ түвшинд санал өгсөн байна' });
 
@@ -220,7 +226,7 @@ export class ApprovalService {
       if (!level || !isLevelMember(level.members, ctx, app.branchId)) continue;
       const primary = app.borrowers[0]?.customer;
       const totalLevels = await this.prisma.approvalRequest.count({ where: { applicationId: app.id, version: app.version } });
-      items.push({ applicationId: app.id, appNo: app.appNo, borrowerName: primary ? customerDisplayName(primary) : null, amount: num(app.amount), currency: app.currency, levelNo: r.levelNo, levelName: level.name, totalLevels, startedAt: r.startedAt.toISOString(), dueAt: r.dueAt?.toISOString() ?? null, overdue: isOverdue(r.dueAt, now) });
+      items.push({ applicationId: app.id, appNo: app.appNo, borrowerName: primary ? customerDisplayName(primary) : null, amount: num(app.amount), currency: app.currency, levelNo: r.levelNo, levelName: level.name, totalLevels, version: app.version, startedAt: r.startedAt.toISOString(), dueAt: r.dueAt?.toISOString() ?? null, overdue: isOverdue(r.dueAt, now) });
     }
     return { items, total: items.length };
   }

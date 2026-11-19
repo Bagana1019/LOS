@@ -2,6 +2,7 @@
   "app.title": "Lignum LOS",
   "nav.customer": "Харилцагч",
   "nav.blacklist": "Хар жагсаалт",
+  "nav.aml_review": "Compliance · AML шалгалт",
   "nav.application": "Хүсэлт",
   "nav.loan": "Зээл",
   "nav.report": "Тайлан",

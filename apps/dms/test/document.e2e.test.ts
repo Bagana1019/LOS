@@ -126,6 +126,18 @@ describe.skipIf(!HAS_DB)('dms documents (FR-9.1: /api/documents)', () => {
       expect(await db.outbox.count()).toBe(before); // rolled back: no DocumentUploaded for a missing file
     });
 
+    it("attaching someone else's file is 403 FILE_NOT_OWNED (nothing written); the uploader may attach (NFR-3)", async () => {
+      const applicationId = randomUUID();
+      const mine = await upload('mine.pdf', PDF, 'application/pdf', 'officerA');
+      const before = await db.outbox.count();
+      const other = await create({ applicationId, type: 'id_card', fileId: mine.id }, 'manager');
+      expect([other.status, other.body.code]).toEqual([403, 'FILE_NOT_OWNED']);
+      expect(await db.document.count({ where: { applicationId } })).toBe(0);
+      expect(await db.outbox.count()).toBe(before);
+
+      await createOk(applicationId, mine.id, {}, 'officerA');
+    });
+
     it('needs the application:read permission and the gateway identity', async () => {
       const file = await upload('a.pdf');
       const body = { applicationId: randomUUID(), type: 'id_card', fileId: file.id };
@@ -133,7 +145,10 @@ describe.skipIf(!HAS_DB)('dms documents (FR-9.1: /api/documents)', () => {
       expect((await api().post('/api/documents').set({ 'x-org-id': SEED.org.id, 'x-customer-id': 'c-1', 'x-roles': 'CUSTOMER' }).send(body)).status).toBe(403);
       expect((await api().post('/api/documents').set({ ...as('officerA'), 'x-roles': 'NOBODY' }).send(body)).status).toBe(403);
       // ADMIN lacks application:write: the read permission is what lets origination call on its behalf
-      for (const who of ['admin', 'manager', 'approver', 'officerB'] as const) expect((await create(body, who)).status, who).toBe(201);
+      for (const who of ['admin', 'manager', 'approver', 'officerB'] as const) {
+        const own = await upload('a.pdf', PDF, 'application/pdf', who); // NFR-3: хавсаргагч файлыг өөрөө байршуулсан байх ёстой
+        expect((await create({ ...body, fileId: own.id }, who)).status, who).toBe(201);
+      }
     });
   });
 

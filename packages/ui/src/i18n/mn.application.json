@@ -12,6 +12,13 @@
   "application.list.total": "Нийт {total}",
   "application.list.steps": "{done}/{required} алхам",
   "application.list.system": "Систем",
+  "application.directory.unknown": "Тодорхойгүй",
+  "application.mine.col.level": "Түвшин",
+  "application.mine.col.due": "Шийдвэрлэх хугацаа",
+  "application.mine.level": "{no}/{total} · {name}",
+  "application.mine.overdue": "Хэтэрсэн",
+  "application.mine.empty": "Таны батлах хүсэлт алга",
+  "application.mine.voteFailed": "Санал бүртгэж чадсангүй",
   "application.col.appNo": "№",
   "application.col.branch": "Салбар",
   "application.col.officer": "Хариуцсан ЗЭЗ",
@@ -73,6 +80,11 @@
   "application.error.INVALID_TRANSITION": "Энэ төлөвөөс ийм шилжилт хийх боломжгүй",
   "application.error.TRANSITION_NOT_ALLOWED": "Энэ шилжилтийг хийх эрхгүй",
   "application.error.STALE_STATE": "Хүсэлтийн төлөв өөрчлөгдсөн байна, дахин ачаална уу",
+  "application.error.VOTE_TARGET_CHANGED": "Хүсэлтийн батлах түвшин эсвэл хувилбар өөрчлөгдсөн байна. Жагсаалтыг шинэчиллээ, дахин шалгана уу",
   "application.error.BRANCH_REQUIRED": "Таны салбар тодорхойгүй тул хүсэлт үүсгэх боломжгүй",
-  "application.error.FORBIDDEN": "Хандах эрхгүй байна"
+  "application.error.FORBIDDEN": "Хандах эрхгүй байна",
+  "application.error.AML_REVIEW_REQUIRED": "Хүсэлт комплаенсын AML шалгалтыг хүлээж байна — комплаенсын ажилтан тохирлыг шийдвэрлэсний дараа дахин илгээнэ үү",
+  "application.error.AML_CONFIRMED_MATCH": "Оролцогч хориг арга хэмжээ / хар жагсаалтын баталгаажсан тохиролтой тул илгээх боломжгүй",
+  "application.error.AML_SCREENING_STALE": "Зарим оролцогчийн AML шалгалт хуучирсан байна — дахин илгээнэ үү",
+  "application.error.AML_SCREENING_UNAVAILABLE": "AML шалгалтын үйлчилгээ түр ажиллахгүй байна — хэсэг хугацааны дараа дахин илгээнэ үү"
 }

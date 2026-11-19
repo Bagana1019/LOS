@@ -196,6 +196,37 @@ export const AmlScreeningResult = z.object({
 });
 export type AmlScreeningResult = z.infer<typeof AmlScreeningResult>;
 
+/**
+ * Шалгасан субъектын snapshot — hit-ийн нотолгоотой зэрэгцүүлж харахад (compliance review). Регистр БАЙХГҮЙ (`registerNoMasked` нь screening-д),
+ * төрсөн огноог зөвхөн оноор (UN тулгалт ч оноор харьцуулдаг, §3.4) — хувийн мэдээллийг шаардлагатай хэмжээнд л.
+ */
+export const AmlScreeningSubjectView = z.object({
+  subjectType: z.enum(AmlSubjectType),
+  lastName: z.string().nullable(),
+  firstName: z.string(),
+  aliases: z.array(z.string()),
+  birthYear: z.number().int().nullable(),
+  countries: z.array(z.string()),
+  isPep: z.boolean(),
+  isRelatedParty: z.boolean(),
+});
+export type AmlScreeningSubjectView = z.infer<typeof AmlScreeningSubjectView>;
+/** `GET /aml/screenings/:id` — дэлгэрэнгүй (review дэлгэц). */
+export const AmlScreeningDetail = AmlScreeningResult.extend({ subject: AmlScreeningSubjectView });
+export type AmlScreeningDetail = z.infer<typeof AmlScreeningDetail>;
+
+/** `GET /aml/hits` — шийдвэрлэх дарааллын мөр (харилцагч тутмын ОДООГИЙН шалгалтын hit). */
+export const AmlHitQueueItem = z.object({
+  hit: AmlHit,
+  screening: z.object({
+    id: z.string(), customerId: z.string(), applicationId: z.string().nullable(), status: z.enum(ScreeningStatus),
+    subjectName: z.string(), registerNoMasked: z.string(), screenedAt: z.string(),
+  }),
+});
+export type AmlHitQueueItem = z.infer<typeof AmlHitQueueItem>;
+export const AmlHitQueuePage = z.object({ total: z.number().int(), items: z.array(AmlHitQueueItem) });
+export type AmlHitQueuePage = z.infer<typeof AmlHitQueuePage>;
+
 export const AmlHitReviewRequest = z.object({
   decision: z.enum(['CONFIRMED', 'FALSE_POSITIVE']),
   /** Тайлбар заавал (аудит). */
@@ -271,3 +302,31 @@ export const BlacklistImportResult = z.object({
   errors: z.array(z.object({ row: z.number(), message: z.string() })),
 });
 export type BlacklistImportResult = z.infer<typeof BlacklistImportResult>;
+
+// ── Илгээх хаалт (G1) — origination `POST /applications/:id/transition {to: SUBMITTED}`-ийн алдааны код, дэлгэрэнгүй ──
+// docs/01 §4 G1, BR-7, FR-9.2; docs/05-compliance-aml.md §5 ("blocking=true үед origination хүсэлтийг үргэлжлүүлэхгүй").
+export const SubmitGateErrorCode = [
+  'STEPS_INCOMPLETE', // 422 · заавал алхам дутуу (`details.missing`)
+  'DOCUMENTS_INCOMPLETE', // 422 · FR-9.2 заавал баримт дутуу (`details.missingDocuments`)
+  'LOAN_TERMS_MISSING', // 422
+  'PRIMARY_BORROWER_MISSING', // 422
+  'AML_REVIEW_REQUIRED', // 422 · шийдвэрлэгдээгүй BLOCKING hit (`details.borrowers`)
+  'AML_CONFIRMED_MATCH', // 422 · баталгаажсан тохирол
+  'AML_SCREENING_STALE', // 409 · урьдчилсан шалгалтын дараа оролцогч нэмэгдсэн/өөрчлөгдсөн — дахин илгээнэ
+  'AML_SCREENING_UNAVAILABLE', // 503 · kyc хүрэхгүй (fail-closed, `details.retryable = true`)
+  'AML_SUBJECT_INVALID', // 422 · оролцогчийн мэдээлэл kyc-ийн AmlSubject-д нийцэхгүй
+] as const;
+export type SubmitGateErrorCode = typeof SubmitGateErrorCode[number];
+
+export const AmlGateIssueReason = ['REVIEW_REQUIRED', 'CONFIRMED_MATCH', 'NOT_SCREENED', 'OUTDATED'] as const;
+export const AmlGateIssue = z.object({
+  customerId: z.string(),
+  role: z.enum(BorrowerRole),
+  screeningId: z.string().nullable(),
+  status: z.enum(ScreeningStatus).nullable(),
+  reason: z.enum(AmlGateIssueReason),
+});
+export type AmlGateIssue = z.infer<typeof AmlGateIssue>;
+
+export const MissingDocument = z.object({ key: z.string(), name: z.string() });
+export type MissingDocument = z.infer<typeof MissingDocument>;

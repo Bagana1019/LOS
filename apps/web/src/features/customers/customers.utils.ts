@@ -71,3 +71,27 @@ export function buildPayload(values: Record<string, unknown>, fixed: { customerT
   if (out.residenceSameAsOfficial) delete out.residenceAddress;
   return out;
 }
+
+export type CustomerEditability = { editable: true; reason: null } | { editable: false; reason: 'NO_PERMISSION' | 'OTHER_BRANCH' };
+
+/**
+ * NFR-3 (эзэмшигчийн шийдвэр 2026-11-18, A): зөвхөн бүртгэсэн салбар засна; `branchId = null` (хуучин) бол эзэмшигчгүй.
+ * Сервер (`CUSTOMER_BRANCH_FORBIDDEN`) эх сурвалж — энэ нь зөвхөн UI-д урьдчилан тайлбарлах зориулалттай.
+ */
+export function canEditCustomer(
+  me: { user: { branchId: string | null }; permissions: readonly string[] } | null | undefined,
+  customer: { branchId: string | null },
+): CustomerEditability {
+  if (!me || !me.permissions.includes('customer:write')) return { editable: false, reason: 'NO_PERMISSION' };
+  if (customer.branchId !== null && customer.branchId !== me.user.branchId) return { editable: false, reason: 'OTHER_BRANCH' };
+  return { editable: true, reason: null };
+}
+
+/** Сервер (`xyp-mapper` AUTHORITATIVE) ХУР-ын утгыг эрх бүхий гэж үздэг талбарууд — өөр утга илгээвэл 400 `XYP_FIELD_READONLY`. */
+const XYP_OWNED = ['lastName', 'firstName', 'clanName', 'civilId', 'birthDate', 'officialAddress'] as const;
+
+/** M5: ХУР-аас бөглөгдсөн (`prefilledFields`, жишээ `officialAddress.province`) эрх бүхий талбарууд — маягтад зөвхөн унших. */
+export function xypLockedFields(prefilled: readonly string[]): ReadonlySet<string> {
+  const tops = new Set(prefilled.map((p) => p.split('.')[0]));
+  return new Set(XYP_OWNED.filter((k) => tops.has(k)));
+}

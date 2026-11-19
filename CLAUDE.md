@@ -100,8 +100,8 @@ flowchart LR
 | Event | Гаргагч | Сонсогч | Утга |
 | --- | --- | --- | --- |
 | ApplicationSubmitted | origination | scoring, dwh | 7/7 бүрдэж илгээсэн |
-| ApplicationStatusChanged | origination | dwh, dms | төлвийн бүх шилжилт |
-| ApplicationApproved | origination | dms (гэрээ үүсгэх), dwh | бүх түвшин зөвшөөрсөн, contractNo үүссэн |
+| ApplicationStatusChanged | origination | dwh | төлвийн бүх шилжилт |
+| ApplicationApproved | origination | dwh, origination (notification) | бүх түвшин зөвшөөрсөн, contractNo үүссэн. Гэрээг dms event-ээр биш, origination → dms sync `POST /api/templates/render`-ээр үүсгэнэ |
 | ApplicationReturned | origination | dwh | буцаасан |
 | DisbursementApproved | origination | dwh | Core-д данс нээгдсэн |
 | KycCompleted | kyc | origination, dwh | лавлагаа бүрэн, blacklisted эсэх |

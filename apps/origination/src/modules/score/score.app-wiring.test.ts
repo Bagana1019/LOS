@@ -5,7 +5,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ScoreOverview, StepKey } from '@los/contracts';
-import { SEED } from '@los/database';
+import { SEED, purgeAuditLogForTests } from '@los/database';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../prisma.service';
 import { createApplication, createBorrower, createCustomer, hasTestDb } from '../../test-utils/factories';
@@ -63,7 +63,7 @@ describe.skipIf(!hasTestDb)('ScoreModule · AppModule + seed (gateway толго
   });
   afterAll(async () => {
     if (db && applicationId) {
-      await db.auditLog.deleteMany({ where: { applicationId } });
+      await purgeAuditLogForTests(db, (tx) => tx.auditLog.deleteMany({ where: { applicationId } }));
       await db.loanApplication.delete({ where: { id: applicationId } }); // оролцогч, орлого, алхам cascade
       await db.customer.delete({ where: { id: customerId } });
     }

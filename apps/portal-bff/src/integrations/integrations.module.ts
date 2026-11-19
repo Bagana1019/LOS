@@ -40,7 +40,7 @@ export const INTERNAL_HTTP = Symbol('INTERNAL_HTTP');
       inject: [PORTAL_CONFIG],
       useFactory: (cfg: PortalConfig) =>
         cfg.integrationMode === 'real'
-          ? new InternalHttpClient({ baseUrl: cfg.originationUrl, timeoutMs: cfg.internalTimeoutMs, maxStreamBytes: cfg.internalMaxContractBytes })
+          ? new InternalHttpClient({ baseUrl: cfg.originationUrl, timeoutMs: cfg.internalTimeoutMs, maxStreamBytes: cfg.internalMaxContractBytes, internalToken: cfg.internalAuthSecret })
           : null,
     },
     {

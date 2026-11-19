@@ -5,6 +5,7 @@ import { DomainEvent } from '@los/contracts';
 import { OutboxRelay, type EventBus } from '@los/database';
 import { Clock, CommonModule, EVENT_BUS, FixedClock as BaseFixedClock } from '@los/nest-common';
 import { PrismaModule, PrismaService } from '../prisma.service';
+import { ORG_DIRECTORY_SOURCE, type OrgDirectorySource } from '../shared/org-directory';
 import { SharedModule } from '../shared/shared.module';
 
 /** `@los/nest-common` FixedClock + тестэд хэрэгтэй `set(string)`, `advanceMs`. */
@@ -46,6 +47,8 @@ export class OutboxRelayService {
 @Module({ providers: [OutboxRelayService], exports: [OutboxRelayService] })
 class TestMessagingModule {}
 
+const EMPTY_DIRECTORY_SOURCE: OrgDirectorySource = { fetch: async () => ({ branches: {}, users: {} }) };
+
 export interface TestApp { app: INestApplication; prisma: PrismaService; clock: FixedClock; bus: ReturnType<typeof createInMemoryEventBus>; close(): Promise<void>; }
 
 /**
@@ -60,7 +63,8 @@ export async function createTestApp(imports: ModuleMetadata['imports'], customiz
   @Module({ providers: [eventBus], exports: [EVENT_BUS] })
   class BusModule {}
   let builder = Test.createTestingModule({ imports: [ConfigModule.forRoot({ isGlobal: true }), CommonModule.forRoot(), PrismaModule, SharedModule, BusModule, TestMessagingModule, ...(imports ?? [])] })
-    .overrideProvider(Clock).useValue(clock);
+    .overrideProvider(Clock).useValue(clock)
+    .overrideProvider(ORG_DIRECTORY_SOURCE).useValue(EMPTY_DIRECTORY_SOURCE); // экспортын нэр: тестэд gateway руу сүлжээний дуудлага хийхгүй (id хэвээр)
   if (customize) builder = customize(builder);
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication();

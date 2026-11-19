@@ -8,6 +8,14 @@ import { NotificationService, type CustomerNotifyContext, type NotifyPayload } f
 type Handled = Extract<DomainEvent, { type: 'ApplicationApproved' | 'ApplicationReturned' | 'DisbursementApproved' | 'PaymentReceived' }>;
 const HANDLED = ['ApplicationApproved', 'ApplicationReturned', 'DisbursementApproved', 'PaymentReceived'] as const;
 
+/**
+ * C1: өөрийн consumer group — 'origination' group-ийг contract subscriber-тэй хуваалцахад Redis мессеж бүрийг нэг л уншигчид өгч,
+ * хамааралгүй төрлийг XACK-аар хаяж байсан (ApplicationApproved мэдэгдэл алдагдсан). processed_events consumer нь 'notification' хэвээр.
+ */
+export const NOTIFICATION_EVENT_GROUP = 'origination-notification';
+/** Шинэ group үүсэхэд зөвхөн сүүлийн 24ц-ийг replay хийнэ: deploy-ийн завсар алдагдахгүй, харин хэдэн сарын өмнөх мэдэгдэл харилцагчид очихгүй. */
+export const NOTIFICATION_REPLAY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
 const num = (d: { toString(): string } | null | undefined): number | null => (d === null || d === undefined ? null : Number(d.toString()));
 
 /**
@@ -22,7 +30,8 @@ export class NotificationEventConsumer implements OnModuleInit {
   constructor(@Inject(EVENT_BUS) private readonly bus: EventBus | null, private readonly db: PrismaService, private readonly notifications: NotificationService) {}
 
   async onModuleInit(): Promise<void> {
-    await this.bus?.subscribe('origination', [...HANDLED], (event) => this.handle(event));
+    const startId = `${Date.now() - NOTIFICATION_REPLAY_LOOKBACK_MS}-0`; // зөвхөн group анх үүсэхэд хэрэглэгдэнэ
+    await this.bus?.subscribe(NOTIFICATION_EVENT_GROUP, [...HANDLED], (event) => this.handle(event), { startId });
   }
 
   async handle(event: DomainEvent): Promise<void> {

@@ -35,6 +35,8 @@ export interface InternalHttpOptions {
   maxJsonBytes?: number;
   retryDelayMs?: number;
   fetchImpl?: typeof fetch;
+  /** INTERNAL_AUTH_SECRET: origination-ийн ContextAuthGuard үүнийг `x-internal-token`-оос шалгана. */
+  internalToken?: string;
 }
 
 const MAX_GET_ATTEMPTS = 3;
@@ -153,6 +155,8 @@ export class InternalHttpClient {
         : { 'X-Actor-Type': 'PORTAL_ANONYMOUS' }),
       ...req.headers,
     };
+    // Дуудагч дарж бичихгүйн тулд хамгийн сүүлд тавина.
+    if (this.opts.internalToken) headers['x-internal-token'] = this.opts.internalToken;
     if (req.body !== undefined) headers['Content-Type'] = 'application/json';
 
     let res: Response;

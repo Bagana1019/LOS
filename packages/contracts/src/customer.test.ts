@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateCustomerRequest, CustomerContactInput, CustomerInput, UpdateCustomerRequest, XypCitizen, customerTypeOfRegister, isValidRegisterNo, normalizePhone, normalizeRegisterNo } from './customer';
+import { CreateCustomerRequest, CustomerContactInput, CustomerEditPayload, CustomerInput, UpdateCustomerRequest, XypCitizen, customerTypeOfRegister, isValidRegisterNo, normalizePhone, normalizeRegisterNo } from './customer';
 
 const address = { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'Хан-Уул хотхон 12-45' };
 export const validIndividual = {
@@ -102,5 +102,21 @@ describe('contact home address (4-level) and XYP civil id / clan name', () => {
     expect(ok.success).toBe(true);
     const bad = CustomerContactInput.safeParse({ relation: 'SPOUSE', firstName: 'Сараа', phone: '88112233', homeAddress: { province: 'Улаанбаатар' } });
     expect(bad.success).toBe(false);
+  });
+});
+
+describe('CustomerEditPayload (maker-checker CUSTOMER/UPDATE)', () => {
+  it('wraps the PUT DTO: register and customer type cannot be changed or cleared', () => {
+    expect(CustomerEditPayload.parse({ changes: { phone: '99112233', registerNo: 'УБ00000001' } })).toEqual({ changes: { phone: '99112233' }, cleared: [] });
+    expect(CustomerEditPayload.safeParse({ changes: {}, cleared: ['registerNo'] }).success).toBe(false);
+    expect(CustomerEditPayload.safeParse({ changes: {}, cleared: ['customerType'] }).success).toBe(false);
+  });
+  it('re-parsing the stored payload is idempotent (it is validated again at apply)', () => {
+    const once = CustomerEditPayload.parse({ changes: { phone: '+976 9911-2233', email: ' Bat@Example.mn ', contacts: [{ relation: 'SPOUSE', firstName: 'Сараа', phone: '88112233' }] }, cleared: ['clanName'] });
+    expect(CustomerEditPayload.parse(JSON.parse(JSON.stringify(once)))).toEqual(once);
+  });
+  it('rejects malformed values and non-array cleared', () => {
+    expect(CustomerEditPayload.safeParse({ changes: { phone: 'abc' } }).success).toBe(false);
+    expect(CustomerEditPayload.safeParse({ changes: {}, cleared: 'phone' }).success).toBe(false);
   });
 });

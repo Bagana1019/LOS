@@ -9,6 +9,7 @@ const prodEnv = {
   PORTAL_JWT_SECRET: 'j'.repeat(40),
   PORTAL_HASH_SECRET: 'h'.repeat(40),
   PORTAL_CORS_ORIGINS: 'https://app.example.mn',
+  INTERNAL_AUTH_SECRET: 'q7Zp3kLm9VxT2rWs8YbN',
 };
 
 describe('loadConfig', () => {
@@ -92,5 +93,26 @@ describe('loadConfig', () => {
       return;
     }
     throw new Error('expected failure');
+  });
+});
+
+describe('loadConfig: internal service token (review M1, CLAUDE.md §3.2.9)', () => {
+  it('passes INTERNAL_AUTH_SECRET through so calls to origination carry X-Internal-Token', () => {
+    expect(loadConfig(prodEnv).internalAuthSecret).toBe('q7Zp3kLm9VxT2rWs8YbN');
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['blank', '   '],
+    ['shorter than 16 characters', 'short-secret'],
+    ['the public .env.example placeholder', 'dev-internal-secret-change-me'],
+  ])('refuses to start in production when the secret is %s', (_label, secret) => {
+    expect(() => loadConfig({ ...prodEnv, INTERNAL_AUTH_SECRET: secret })).toThrow(/INTERNAL_AUTH_SECRET/);
+  });
+
+  it('keeps it optional outside production and omits a blank value', () => {
+    expect(loadConfig({}).internalAuthSecret).toBeUndefined();
+    expect(loadConfig({ INTERNAL_AUTH_SECRET: '  ' }).internalAuthSecret).toBeUndefined();
+    expect(loadConfig({ INTERNAL_AUTH_SECRET: 'dev-internal-secret-change-me' }).internalAuthSecret).toBe('dev-internal-secret-change-me');
   });
 });

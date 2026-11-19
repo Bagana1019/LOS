@@ -68,7 +68,9 @@ model User {
   fullName           String    @map("full_name")
   email              String?
   phone              String?
-  roles              String[] // UserRole[]
+  roles              String[] // AccountRole[] (UserRole | MerchantRole)
+  merchantId         String?   @map("merchant_id") // docs/05-merchant-pos.md §2: MERCHANT_* хэрэглэгчийн origination.merchant.id (cross-schema FK биш)
+  storeId            String?   @map("store_id") // MERCHANT_STAFF-ийн origination.merchant_store.id
   isActive           Boolean   @default(true) @map("is_active")
   mustChangePassword Boolean   @default(false) @map("must_change_password") // админ нууц үг шинэчилсэн/шинэ хэрэглэгч — эхний нэвтрэлтээр заавал солино
   deactivatedAt      DateTime? @map("deactivated_at")
@@ -85,6 +87,7 @@ model User {
   sessions Session[]
 
   @@index([orgId, isActive])
+  @@index([merchantId])
   @@map("user")
   @@schema("iam")
 }

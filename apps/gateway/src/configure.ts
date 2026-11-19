@@ -3,12 +3,14 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import { json } from 'express';
 import helmet from 'helmet';
+import { assertDirectoryToken } from './modules/directory/directory-token';
 
 /**
  * main.ts ба тестэд ижил middleware. Body parser-ийг глобалаар унтрааж (bodyParser:false), зөвхөн /api/auth дээр JSON парсер тавина:
  * proxy-д body stream хэвээр (upload, том файл) дамжина.
  */
 export function configureGateway(app: INestApplication): void {
+  assertDirectoryToken(); // production-д сул GATEWAY_DIRECTORY_TOKEN-той эхлэхгүй (тохируулаагүй бол лавлах унтарна)
   const a = app as NestExpressApplication;
   if (process.env.TRUST_PROXY) a.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
   a.disable('x-powered-by');

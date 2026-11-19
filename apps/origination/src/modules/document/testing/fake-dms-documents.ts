@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CreateDocumentRequest, DocumentListQuery, DocumentView, RequestContext } from '@los/contracts';
-import { DomainError } from '@los/nest-common';
+import { DomainError, assertFileUploadedByCaller } from '@los/nest-common';
 import { normalizeKey } from '../document-checklist';
 import type { DmsDocumentOcr, DmsDocumentsPort, DmsOcrOutcome } from '../dms-documents.port';
 
@@ -9,7 +9,8 @@ import type { DmsDocumentOcr, DmsDocumentsPort, DmsOcrOutcome } from '../dms-doc
 
 type Op = 'create' | 'list' | 'remove' | 'ocr';
 interface StoredDocument { orgId: string; view: DocumentView }
-export interface FakeFile { id: string; orgId: string; name: string; mime: string; size: number }
+/** `uploadedBy`: тодорхойлоогүй (undefined) бол дуудагч өөрөө байршуулсан гэж үзнэ; `null` = байршуулагч тодорхойгүй (dms-д татгалзана). */
+export interface FakeFile { id: string; orgId: string; name: string; mime: string; size: number; uploadedBy?: string | null }
 
 export class FakeDmsDocuments implements DmsDocumentsPort {
   readonly calls: { op: Op; ctx: RequestContext; arg: unknown }[] = [];
@@ -45,7 +46,7 @@ export class FakeDmsDocuments implements DmsDocumentsPort {
   /** Файлыг файл санд бүртгэнэ (жинхэнэ нь `POST /api/dms/files`). */
   addFile(orgId: string, o: Partial<Omit<FakeFile, 'id' | 'orgId'>> & { id?: string } = {}): string {
     const id = o.id ?? randomUUID();
-    this.files.set(id, { id, orgId, name: o.name ?? 'scan.pdf', mime: o.mime ?? 'application/pdf', size: o.size ?? 1024 });
+    this.files.set(id, { id, orgId, name: o.name ?? 'scan.pdf', mime: o.mime ?? 'application/pdf', size: o.size ?? 1024, uploadedBy: o.uploadedBy });
     return id;
   }
 
@@ -116,6 +117,7 @@ export class FakeDmsDocuments implements DmsDocumentsPort {
   private async store(orgId: string, request: CreateDocumentRequest, uploadedBy: string | null): Promise<DocumentView> {
     const file = this.files.get(request.fileId);
     if (!file || file.orgId !== orgId) throw new DomainError('FILE_NOT_FOUND', 'Файл олдсонгүй эсвэл устгагдсан байна', 422);
+    if (file.uploadedBy !== undefined) assertFileUploadedByCaller({ userId: uploadedBy }, file.uploadedBy); // dms DocumentService.create-тэй ижил (NFR-3)
     const view: DocumentView = {
       id: randomUUID(), applicationId: request.applicationId, type: normalizeKey(request.type), relatedEntity: request.relatedEntity, relatedId: request.relatedId?.trim() || null,
       note: request.note ?? null, fileId: file.id, fileName: file.name, mime: file.mime, size: file.size,

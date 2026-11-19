@@ -5,6 +5,7 @@ import {
   type DocumentChecklistStatus,
   type DocumentSummary,
   type DocumentView,
+  type MissingDocument,
 } from '@los/contracts';
 
 // Цэвэр дүрмүүд (I/O байхгүй) — docs/01 FR-9.1, FR-9.2; docs/05-collateral-documents.md §3.2.
@@ -63,6 +64,8 @@ export interface ChecklistInput {
   checklist: readonly DocumentChecklistItem[];
   /** dms-ийн жагсаалт (оруулсан дарааллаар). */
   documents: readonly DocumentView[];
+  /** FR-9.2 fail-closed: бүтээгдэхүүний checklist JSON буруу (тохиргооны алдаа) → `complete=false` (хоосон checklist-ээс ялгаатай). */
+  checklistInvalid?: boolean;
 }
 
 /**
@@ -94,10 +97,15 @@ export function buildApplicationDocuments(input: ChecklistInput): ApplicationDoc
     productMissing: !input.productPresent,
     required: required.length,
     satisfied: required.length - missing.length,
-    complete: input.productPresent && missing.length === 0,
+    complete: input.productPresent && !input.checklistInvalid && missing.length === 0,
     missing,
   };
   return { items: [...documents], checklist: statuses, extras, summary };
+}
+
+/** FR-9.2: илгээх хаалтын `DOCUMENTS_INCOMPLETE` дэлгэрэнгүй — хангагдаагүй ЗААВАЛ мөр бүрийн түлхүүр, нэр (checklist-ийн дарааллаар). */
+export function missingRequiredDocuments(view: ApplicationDocumentsResponse): MissingDocument[] {
+  return view.checklist.filter((s) => s.required && !s.satisfied).map((s) => ({ key: s.key, name: s.name }));
 }
 
 // ── 8-р алхам (`document`) ───────────────────────────────────────────────────────────

@@ -11,11 +11,35 @@ import { PrismaService } from '../../prisma.service';
 import { BlacklistLookupService } from '../blacklist/blacklist-lookup.service';
 import { auditSnapshot, toRawInput, toSummary, toView } from './customer.mapper';
 import { XYP_LOOKUP, type XypLookup } from './xyp-lookup';
-import { citizenPrefill, leafPaths, mergeXyp } from './xyp-mapper';
+import { citizenPrefill, leafPaths, mergeXyp, xypConflicts } from './xyp-mapper';
 
 export interface ListQuery { q?: string; registerNo?: string; customerType?: 'INDIVIDUAL' | 'LEGAL_ENTITY'; page: number; pageSize: number }
 
 const WITH_CONTACTS = { contacts: true } as const;
+/**
+ * NFR-3 салбарын хязгаарлалт (эзэмшигчийн шийдвэр 2026-11-18, хувилбар A): харилцагчийг бүх салбар харж, хүсэлтэд холбоно;
+ * өгөгдлийг нь зөвхөн бүртгэсэн (эзэмшигч) салбар засна. `branchId = null` (хуучин/шилжүүлсэн) бол эзэмшигчгүй — `customer:write`-тэй хэн ч засна.
+ * Салбаргүй хэрэглэгч эзэмшигчтэй харилцагчийг засахгүй (fail-closed).
+ */
+export function assertOwningBranch(ctx: Pick<RequestContext, 'branchId'>, ownerBranchId: string | null, customerId?: string): void {
+  if (ownerBranchId === null || ownerBranchId === ctx.branchId) return;
+  // Статус 403 хэвээр; клиентэд засварын хүсэлт (maker-checker CUSTOMER/UPDATE) илгээх замыг зааж өгнө (gateway-ийн зам)
+  const editRequest = customerId ? { editRequest: { method: 'POST', path: `/api/origination/customers/${customerId}/edit-requests` } } : {};
+  throw new DomainError('CUSTOMER_BRANCH_FORBIDDEN', 'Энэ харилцагчийг өөр салбар бүртгэсэн тул зөвхөн тухайн салбар засна. Засварын хүсэлт илгээж эзэмшигч салбарын захирлаар батлуулна уу', 403, { ownerBranchId, ...editRequest });
+}
+
+type Tx = Prisma.TransactionClient;
+export type LockedCustomer = Prisma.CustomerGetPayload<{ include: typeof WITH_CONTACTS }>;
+/** PUT-ийн нэгтгэх дүрэм: өгсөн талбарыг л солино, `cleared`-ийг арилгана. */
+function mergePatch(before: object, patch: UpdateCustomerRequest, cleared: readonly string[]): Record<string, unknown> {
+  const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+  const merged: Record<string, unknown> = { ...before, ...changes };
+  for (const k of cleared) if (k in UpdateCustomerRequest.shape) delete merged[k];
+  // Оршин суугаа хаягийг тусад нь өгвөл «ижил» чекбокс арилна; чекбоксыг авч хаяг өгөөгүй бол хаягийг заавал шаардана (одоогийн хуулбарыг дахин ашиглахгүй)
+  if (patch.residenceAddress && patch.residenceSameAsOfficial === undefined) merged.residenceSameAsOfficial = false;
+  if (patch.residenceSameAsOfficial === false && !patch.residenceAddress) delete merged.residenceAddress;
+  return merged;
+}
 const invalidRegister = () => new DomainError('INVALID_REGISTER_NO', 'Регистрийн дугаар буруу (иргэн УБ12345678, байгууллага 7 орон)', 400);
 
 /**
@@ -89,6 +113,10 @@ export class CustomerService {
     let xypFetchedAt: Date | null = null;
     if (source === 'XYP') {
       const citizen = await this.xyp.fetchCitizen(ctx, registerNo);
+      const conflicts = xypConflicts(raw as Omit<CreateCustomerRequest, 'source'>, citizen);
+      if (conflicts.length) {
+        throw new DomainError('XYP_FIELD_READONLY', 'ХУР-аас татсан талбарыг (албан ёсны хаяг, овог нэр, төрсөн огноо г.м.) өөрчлөх боломжгүй. ХУР-ын утгыг хэвээр үлдээнэ үү', 400, { fields: conflicts });
+      }
       raw = mergeXyp(raw as Omit<CreateCustomerRequest, 'source'>, citizen);
       xypFetchedAt = new Date(citizen.fetchedAt);
     }
@@ -135,33 +163,57 @@ export class CustomerService {
   /** @param cleared PUT-д хоосон мөр (`""`) илгээсэн талбарууд = «арилгах»: заавал талбар бол 400, заавал биш бол null болно. */
   async update(ctx: RequestContext, id: string, patch: UpdateCustomerRequest, cleared: readonly string[] = []): Promise<CustomerView> {
     const saved = await this.db.$transaction(async (tx) => {
-      // Нэг харилцагчийн зэрэг засварыг дараалуулна: уншаад-нэгтгээд-бичих нь түгжээгүй бол хоёр ЗЭЗ-ийн өөрчлөлт бие биеийг дарна, холбоо барих хүн давхарлана.
-      const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM origination.customer WHERE id = ${id} AND org_id = ${ctx.orgId} FOR UPDATE`;
-      if (!locked.length) throw notFound('Харилцагч', id);
-      const row = await tx.customer.findUniqueOrThrow({ where: { id }, include: WITH_CONTACTS });
-      const before = toRawInput(toView(row, []));
-      const changes = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
-      const merged: Record<string, unknown> = { ...before, ...changes };
-      for (const k of cleared) if (k in UpdateCustomerRequest.shape) delete merged[k];
-      // Оршин суугаа хаягийг тусад нь өгвөл «ижил» чекбокс арилна; чекбоксыг авч хаяг өгөөгүй бол хаягийг заавал шаардана (одоогийн хуулбарыг дахин ашиглахгүй)
-      if (patch.residenceAddress && patch.residenceSameAsOfficial === undefined) merged.residenceSameAsOfficial = false;
-      if (patch.residenceSameAsOfficial === false && !patch.residenceAddress) delete merged.residenceAddress;
-      const input = CustomerInput.parse(merged);
-      const beforeInput = CustomerInput.parse(before);
-
-      if (patch.contacts) await tx.customerContact.deleteMany({ where: { customerId: id, orgId: ctx.orgId } });
-      const updated = await tx.customer.update({
-        where: { id },
-        data: { ...this.columns(input), updatedBy: ctx.userId, ...(patch.contacts ? { contacts: { create: this.contactRows(ctx, input) } } : {}) },
-        include: WITH_CONTACTS,
-      });
-      const diff = auditDiff(auditSnapshot(beforeInput), auditSnapshot(input));
-      if (Object.keys(diff.after).length) {
-        await recordAudit(tx, { orgId: ctx.orgId, entity: 'CUSTOMER', entityId: id, action: 'CUSTOMER_UPDATED', actorId: ctx.userId, beforeJson: diff.before, afterJson: diff.after, correlationId: ctx.correlationId });
-      }
-      return updated;
+      const row = await this.lockForUpdate(tx, ctx.orgId, id);
+      if (!row) throw notFound('Харилцагч', id);
+      assertOwningBranch(ctx, row.branchId, id);
+      return this.applyLockedUpdate(tx, ctx, row, patch, cleared);
     });
     return toView(saved, await this.blacklist.warningsForHash(ctx.orgId, saved.registerNoHash));
+  }
+
+  /**
+   * Нэг харилцагчийн зэрэг засварыг дараалуулна (FOR UPDATE): уншаад-нэгтгээд-бичих нь түгжээгүй бол хоёр ЗЭЗ-ийн өөрчлөлт бие биеийг дарна, холбоо барих хүн давхарлана.
+   * Maker-checker-ийн checker tx ч үүнийг дуудна (CUSTOMER/UPDATE handler).
+   */
+  async lockForUpdate(tx: Tx, orgId: string, id: string): Promise<LockedCustomer | null> {
+    const locked = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM origination.customer WHERE id = ${id} AND org_id = ${orgId} FOR UPDATE`;
+    return locked.length ? tx.customer.findUniqueOrThrow({ where: { id }, include: WITH_CONTACTS }) : null;
+  }
+
+  findInTx(tx: Tx, orgId: string, id: string): Promise<LockedCustomer | null> {
+    return tx.customer.findFirst({ where: { id, orgId }, include: WITH_CONTACTS });
+  }
+
+  /** Засварын үр дүн (FR-2.3-аар бүрэн шалгасан). Буруу бол ZodError — бичихгүй. Засварын хүсэлтийг илгээх үед урьдчилан шалгахад ч ашиглана. */
+  previewMerge(row: LockedCustomer, patch: UpdateCustomerRequest, cleared: readonly string[] = []): CustomerInput {
+    return CustomerInput.parse(mergePatch(toRawInput(toView(row, [])), patch, cleared));
+  }
+
+  /** Одоогийн утгууд (raw), зөвхөн өгсөн талбарууд — maker-checker-ийн `before` (шифрлэгдэж хадгалагдана) */
+  currentFields(row: LockedCustomer, keys: readonly string[]): Record<string, unknown> {
+    const raw = toRawInput(toView(row, [])) as Record<string, unknown>;
+    return Object.fromEntries(keys.filter((k) => raw[k] !== undefined).map((k) => [k, raw[k]]));
+  }
+
+  /**
+   * Түгжсэн мөр дээр засварыг бичиж, ердийн `CUSTOMER_UPDATED` аудитыг нэг tx-д бичнэ. Эрхийг (эзэмшигч салбар эсвэл 4 нүдний батлалт) дуудагч шалгасан байх ёстой.
+   * Үр дүн FR-2.3-д тэнцэхгүй бол ZodError (шууд PUT-д 400).
+   */
+  async applyLockedUpdate(tx: Tx, ctx: RequestContext, row: LockedCustomer, patch: UpdateCustomerRequest, cleared: readonly string[] = []): Promise<LockedCustomer> {
+    const before = toRawInput(toView(row, []));
+    const input = CustomerInput.parse(mergePatch(before, patch, cleared));
+    const beforeInput = CustomerInput.parse(before);
+    if (patch.contacts) await tx.customerContact.deleteMany({ where: { customerId: row.id, orgId: ctx.orgId } });
+    const updated = await tx.customer.update({
+      where: { id: row.id },
+      data: { ...this.columns(input), updatedBy: ctx.userId, ...(patch.contacts ? { contacts: { create: this.contactRows(ctx, input) } } : {}) },
+      include: WITH_CONTACTS,
+    });
+    const diff = auditDiff(auditSnapshot(beforeInput), auditSnapshot(input));
+    if (Object.keys(diff.after).length) {
+      await recordAudit(tx, { orgId: ctx.orgId, entity: 'CUSTOMER', entityId: row.id, action: 'CUSTOMER_UPDATED', actorId: ctx.userId, beforeJson: diff.before, afterJson: diff.after, correlationId: ctx.correlationId });
+    }
+    return updated;
   }
 
   // ── дотоод ──

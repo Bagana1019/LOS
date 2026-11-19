@@ -28,7 +28,7 @@ function fail(status: 422 | 409, code: string, message: string, details?: unknow
 /** DMS-д зөвхөн ADMIN-ы уншигч эрхтэй үйлчилгээний контекстоор (event consumer-д хэрэглэгч байхгүй). Хэрэглэгчийн контекст байвал өөрийг нь. */
 export const dmsContext = (ctx: RequestContext): RequestContext => (ctx.userId ? ctx : { ...ctx, userId: SERVICE_PRINCIPAL.userId, roles: [...SERVICE_PRINCIPAL.roles] });
 
-interface Reconciled { documents: ApplicationDocumentsResponse; stepChanged: boolean }
+interface Reconciled { documents: ApplicationDocumentsResponse; stepChanged: boolean; product: Product | null }
 
 /**
  * FR-9.1, FR-9.2: хүсэлтийн баримт бичиг ба 8-р алхам (`document`).
@@ -145,6 +145,15 @@ export class ApplicationDocumentService {
     await this.reconcile(ctx, app.id);
   }
 
+  /**
+   * FR-9.2 илгээх хаалт: dms-ийн ШИНЭ жагсаалтаар 8-р алхмыг дахин тооцоод checklist-ийг буцаана (DB-д хуучирсан COMPLETED-ийг тойруулахгүй).
+   * Түгжээний гадна (HTTP); эрхийг дуудагч (`ApplicationService.transition`) шалгасан. dms хүрэхгүй бол алдаа шиднэ (fail-closed).
+   */
+  async reconcileForSubmit(ctx: RequestContext, applicationId: string): Promise<{ documents: ApplicationDocumentsResponse; checklistInvalid: boolean }> {
+    const { documents, product } = await this.reconcile(ctx, applicationId);
+    return { documents, checklistInvalid: parseProductChecklist(product?.documentChecklistJson).invalid };
+  }
+
   // ── дотоод ──────────────────────────────────────────────────────────────────────────
   /** Хавсралтын хүсэлтийг шалгаж, dms-д илгээх `CreateDocumentRequest` болгоно (checklist түлхүүрийг бүтээгдэхүүний каноник хэлбэрээр). */
   private async plan(app: LoanApplication, product: Product | null, input: AttachDocumentRequest): Promise<CreateDocumentRequest> {
@@ -217,12 +226,12 @@ export class ApplicationDocumentService {
       const after = await this.dms.list({ applicationId }, dmsCtx);
       const stable = sameDocuments(documents, after);
       documents = after;
-      if (stable) return { documents: this.view(applied.product, documents), stepChanged };
+      if (stable) return { documents: this.view(applied.product, documents), stepChanged, product: applied.product };
       if (attempt >= MAX_RECONCILE_ATTEMPTS) {
         // Зэрэг өөрчлөлт хэт олон: хамгийн сүүлийн жагсаалтаар нэг удаа бичээд гарна; үлдсэн зөрүүг dms-ийн event (subscriber) засна
         const last = await this.applyStep(ctx, applicationId, documents);
         this.logger.warn({ op: 'reconcile.unstable', applicationId, attempts: attempt, correlationId: ctx.correlationId });
-        return { documents: this.view(last.product, documents), stepChanged: stepChanged || last.stepChanged };
+        return { documents: this.view(last.product, documents), stepChanged: stepChanged || last.stepChanged, product: last.product };
       }
     }
   }
@@ -248,8 +257,8 @@ export class ApplicationDocumentService {
 
   private view(product: Product | null, documents: readonly DocumentView[]): ApplicationDocumentsResponse {
     const parsed = parseProductChecklist(product?.documentChecklistJson);
-    if (parsed.invalid) this.logger.warn({ op: 'checklist.invalid', productId: product?.id }); // тохиргооны алдаа: checklist хоосон гэж үзсэн
-    return buildApplicationDocuments({ productPresent: !!product, checklist: parsed.items, documents });
+    if (parsed.invalid) this.logger.warn({ op: 'checklist.invalid', productId: product?.id }); // тохиргооны алдаа: алхам бүрдэхгүй (fail-closed, FR-9.2)
+    return buildApplicationDocuments({ productPresent: !!product, checklist: parsed.items, documents, checklistInvalid: parsed.invalid });
   }
 
   private productOf(db: Tx | PrismaService, app: Pick<LoanApplication, 'productId' | 'orgId'>): Promise<Product | null> {

@@ -27,18 +27,17 @@ describe.skipIf(!hasTestDb)('payment: repayment-status ба төлбөрийн �
       }
     });
 
-    it('CUSTOMER: өөрийн (PRIMARY/CO_BORROWER) OK; өөр харилцагч, батлан даагч 403', async () => {
+    // 2026-11-18 (H8): харилцагч портал-ын дотоод API-аар (portal-bff → /internal/portal) л ханддаг; staff route нь customer context-ийг хүлээж авахгүй
+    it('CUSTOMER context (өөрийн хүсэлт дээр ч) → 403 CUSTOMER_CONTEXT_FORBIDDEN', async () => {
       const { app, customer } = await seedLoan(env);
       const co = await createCustomer(env.t.prisma);
-      const guarantor = await createCustomer(env.t.prisma);
-      const stranger = await createCustomer(env.t.prisma);
       await createBorrower(env.t.prisma, app.id, co.id, 'CO_BORROWER');
-      await createBorrower(env.t.prisma, app.id, guarantor.id, 'GUARANTOR');
       for (const fn of [status, list]) {
-        expect((await fn(actors.customer(customer.id), app.id)).status).toBe(200);
-        expect((await fn(actors.customer(co.id), app.id)).status).toBe(200);
-        expect((await fn(actors.customer(guarantor.id), app.id)).status).toBe(403);
-        expect((await fn(actors.customer(stranger.id), app.id)).status).toBe(403);
+        for (const id of [customer.id, co.id]) {
+          const res = await fn(actors.customer(id), app.id);
+          expect(res.status).toBe(403);
+          expect(res.body.code).toBe('CUSTOMER_CONTEXT_FORBIDDEN');
+        }
       }
     });
   });

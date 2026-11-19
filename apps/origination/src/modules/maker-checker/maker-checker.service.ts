@@ -64,14 +64,19 @@ export class MakerCheckerService {
           if (!isOverdue(pending, now)) throw new PendingConflictError(); // DIRECT-ийг ч хориглоно: хүлээгдэж буй өөрчлөлтийг хэнд ч мэдэгдэлгүй давахгүй
           await this.close(tx, pending, 'EXPIRED', { status: 'EXPIRED', decidedAt: now, updatedBy: SYSTEM }, null, null, now);
         }
-        await this.runValidate(handler, parsed.data, actor, tx);
-        const snap = handler.snapshot ? await handler.snapshot({ db: tx.db, repo: tx, orgId: actor.orgId, targetId: input.targetId }) : null;
+        await this.runValidate(handler, parsed.data, actor, tx, input.targetId);
+        const snap = handler.snapshot ? await handler.snapshot({ db: tx.db, repo: tx, orgId: actor.orgId, targetId: input.targetId, actor, payload: parsed.data }) : null;
+        const ref = { orgId: actor.orgId, targetType: handler.targetType, targetId: input.targetId };
+        const before = snap?.before ?? null;
         const inserted = await tx.insert({
-          id: randomUUID(), orgId: actor.orgId, branchId: actor.branchId,
+          // Хүрээний салбар: handler заавал түүнийг (жишээ нь харилцагчийн эзэмшигч салбар), эс бөгөөс maker-ийнх (MC-BR-2)
+          id: randomUUID(), orgId: actor.orgId, branchId: snap?.scopeBranchId !== undefined ? snap.scopeBranchId : actor.branchId,
           targetType: handler.targetType, targetId: input.targetId, action: handler.action,
           applicationId: input.applicationId ?? null,
           mode: direct ? 'DIRECT' : 'FOUR_EYES', status: direct ? 'APPLIED' : 'PENDING',
-          payload: parsed.data, before: snap?.before ?? null, baseVersion: input.baseVersion ?? snap?.baseVersion ?? null,
+          payload: handler.codec ? handler.codec.seal(parsed.data, ref) : parsed.data,
+          before: handler.codec && before !== null ? handler.codec.seal(before, ref) : before,
+          baseVersion: input.baseVersion ?? snap?.baseVersion ?? null,
           reason: input.reason, makerId: actor.userId, makerRoles: actor.roles,
           requiredCheckerRoles: direct ? [] : policy.checkerRoles,
           correlationId: actor.correlationId,
@@ -124,7 +129,7 @@ export class MakerCheckerService {
         }
         const handler = this.registry.get(row.targetType, row.action);
         if (!handler) throw err('HANDLER_NOT_FOUND', { targetType: row.targetType, action: row.action });
-        const payload = handler.payloadSchema.safeParse(row.payload);
+        const payload = handler.payloadSchema.safeParse(this.unsealForApply(handler, row));
         if (!payload.success) throw new ChangeConflictError(`payload no longer valid: ${payload.error.issues.map((i) => i.message).join('; ')}`);
         await handler.apply({ db: tx.db, repo: tx, request: row, payload: payload.data, checker: actor });
         return { row: await this.close(tx, row, 'APPLIED', { status: 'APPLIED', checkerId: actor.userId, checkerRoles: actor.roles, checkerComment: note, decidedAt: now, updatedBy: actor.userId }, actor, note, now), expired: false, now };
@@ -232,9 +237,9 @@ export class MakerCheckerService {
   }
 
   // ── Дотоод ─────────────────────────────────────────────────────────────────────
-  private async runValidate<P>(handler: ChangeHandler<P>, payload: P, actor: Actor, tx: ChangeRequestTx) {
+  private async runValidate<P>(handler: ChangeHandler<P>, payload: P, actor: Actor, tx: ChangeRequestTx, targetId: string) {
     try {
-      await handler.validate?.({ payload, actor, repo: tx });
+      await handler.validate?.({ payload, actor, repo: tx, targetId });
     } catch (e) {
       // Зөвхөн handler-ийн зориудаар шиднэ гэсэн алдааг 422 болгоно; DB/сүлжээ/програмын алдаа түүхий мессежээр хэрэглэгчид гарахгүй
       if (e instanceof ChangeValidationError) throw err('PAYLOAD_INVALID', e.details, e.message);
@@ -277,6 +282,27 @@ export class MakerCheckerService {
     return buildEvent(this.eventCtx(row, actor), 'ChangeRequestDecided', { ...this.ref(row), outcome, checkerId }, now);
   }
 
+  /** Тайлж чадахгүй (түлхүүр хасагдсан, гэмтсэн) хадгалсан payload = хуучирсан хүсэлт (MC-BR-7). Шалтгаанд агуулга орохгүй. */
+  private unsealForApply(handler: ChangeHandler<any>, row: ChangeRequestRow): unknown { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!handler.codec) return row.payload;
+    try {
+      return handler.codec.unseal(row.payload, this.codecRef(row));
+    } catch {
+      throw new ChangeConflictError('stored payload could not be decrypted');
+    }
+  }
+
+  /** Дэлгэрэнгүй хариунд (харах эрхтэй хэрэглэгчид) тайлсан payload/before; тайлж чадахгүй бол шифрлэгдсэн хэлбэрээр нь (500 биш). */
+  private reveal(row: ChangeRequestRow): Pick<ChangeRequestRow, 'payload' | 'before'> {
+    const codec = this.registry.get(row.targetType, row.action)?.codec;
+    if (!codec) return { payload: row.payload, before: row.before };
+    const ref = this.codecRef(row);
+    const open = (v: unknown) => { try { return codec.unseal(v, ref); } catch { return v; } };
+    return { payload: open(row.payload), before: row.before === null ? null : open(row.before) };
+  }
+
+  private codecRef(row: ChangeRequestRow) { return { orgId: row.orgId, targetType: row.targetType, targetId: row.targetId }; }
+
   private translate(e: unknown): unknown {
     if (e instanceof PendingConflictError) return err('TARGET_HAS_PENDING_CHANGE');
     if (e instanceof LockTimeoutError) return err('DECISION_IN_PROGRESS');
@@ -286,9 +312,11 @@ export class MakerCheckerService {
 
   private toDto(row: ChangeRequestRow, actor: Actor, now: Date, history?: HistoryRow[]): ChangeRequestDto {
     const iso = (d: Date | null) => (d ? d.toISOString() : null);
+    // Жагсаалтад (history-гүй) шифрлэгдсэн хэлбэр хэвээр — PII-г зөвхөн нэг хүсэлтийн дэлгэрэнгүйд тайлна
+    const { payload, before } = history ? this.reveal(row) : row;
     return {
       id: row.id, orgId: row.orgId, branchId: row.branchId, targetType: row.targetType, targetId: row.targetId, action: row.action,
-      applicationId: row.applicationId, mode: row.mode, status: row.status, payload: row.payload, before: row.before, baseVersion: row.baseVersion,
+      applicationId: row.applicationId, mode: row.mode, status: row.status, payload, before, baseVersion: row.baseVersion,
       reason: row.reason, makerId: row.makerId, makerRoles: row.makerRoles, requiredCheckerRoles: row.requiredCheckerRoles,
       checkerId: row.checkerId, checkerRoles: row.checkerRoles, checkerComment: row.checkerComment, failureReason: row.failureReason,
       expiresAt: row.expiresAt.toISOString(), decidedAt: iso(row.decidedAt), createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),

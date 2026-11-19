@@ -6,3 +6,5 @@ export * from './audit';
 export * from './crypto';
 export * from './seed-ids';
 export * from './register-no';
+export * from './advisory-lock';
+export * from './db-resilience';

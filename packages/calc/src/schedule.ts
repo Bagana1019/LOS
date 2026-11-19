@@ -119,3 +119,41 @@ export function summarizeSchedule(rows: readonly ScheduleRow[]): ScheduleSummary
     firstDueDate: pay[0]?.dueDate ?? '', endDate: pay[pay.length - 1]?.dueDate ?? '',
   };
 }
+
+// ── M11 · BR-1/BR-2 (docs/01 §8): ӨОХ/ӨТЧХ-ийн "шинэ зээлийн сарын төлөлт" ─────────────────────────
+export interface DebtServiceRow { dueDate: string; principal: number; interest: number }
+const AVG_DAYS_PER_MONTH = 365.25 / 12;
+/** Хоёр огнооны хоорондох сар (дундаж сарын уртаар бөөрөнхийлж), доод тал нь 1. */
+const monthsBetween = (a: Ymd, b: Ymd): number => Math.max(1, Math.round((epochDay(b) - epochDay(a)) / AVG_DAYS_PER_MONTH));
+
+/**
+ * ЭТХ-ийн мөр бүрийн сарын эквивалент төлбөрийн оргил (₮, 2 орон). Мөрийн эквивалент =
+ * хүү ÷ (өмнөх төлбөрөөс хойших сар) + үндсэн ÷ (өмнөх үндсэн төлбөр эсвэл олголтоос хойших сар).
+ * Утга нь: тухайн төлбөрийг хийхийн тулд сар бүр гаргах мөнгө. annuity → тогтмол төлбөр; тэнцүү үндсэн → эхний мөр;
+ * bullet → сарын хүү + үндсэн ÷ хугацаа; хөнгөлөлттэй → хөнгөлөлтийн дараах бүтэн төлбөр; улирлын → нийт ÷ 3.
+ * `rows` = төлбөрийн мөрүүд (олголтын seq 0 мөр орохгүй). Мөргүй бол null.
+ */
+export function debtServicePayment(startDate: string, rows: readonly DebtServiceRow[]): number | null {
+  const start = parseYmd(startDate, 'startDate');
+  const parsed = rows.map((r, i) => {
+    if (![r.principal, r.interest].every((v) => Number.isFinite(v) && v >= 0)) throw new ScheduleError('INVALID_PRINCIPAL', `rows[${i}]: үндсэн/хүү сөрөг биш тоо байх ёстой`);
+    const due = parseYmd(r.dueDate, `rows[${i}].dueDate`);
+    if (epochDay(due) < epochDay(start)) throw new ScheduleError('FIRST_PAYMENT_BEFORE_START', `rows[${i}]: төлбөрийн огноо олголтоос өмнө байна`);
+    return { due, principal: new Decimal(r.principal), interest: new Decimal(r.interest) };
+  }).sort((a, b) => epochDay(a.due) - epochDay(b.due));
+  if (parsed.length === 0) return null;
+  let prevDue = start;
+  let prevPrincipal = start;
+  let peak = new Decimal(0);
+  for (const r of parsed) {
+    peak = Decimal.max(peak, r.interest.div(monthsBetween(prevDue, r.due)).plus(r.principal.div(monthsBetween(prevPrincipal, r.due))));
+    prevDue = r.due;
+    if (r.principal.gt(0)) prevPrincipal = r.due;
+  }
+  return money(peak).toNumber();
+}
+
+/** Параметрээс ЭТХ үүсгээд (`buildSchedule`) ӨОХ/ӨТЧХ-ийн төлбөрийг буцаана — slider preview-д. */
+export function scheduleDebtService(p: ScheduleParams): number | null {
+  return debtServicePayment(p.startDate, buildSchedule(p).slice(1));
+}

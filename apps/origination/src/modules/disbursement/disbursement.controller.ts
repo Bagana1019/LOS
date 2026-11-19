@@ -22,6 +22,10 @@ export class DisbursementController {
   @Permissions('disbursement:approve') @Post('approve') @HttpCode(200)
   approve(@Ctx() ctx: RequestContext, @Param('applicationId') id: string, @Body(new ZodValidationPipe(DecideDisbursementRequest)) body: DecideDisbursementRequest) { return this.disbursement.approve(ctx, id, body.comment); }
 
+  /** H1: Core-д илгээгдээд гацсан олголтыг лавлагаагаар шалгаж дуусгана (хэзээ ч шинээр нээхгүй). */
+  @Permissions('disbursement:approve') @Post('reconcile') @HttpCode(200)
+  reconcile(@Ctx() ctx: RequestContext, @Param('applicationId') id: string) { return this.disbursement.reconcile(ctx, id); }
+
   @Permissions('disbursement:approve') @Post('reject') @HttpCode(200)
   reject(@Ctx() ctx: RequestContext, @Param('applicationId') id: string, @Body(new ZodValidationPipe(DecideDisbursementRequest)) body: DecideDisbursementRequest) { return this.disbursement.reject(ctx, id, body.comment); }
 }

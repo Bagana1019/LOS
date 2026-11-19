@@ -4,8 +4,21 @@ import { ApplicationStatus, ApprovalDecision, StepKey } from '../enums';
 // ── Шийдвэр, батлах урсгал (Модуль 10 · FR-10, BR-7, BR-8, BR-13) ─────────────────────────────────────────────
 const text = (max: number) => z.string().trim().min(1).max(max);
 
-/** FR-10.3: батлагч зөвхөн Батлах / Буцаах. RETURN бол тайлбар заавал (docs/01 §4). */
-export const VoteRequest = z.object({ decision: z.enum(ApprovalDecision), comment: text(1000).optional() }).strict()
+/**
+ * FR-1.1: "Миний батлах" таб харагдах дүрүүд. origination `ApprovalController`-ийн `VOTERS` (`GET /approvals/mine`, `POST …/approval/vote`)-той
+ * ижил байх ёстой — түвшний гишүүнчлэлийг сервер шалгана, энэ нь зөвхөн табыг харуулах эсэхийг шийднэ.
+ */
+export const APPROVAL_VOTER_ROLES = ['BRANCH_MANAGER', 'APPROVER', 'ADMIN'] as const;
+
+/**
+ * FR-10.3: батлагч зөвхөн Батлах / Буцаах. RETURN бол тайлбар заавал (docs/01 §4).
+ * FR-1.5: `levelNo`, `version` — санал өгөгчийн ХАРСАН түвшин, хүсэлтийн хувилбар. Одоогийн төлөвтэй зөрвөл сервер 409 `VOTE_TARGET_CHANGED`
+ * (хоцрогдсон жагсаалтаас өөр шийдвэрт санал өгөхгүй). Заавал биш: өгөөгүй бол шалгахгүй (хуучин дуудлага).
+ */
+export const VoteRequest = z.object({
+  decision: z.enum(ApprovalDecision), comment: text(1000).optional(),
+  levelNo: z.number().int().positive().optional(), version: z.number().int().positive().optional(),
+}).strict()
   .refine((v) => v.decision !== 'RETURN' || !!v.comment, { message: 'Буцаахад тайлбар заавал', path: ['comment'] });
 export type VoteRequest = z.infer<typeof VoteRequest>;
 
@@ -51,6 +64,8 @@ export type DecisionView = z.infer<typeof DecisionView>;
 export const MyApprovalItem = z.object({
   applicationId: z.string(), appNo: z.string(), borrowerName: z.string().nullable(), amount: z.number().nullable(), currency: z.string(),
   levelNo: z.number().int(), levelName: z.string(), totalLevels: z.number().int(), startedAt: z.string(), dueAt: z.string().nullable(), overdue: z.boolean(),
+  /** Хүсэлтийн хувилбар — санал өгөхдөө `VoteRequest.version`-оор буцааж дамжуулна (FR-1.5). */
+  version: z.number().int(),
 });
 export type MyApprovalItem = z.infer<typeof MyApprovalItem>;
 export const MyApprovalListResponse = z.object({ items: z.array(MyApprovalItem), total: z.number().int() });

@@ -10,12 +10,15 @@ import type { Prisma } from '.prisma/client-origination';
 import { PrismaService, type Tx } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
 import { OrgSettings } from '../../shared/org-settings';
+import { OrgDirectoryService, directoryName } from '../../shared/org-directory';
 import { hasRole } from '../../shared/roles';
 import { customerDisplayName, customerRegisterNoMasked } from '../borrower/customer-directory';
 import { APPROVAL_FLOW, type ApprovalFlowPort } from './approval-flow.port';
 import { ApplicationStateMachine } from './application-state-machine';
+import { hashCreateRequest, keyReused } from './application.idempotency';
 import { canTransition, formatAppNo, initialStepStatus, isEditable, isHttpTransition, isUserTransition, missingRequiredSteps, stage1Progress, stageOf, STEP_ORDER } from './application.rules';
 import { resolveApplicationScope } from './application.scope';
+import { SubmitGateService } from './submit-gate.service';
 
 const TX_OPTIONS = { timeout: 15_000, maxWait: 10_000 };
 const EXPORT_LIMIT = 50_000;
@@ -30,6 +33,9 @@ type RowSource = Prisma.LoanApplicationGetPayload<{ include: typeof ROW_INCLUDE 
 
 const num = (d: Prisma.Decimal | null): number | null => (d == null ? null : Number(d));
 
+/** `replayed`: ижил Idempotency-Key-ээр анхны хүсэлтийг буцаасан (controller 200, шинээр үүсгэсэн бол 201). */
+export interface CreateApplicationResult { application: ApplicationDetail; replayed: boolean }
+
 @Injectable()
 export class ApplicationService {
   constructor(
@@ -37,18 +43,51 @@ export class ApplicationService {
     private readonly access: ApplicationAccessService,
     private readonly machine: ApplicationStateMachine,
     private readonly settings: OrgSettings,
+    private readonly submitGate: SubmitGateService,
+    private readonly directory: OrgDirectoryService,
     @Optional() @Inject(APPROVAL_FLOW) private readonly approval?: ApprovalFlowPort,
   ) {}
 
   // ── үүсгэх (FR-1; docs/01 §4 "Шинэ") ───────────────────────────────────────────────────
-  async create(ctx: RequestContext, input: CreateApplicationRequest): Promise<ApplicationDetail> {
+  /**
+   * `idempotencyKey` (FR-1, M1): ижил (байгууллага, үүсгэгч, түлхүүр) → шинэ хүсэлт үүсгэхгүй, ОРИГИНАЛЫГ буцаана (`replayed: true`).
+   * Үүсгэгч тус бүрийн хүрээ: бусдын түлхүүртэй давхцаж хүсэлт задрахгүй. Эрх, салбарын шалгалт replay-ээс ӨМНӨ — түлхүүр эрхийг тойруулахгүй.
+   */
+  async create(ctx: RequestContext, input: CreateApplicationRequest, idempotencyKey?: string): Promise<CreateApplicationResult> {
     if (!hasRole(ctx, 'OFFICER', 'ADMIN') || !ctx.userId) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Хүсэлт үүсгэх эрхгүй' });
     // BR-12: хүсэлт бүр салбар + ЗЭЗ-тэй. ЗЭЗ зөвхөн өөрийн салбарт; ADMIN өөр салбар заана.
     const branchId = hasRole(ctx, 'ADMIN') ? input.branchId ?? ctx.branchId : ctx.branchId;
     if (!branchId) throw new DomainError('BRANCH_REQUIRED', 'Салбар тодорхойгүй байна', 422);
     if (input.branchId && input.branchId !== branchId) throw new ForbiddenException({ code: 'FORBIDDEN', message: 'Зөвхөн өөрийн салбарт хүсэлт үүсгэнэ' });
+    if (!idempotencyKey) return { application: await this.detail(ctx, await this.insertApplication(ctx, input, branchId)), replayed: false };
 
-    const id = await this.prisma.$transaction(async (tx) => {
+    const requestHash = hashCreateRequest({ productId: input.productId, purpose: input.purpose, branchId });
+    const existing = await this.findByIdempotencyKey(ctx, idempotencyKey);
+    if (existing) return this.replay(ctx, existing, requestHash);
+    try {
+      const id = await this.insertApplication(ctx, input, branchId, { key: idempotencyKey, requestHash });
+      return { application: await this.detail(ctx, id), replayed: false };
+    } catch (e) {
+      // Зэрэгцээ ижил түлхүүр: unique индекс ялагчийг шийднэ. Ялагдсан tx бүхлээрээ буцсан (дугаар зарцуулагдаагүй) → ялагчийг дахин уншина.
+      if ((e as { code?: string } | null)?.code !== 'P2002') throw e;
+      const winner = await this.findByIdempotencyKey(ctx, idempotencyKey);
+      if (!winner) throw e; // өөр unique (жишээ нь appNo) зөрчигдсөн — түлхүүртэй хамааралгүй
+      return this.replay(ctx, winner, requestHash);
+    }
+  }
+
+  private findByIdempotencyKey(ctx: RequestContext, key: string): Promise<{ id: string; idempotencyRequestHash: string | null } | null> {
+    return this.prisma.loanApplication.findFirst({ where: { orgId: ctx.orgId, createdBy: ctx.userId, idempotencyKey: key }, select: { id: true, idempotencyRequestHash: true } });
+  }
+
+  /** Ижил биетэй бол анхны хүсэлтийн одоогийн төлөв; өөр биетэй бол 422. Шинэ мөр, audit, дугаар үүсгэхгүй. */
+  private async replay(ctx: RequestContext, existing: { id: string; idempotencyRequestHash: string | null }, requestHash: string): Promise<CreateApplicationResult> {
+    if (existing.idempotencyRequestHash !== requestHash) throw keyReused();
+    return { application: await this.detail(ctx, existing.id), replayed: true };
+  }
+
+  private async insertApplication(ctx: RequestContext, input: CreateApplicationRequest, branchId: string, idem?: { key: string; requestHash: string }): Promise<string> {
+    return this.prisma.$transaction(async (tx) => {
       let currency: string | undefined;
       if (input.productId) {
         const product = await tx.product.findFirst({ where: { id: input.productId, orgId: ctx.orgId, isActive: true } });
@@ -61,6 +100,7 @@ export class ApplicationService {
         data: {
           appNo, orgId: ctx.orgId, branchId, officerId: ctx.userId, status: 'DRAFT', productId: input.productId ?? null, purpose: input.purpose ?? null,
           ...(currency ? { currency } : {}), source: 'WEB', createdBy: ctx.userId, updatedBy: ctx.userId,
+          ...(idem ? { idempotencyKey: idem.key, idempotencyRequestHash: idem.requestHash } : {}),
         },
       });
       await tx.loanApplicationStep.createMany({
@@ -69,7 +109,6 @@ export class ApplicationService {
       await recordAudit(tx, { orgId: ctx.orgId, entity: 'LOAN_APPLICATION', entityId: app.id, action: 'APPLICATION_CREATED', actorId: ctx.userId, afterJson: { appNo, branchId, productId: input.productId ?? null, status: 'DRAFT' }, applicationId: app.id, correlationId: ctx.correlationId });
       return app.id;
     }, TX_OPTIONS);
-    return this.detail(ctx, id);
   }
 
   /** Атомик тоолуур: давхцал, амжилтгүй tx-ийн дараа ч ижил дугаар гарахгүй. */
@@ -136,16 +175,18 @@ export class ApplicationService {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Хүсэлт');
     ws.columns = [
-      { header: '№', key: 'appNo', width: 18 }, { header: 'Салбар', key: 'branchId', width: 14 }, { header: 'Хариуцсан ЗЭЗ', key: 'officerId', width: 16 }, { header: 'Гэрээний дугаар', key: 'contractNo', width: 18 },
+      { header: '№', key: 'appNo', width: 18 }, { header: 'Салбар', key: 'branch', width: 20 }, { header: 'Хариуцсан ЗЭЗ', key: 'officer', width: 22 }, { header: 'Гэрээний дугаар', key: 'contractNo', width: 18 },
       { header: 'Харилцагч', key: 'customer', width: 26 }, { header: 'Регистр', key: 'register', width: 14 }, { header: 'Бүтээгдэхүүн', key: 'product', width: 24 }, { header: 'Валют', key: 'currency', width: 8 },
       { header: 'Хэмжээ', key: 'amount', width: 16, style: { numFmt: '#,##0.00' } }, { header: 'Хүү', key: 'rate', width: 8 }, { header: 'Хугацаа', key: 'term', width: 9 },
       { header: 'Шийдвэрлэгдсэн огноо', key: 'decidedAt', width: 20 }, { header: 'Төлөв', key: 'status', width: 14 },
     ];
     ws.getRow(1).font = { bold: true };
     ws.views = [{ state: 'frozen', ySplit: 1 }];
+    // Салбар/ЗЭЗ-ийн UUID → нэр: лавлахыг экспорт бүрт НЭГ удаа авна (мөр тутамд биш); унавал id хэвээр
+    const names = rows.length ? await this.directory.load(ctx) : { branches: {}, users: {} };
     for (const r of rows.map((x) => this.toRow(x, required))) {
       ws.addRow({
-        appNo: r.appNo, branchId: r.branchId, officerId: r.officerId ?? 'Систем', contractNo: r.contractNo, customer: r.primaryBorrower?.displayName, register: r.primaryBorrower?.registerNoMasked,
+        appNo: r.appNo, branch: directoryName(names.branches, r.branchId), officer: r.officerId ? directoryName(names.users, r.officerId) : 'Систем', contractNo: r.contractNo, customer: r.primaryBorrower?.displayName, register: r.primaryBorrower?.registerNoMasked,
         product: r.productName, currency: r.currency, amount: r.amount, rate: r.interestRate, term: r.termMonths, decidedAt: r.decidedAt?.slice(0, 10), status: r.status,
       });
     }
@@ -181,7 +222,8 @@ export class ApplicationService {
     const app = await this.access.load(ctx, applicationId, 'read');
     if (!canTransition(app.status as ApplicationStatus, input.to)) throw new DomainError('INVALID_TRANSITION', `"${app.status}" төлвөөс "${input.to}" төлөвт шилжих боломжгүй`, 400, { from: app.status, to: input.to });
     if (!isHttpTransition(app.status as ApplicationStatus, input.to)) throw new ForbiddenException({ code: 'TRANSITION_NOT_ALLOWED', message: `"${input.to}" төлөвт шилжилт нь системийн (батлах урсгал, олголт) үйлдэл`, details: { from: app.status, to: input.to } });
-    await this.access.load(ctx, applicationId, 'write');
+    const writable = await this.access.load(ctx, applicationId, 'write');
+    if (input.to === 'SUBMITTED') await this.submitGate.prepare(ctx, writable); // G1: FR-9.2 баримт + FR-3.4 AML (HTTP — түгжээний гадна)
     await this.prisma.$transaction(async (tx) => {
       await this.machine.apply(tx, ctx, applicationId, input.to, { via: 'USER', reason: input.reason });
       if (input.to === 'SUBMITTED') await this.approval?.start(tx, ctx, applicationId); // FR-10: илгээмэгц эхний түвшин нээгдэнэ (IN_APPROVAL)

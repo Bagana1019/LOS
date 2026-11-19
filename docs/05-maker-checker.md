@@ -142,6 +142,7 @@ export class BlacklistUpdateHandler implements ChangeHandler<BlacklistUpdate> {
 ## 9. Хязгаарлалт, дараагийн алхам
 
 - **PII ил текстээр хадгалагдана** (§8): `target_id`, `payload`, `before`, `reason`, түүхийн `comment/data` болон outbox event-д. Хүсэлт өөрчлөгдөхгүй тул дараа нь далдлах боломжгүй — энэ hook нэмэгдтэл handler PII-г ил ID-аар солих ёстой.
+- **2026-11-18:** handler нь `codec` hook-оор `payload`/`before`-ийг шифрлэж хадгалж болдог болсон (`maker-checker/pii-codec.ts`, AES-GCM, байгууллага + target-тай холбогдсон), мөн хүсэлтийн салбарыг (scope branch) өөрөө зааж болно. Үүнийг одоогоор зөвхөн CUSTOMER/UPDATE ашиглана (`customer/customer-update.handler.ts`; checker = эзэмшигч салбарын BRANCH_MANAGER). Бусад handler өмнөх шигээ ил текст хадгална; maker-ийн чөлөөт `reason` текст бүх handler-т ил хэвээр — PII бичихгүй байхыг UI-д сануулах шаардлагатай.
 - Байгууллагад зөвхөн нэг ADMIN байвал policy өөрчлөх хүсэлтийг APPROVER л батлана (анхдагч `checkerRoles`).
 - Сервис нь gateway-ийн толгойд (`X-User-Id`, `X-Roles`, `X-Branch-Id`, `X-Org-Id`) шууд итгэдэг (CLAUDE.md §3.2.9) — origination-ы порт интернэтэд нээлттэй байж болохгүй; gateway толгойг өөрөө тавьж, клиентийнхийг дарж бичих ёстой.
 - Хэрэглэгчийн лавлах (IAM) gateway-д тул "батлах боломжтой өөр хүн байгаа эсэх"-ийг шалгахгүй; хүсэлт хугацаа дуусаж EXPIRED болно.

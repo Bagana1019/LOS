@@ -136,8 +136,14 @@ describe('loadErpSyncConfig INTEGRATION_MODE', () => {
     expect(load({ INTEGRATION_MODE: 'real', ERP_RELAY_ENABLED: 'false', ERP_BATCH_SIZE: '1', ERP_LEASE_MS: '60000' }).mode).toBe('real');
   });
 
-  it.each(['MOCK', 'Real', 'sandbox', 'prod', ' mock', 'mock ', '', 'true', '1'])('rejects the unsupported INTEGRATION_MODE %j', (mode) => {
+  it.each(['MOCK', 'Real', 'sandbox', 'prod', ' mock', 'mock ', 'true', '1'])('rejects the unsupported INTEGRATION_MODE %j', (mode) => {
     expect(() => load({ INTEGRATION_MODE: mode })).toThrow(/invalid ERP sync config: INTEGRATION_MODE/);
+  });
+
+  // H6 (2026-11-18): a blank value means "not configured" — the default outside production, an explicit choice required in production
+  it.each(['', '   '])('treats a blank INTEGRATION_MODE %j as unset', (mode) => {
+    expect(load({ INTEGRATION_MODE: mode }).mode).toBe('mock');
+    expect(() => load({ NODE_ENV: 'production', INTEGRATION_MODE: mode })).toThrow(/INTEGRATION_MODE must be set explicitly/);
   });
 });
 

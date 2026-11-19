@@ -1,5 +1,10 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { runExclusive } from '@los/database';
+import { PrismaService } from '../../prisma.service';
 import { MakerCheckerService } from './maker-checker.service';
+
+/** M9: cross-pod advisory lock key (rows are SKIP LOCKED anyway; the lock stops duplicate sweeps doing wasted work). */
+export const MAKER_CHECKER_EXPIRY_LOCK = 'origination:maker-checker-expiry-sweeper';
 
 const BATCH = 100;
 const DEFAULT_SECONDS = 60;
@@ -25,7 +30,7 @@ export class ExpirySweeper implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private running = false;
 
-  constructor(@Inject(MakerCheckerService) private readonly svc: MakerCheckerService) {}
+  constructor(@Inject(MakerCheckerService) private readonly svc: MakerCheckerService, @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService) {}
 
   onModuleInit() {
     const { seconds, warning } = parseSweepSeconds(process.env.MAKER_CHECKER_SWEEP_SECONDS);
@@ -46,7 +51,10 @@ export class ExpirySweeper implements OnModuleInit, OnModuleDestroy {
     this.running = true;
     let total = 0;
     try {
-      for (let n = BATCH; n === BATCH;) { n = await this.svc.expireOverdue(BATCH); total += n; }
+      const sweep = async () => { for (let n = BATCH; n === BATCH;) { n = await this.svc.expireOverdue(BATCH); total += n; } };
+      // DB-гүй (санах ойн store, нэг процесс) горимд pod хоорондын lock шаардлагагүй (M9)
+      if (this.prisma) await runExclusive(this.prisma, MAKER_CHECKER_EXPIRY_LOCK, sweep);
+      else await sweep();
     } catch (e) {
       this.log.error(`sweep failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {

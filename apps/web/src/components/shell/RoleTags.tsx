@@ -1,11 +1,11 @@
 'use client';
 
 import { Tag, theme } from 'antd';
-import type { UserRole } from '@los/contracts';
+import type { AccountRole } from '@los/contracts';
 import { t } from '@los/ui';
 
 /** Дүрийн шошго — өнгийг брэнд (antd theme token)-оос авна, шууд өнгө бичихгүй. */
-export function RoleTags({ roles }: { roles: readonly UserRole[] }) {
+export function RoleTags({ roles }: { roles: readonly AccountRole[] }) {
   const { token } = theme.useToken();
   return (
     <>

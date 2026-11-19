@@ -53,4 +53,11 @@ describe('RBAC (docs/01 §3)', () => {
   it('only ADMIN may manage the ERP sync', () => {
     for (const r of UserRole) expect(ROLE_PERMISSIONS[r].includes('erp-sync:manage'), r).toBe(r === 'ADMIN');
   });
+  // docs/05-compliance-aml.md §5, §7: AML hit-ийг шийдвэрлэх дараалал — цэс ба gateway-н эрх зөвхөн COMPLIANCE-д (DECISIONS P4C-1).
+  it('aml:review is held only by COMPLIANCE, and only COMPLIANCE sees the AML review menu item', () => {
+    for (const r of UserRole) expect(ROLE_PERMISSIONS[r].includes('aml:review'), r).toBe(r === 'COMPLIANCE');
+    const item = MENU.find((m) => m.id === 'aml-review');
+    expect(item).toMatchObject({ href: '/los/compliance/aml', permission: 'aml:review', labelKey: 'nav.aml_review' });
+    for (const r of UserRole) expect(menuFor([r]).map((m) => m.id).includes('aml-review'), r).toBe(r === 'COMPLIANCE');
+  });
 });

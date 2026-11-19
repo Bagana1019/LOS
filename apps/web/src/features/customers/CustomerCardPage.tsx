@@ -5,7 +5,9 @@ import type { ColumnsType } from 'antd/es/table';
 import type { BlacklistWarning, CustomerAddress, CustomerApplicationRef } from '@los/contracts';
 import { formatMoney, t } from '../../lib/i18n';
 import { roleKey } from '../borrowers/borrowers.utils';
+import { useAuth } from '../../lib/auth/auth-context';
 import { describeCustomerError } from './customer-error';
+import { canEditCustomer } from './customers.utils';
 import { useCustomerCard } from './useCustomers';
 
 const { Title, Text } = Typography;
@@ -17,6 +19,7 @@ export function CustomerCardPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const card = useCustomerCard(id);
+  const { me } = useAuth();
   const c = card.data;
 
   if (card.isPending) return <Skeleton active paragraph={{ rows: 8 }} />;
@@ -50,6 +53,11 @@ export function CustomerCardPage() {
         </div>
         <Button onClick={() => router.push('/customer')}>{t('customer.card.back')}</Button>
       </Flex>
+
+      {/* NFR-3: өөр салбарын харилцагч — харж, хүсэлтэд холбож болно, засахгүй (сервер 403 CUSTOMER_BRANCH_FORBIDDEN) */}
+      {canEditCustomer(me, c).reason === 'OTHER_BRANCH' ? (
+        <Alert style={{ marginTop: 12 }} type="info" showIcon data-testid="customer-other-branch" message={t('customer.card.otherBranch')} description={t('customer.card.otherBranchHint')} />
+      ) : null}
 
       {c.warnings.map((w: BlacklistWarning) => (
         <Alert key={w.reasonCode + w.registeredAt} style={{ marginTop: 12 }} type="warning" showIcon message={t('blacklist.warning.title')} description={`${w.reasonText ?? w.reasonCode} — ${t('blacklist.warning.note')}`} />

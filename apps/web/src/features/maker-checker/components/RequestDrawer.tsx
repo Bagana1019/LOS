@@ -5,6 +5,8 @@ import type { ChangeRequestDto } from '@los/contracts';
 import { useNow, useRequest } from '../hooks';
 import { errorText, isApiError } from '../errors';
 import { DiffTable } from './DiffTable';
+import { diffSides, fieldLabelFor } from '../customer-change';
+import { fmt } from '../labels';
 import { RequestActions } from './RequestActions';
 import { RequestSummary } from './RequestSummary';
 import { RequestTimeline } from './RequestTimeline';
@@ -55,6 +57,8 @@ function StatusNotes({ dto }: { dto: ChangeRequestDto }) {
 
 function DrawerBody({ dto }: { dto: ChangeRequestDto }) {
   const now = useNow();
+  const sides = diffSides(dto);
+  const labelOf = fieldLabelFor(dto.targetType);
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <StatusNotes dto={dto} />
@@ -65,8 +69,14 @@ function DrawerBody({ dto }: { dto: ChangeRequestDto }) {
       </section>
       <section>
         <Title level={5}>{mn['maker_checker.drawer.diff']}</Title>
-        {dto.before == null && <Paragraph type="secondary">{mn['maker_checker.diff.no_before']}</Paragraph>}
-        <DiffTable before={dto.before} payload={dto.payload} />
+        {sides.sealedFields ? (
+          <Paragraph type="secondary">{fmt(mn['maker_checker.customer.sealed_fields'], { fields: sides.sealedFields.map(labelOf).join(', ') })}</Paragraph>
+        ) : (
+          <>
+            {sides.before == null && <Paragraph type="secondary">{mn['maker_checker.diff.no_before']}</Paragraph>}
+            <DiffTable before={sides.before} payload={sides.after} labelOf={labelOf} />
+          </>
+        )}
         <Collapse
           ghost
           style={{ marginTop: 8 }}

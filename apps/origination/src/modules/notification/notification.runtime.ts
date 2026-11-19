@@ -1,7 +1,12 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
+import { runExclusive } from '@los/database';
+import { PrismaService } from '../../prisma.service';
 import { DeliveryProcessor } from './delivery.processor';
 import { NOTIFICATION_QUEUE, type NotificationQueue } from './notification.queue';
 import { ReminderService } from './reminder.service';
+
+/** M9: the sweep re-enqueues stuck QUEUED rows; one pod at a time so N pods do not enqueue (and send SMS for) the same row N times. */
+export const NOTIFICATION_SWEEP_LOCK = 'origination:notification-sweep';
 
 /**
  * Queue-ийн worker + cron-ыг асаана, QUEUED мөрүүдийг сугалах `sweep()` timer-ийг ажиллуулна, унтрахад бүгдийг хаана.
@@ -17,6 +22,7 @@ export class NotificationRuntime implements OnModuleInit, OnModuleDestroy {
     @Inject(NOTIFICATION_QUEUE) private readonly queue: NotificationQueue,
     private readonly processor: DeliveryProcessor,
     private readonly reminders: ReminderService,
+    @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -30,7 +36,11 @@ export class NotificationRuntime implements OnModuleInit, OnModuleDestroy {
   async sweepOnce(): Promise<number> {
     if (this.sweeping) return 0;
     this.sweeping = true;
-    try { return await this.processor.sweep(); }
+    try {
+      if (!this.prisma) return await this.processor.sweep();
+      const r = await runExclusive(this.prisma, NOTIFICATION_SWEEP_LOCK, () => this.processor.sweep());
+      return r.ran ? r.value : 0;
+    }
     catch (e) { this.logger.error(`Sweep алдаа: ${e instanceof Error ? e.message : 'үл мэдэгдэх'}`); return 0; }
     finally { this.sweeping = false; }
   }

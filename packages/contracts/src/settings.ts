@@ -13,12 +13,14 @@ export const SETTING_REGISTRY = {
   'br2.dscr_min': def(z.number().positive(), 1.25, 'BR-2 · ӨТЧХ доод (B, C арга)'),
   'br3.ltv_max': def(z.number().min(0).max(1), 0.7, 'BR-3 · LTV дээд'),
   'br4.method_weight_threshold': def(z.number().min(0).max(1), 0.7, 'BR-4 · автомат аргын сонголтын жингийн босго'),
-  'br7.required_steps': def(z.array(z.string()), ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score'], 'BR-7 · илгээхэд заавал бүрдэх алхмууд'),
+  // FR-9.2: `document` (8-р алхам, бүтээгдэхүүний заавал баримтын checklist) заавал — migration 20261118020000 хуучин default мөрийг шинэчилнэ.
+  'br7.required_steps': def(z.array(z.string()), ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score', 'document'], 'BR-7 · илгээхэд заавал бүрдэх алхмууд'),
   'br9.blacklist_mode': def(z.enum(['WARN_ONLY']), 'WARN_ONLY', 'BR-9 · хар жагсаалт — зөвхөн анхааруулга'),
   'br10.disburse_not_exceed_approved': def(z.boolean(), true, 'BR-10 · олгох дүн ≤ батлагдсан дүн'),
   'br12.system_officer_label': def(z.string(), 'Систем', 'BR-12 · системээс үүссэн хүсэлтийн ЗЭЗ-ийн нэр'),
   // ── Ерөнхий ──
   'blacklist.grey_valid_months': def(z.number().int().min(1).max(120), 12, 'Q-131 · Саарал бүртгэл хэдэн сарын дараа автоматаар идэвхгүй болох'),
+  'aml.screening_reuse_hours': def(z.number().int().min(0).max(720), 24, 'G1 · AML: илгээхэд сүүлийн цэвэр шалгалтыг дахин ашиглах хугацаа (цаг; 0 = үргэлж шинээр шалгана; блоклосон шалгалтыг үргэлж хүндэтгэнэ)'),
   'inquiry.stale_days': def(z.number().int().positive(), 30, 'FR-3.5 · лавлагаа хуучрах хоног'),
   'draft.auto_archive_days': def(z.number().int().positive(), 30, 'FR-1.6 · ноорог автоматаар архивлах хоног'),
   'stress.rate_delta': def(z.number(), 0.05, 'FR-8.5 · stress test — хүү өсөх (+5 п.п.)'),
@@ -49,6 +51,10 @@ export const SETTING_REGISTRY = {
   'borrower.max_guarantors': def(z.number().int().min(0), 3, 'Хүсэлтэд оруулах батлан даагчийн дээд тоо'),
   'payment.invoice_ttl_minutes': def(z.number().int().positive(), 60, 'Төлбөрийн invoice хүчинтэй байх хугацаа (минут)'),
   'payment.min_amount': def(z.number().positive(), 1000, 'Нэг удаагийн төлбөрийн доод дүн (₮)'),
+  // PRT-FR-5.1/5.2 (H8): харилцагчийн портал (portal-bff) нэг төлбөрийн дээд дүн — бүх хэрэгсэлд; доод нь payment.min_amount (DEMO таамаг — docs/DECISIONS.md)
+  'portal.payment_max_amount': def(z.number().positive(), 100_000_000, 'Харилцагчийн порталаар нэг удаа төлөх дээд дүн (₮)'),
+  // Портал USD зээлд (зөвхөн BANK_ACCOUNT) — portal.payment_max_amount нь зөвхөн MNT (DEMO таамаг ≈100 сая ₮ — docs/DECISIONS.md)
+  'portal.payment_max_amount_usd': def(z.number().positive(), 30_000, 'Харилцагчийн порталаар нэг удаа төлөх дээд дүн (USD зээл, $)'),
   'payment.collection_account': def(z.object({ bankCode: z.string(), accountNo: z.string(), accountName: z.string() }), { bankCode: '', accountNo: '', accountName: '' }, 'Банкны шилжүүлгээр хүлээн авах данс'),
   'notification.reminder_before_due_days': def(z.array(z.number().int().min(0)), [3, 1, 0], 'Төлбөрийн сануулга — хугацаанаас өмнөх хоногууд'),
   'notification.reminder_overdue_days': def(z.array(z.number().int().positive()), [1, 3, 7], 'Төлбөрийн сануулга — хугацаа хэтэрсний дараах хоногууд'),

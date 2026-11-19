@@ -3,7 +3,7 @@ import type { DomainEvent } from '@los/contracts';
 import type { EventBus } from '@los/database';
 import { getRequestContext } from '@los/nest-common';
 import type { PrismaService } from '../../prisma.service';
-import { ContractEventsSubscriber, EVENT_GROUP } from './contract-events.subscriber';
+import { ContractEventsSubscriber, EVENT_GROUP, PROCESSED_CONSUMER } from './contract-events.subscriber';
 import { ContractSigningEventHandler } from './contract-signing.event-handler';
 import { createHarness, signedEvent, silenceLogs } from './contract-signing.fixtures';
 
@@ -43,7 +43,7 @@ function fakeDb() {
 }
 
 describe('ContractEventsSubscriber', () => {
-  it("bus байвал 'origination' group-д ContractSigned, ContractSigningFailed-д бүртгүүлж, handler рүү (системийн контекстоор) дамжуулна", async () => {
+  it("bus байвал өөрийн 'origination-contract' group-д ContractSigned, ContractSigningFailed-д бүртгүүлж, handler рүү (системийн контекстоор) дамжуулна", async () => {
     const { bus, subscribe } = fakeBus();
     const handler = new ContractSigningEventHandler(createHarness().contracts);
     let seenCtx: ReturnType<typeof getRequestContext> = null;
@@ -51,11 +51,14 @@ describe('ContractEventsSubscriber', () => {
 
     await new ContractEventsSubscriber(bus, fakeDb().db, handler).onApplicationBootstrap();
 
-    expect(EVENT_GROUP).toBe('origination');
+    // C1: 'origination' group-ийг notification consumer-тэй хуваалцвал бие биенийхээ event-ийг XACK-аар хаядаг
+    expect(EVENT_GROUP).toBe('origination-contract');
     expect(subscribe).toHaveBeenCalledTimes(1);
-    const [group, types, callback] = subscribe.mock.calls[0]!;
-    expect(group).toBe('origination');
+    const [group, types, callback, opts] = subscribe.mock.calls[0]!;
+    expect(group).toBe('origination-contract');
     expect(types).toEqual(['ContractSigned', 'ContractSigningFailed']);
+    // шинэ group бүх түүхийг replay хийнэ (startId өгөхгүй): алдагдсан ContractSigned гэрээг олголтод нээнэ, handler нь replay-д аюулгүй
+    expect(opts?.startId).toBeUndefined();
 
     const event = signedEvent('contract-1');
     await callback(event);
@@ -75,6 +78,18 @@ describe('ContractEventsSubscriber', () => {
     await callback(event);
     await callback(event);
     expect(handle).toHaveBeenCalledTimes(1);
+  });
+
+  it("processed_events consumer нь group солигдсон ч 'origination' хэвээр (өмнө боловсруулсан event replay-д давтагдахгүй)", async () => {
+    const { bus, subscribe } = fakeBus();
+    const { db, processed } = fakeDb();
+    const handler = new ContractSigningEventHandler(createHarness().contracts);
+    vi.spyOn(handler, 'handle').mockResolvedValue(undefined);
+    await new ContractEventsSubscriber(bus, db, handler).onApplicationBootstrap();
+    const event = signedEvent('c');
+    await subscribe.mock.calls[0]![2](event);
+    expect(PROCESSED_CONSUMER).toBe('origination');
+    expect([...processed]).toEqual([`origination:${event.eventId}`]);
   });
 
   it('handler-ийн алдааг bus-д дамжуулж, marker-ийг буцаана (at-least-once дахин хүргэнэ)', async () => {

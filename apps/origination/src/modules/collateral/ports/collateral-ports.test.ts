@@ -161,9 +161,14 @@ describe('HttpFilePort', () => {
   it('getMeta: GET /api/files/:id, 3с timeout; мета-г буцаана', async () => {
     const timeout = vi.spyOn(AbortSignal, 'timeout');
     const { calls, http } = harness(() => ok({ id: 'f1', name: 'a.pdf', mime: 'application/pdf', size: 10, extra: 'ignored' }));
-    expect(await new HttpFilePort(http).getMeta(ctx, 'f1')).toEqual({ id: 'f1', name: 'a.pdf', mime: 'application/pdf', size: 10 });
+    expect(await new HttpFilePort(http).getMeta(ctx, 'f1')).toEqual({ id: 'f1', name: 'a.pdf', mime: 'application/pdf', size: 10, uploadedBy: null });
     expect(calls[0]!.url.href).toBe('http://dms.test/api/files/f1');
     expect(timeout).toHaveBeenCalledWith(3_000);
+  });
+
+  it('getMeta: dms-ийн uploadedBy-г дамжуулна (NFR-3 эзэмшил)', async () => {
+    const { http } = harness(() => ok({ id: 'f1', name: 'a.pdf', mime: 'application/pdf', size: 10, uploadedBy: 'officer-1' }));
+    expect(await new HttpFilePort(http).getMeta(ctx, 'f1')).toMatchObject({ id: 'f1', uploadedBy: 'officer-1' });
   });
 
   it('404 -> null; өөр алдаа дамжина', async () => {

@@ -1,13 +1,15 @@
 import 'reflect-metadata';
 import { type INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { hasTestDatabase } from '@los/config/vitest/test-db.mjs';
 import { CTX_HEADERS } from '@los/contracts';
 import { SEED } from '@los/database';
 import { Clock, FixedClock, JsonLogger } from '@los/nest-common';
 import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/configure-app';
 
-export const HAS_DB = !!process.env.TEST_DATABASE_URL;
+/** Throws (before any connection) if TEST_DATABASE_URL / DATABASE_URL is not a database whose name ends with "test" (H7). */
+export const HAS_DB = hasTestDatabase();
 export const ORG = SEED.org.id;
 
 /** 2026-10-29 11:00 in Ulaanbaatar (UTC+8). The DEMO seed prices are valid from 2026-01-01, so they are current at this instant. */

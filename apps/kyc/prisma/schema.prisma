@@ -35,6 +35,27 @@ model ProcessedEvent {
   @@schema("kyc")
 }
 
+/// NFR-4: AML hit шийдвэр (хэн, хэзээ, өмнөх/шинэ төлөв). @los/database recordAudit-аар шийдвэртэй нэг транзакцид бичнэ. Тайлбар, регистр орохгүй.
+model AuditLog {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  entity        String
+  entityId      String   @map("entity_id")
+  action        String
+  actorId       String?  @map("actor_id")
+  at            DateTime @default(now())
+  beforeJson    Json?    @map("before_json")
+  afterJson     Json?    @map("after_json")
+  applicationId String?  @map("application_id")
+  correlationId String?  @map("correlation_id")
+
+  @@index([orgId, entity, entityId])
+  @@index([applicationId])
+  @@index([actorId, at])
+  @@map("audit_log")
+  @@schema("kyc")
+}
+
 /// FR-3: ЗМС, FICO, ХУР гэх мэт лавлагаа. fetched_at/expires_at → хуучралтын анхааруулга (setting inquiry.stale_days).
 /// raw_json нь гадаад системийн хариуг хэвээр агуулдаг (хувийн мэдээлэлтэй) — M3-д шифрлэх эсэхийг шийднэ (DECISIONS.md).
 model Inquiry {

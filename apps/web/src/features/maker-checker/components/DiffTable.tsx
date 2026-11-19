@@ -15,10 +15,12 @@ function Value({ present, value }: { present: boolean; value: unknown }) {
 interface Props {
   before: unknown;
   payload: unknown;
+  /** Талбарын замын хүнд ойлгомжтой нэр (жишээ нь харилцагчийн маягтын нэр); өгөхгүй бол түүхий зам */
+  labelOf?: (path: string) => string;
 }
 
 /** "Өмнө → Дараа": one row per changed leaf field of the proposed payload. */
-export function DiffTable({ before, payload }: Props) {
+export function DiffTable({ before, payload, labelOf }: Props) {
   const { token } = theme.useToken();
   const rows = useMemo(() => diffObjects(before, payload), [before, payload]);
 
@@ -29,6 +31,7 @@ export function DiffTable({ before, payload }: Props) {
       width: '30%',
       render: (path: string, r) => (
         <div>
+          {labelOf && path && labelOf(path) !== path && <div>{labelOf(path)}</div>}
           <div style={{ ...MONO, wordBreak: 'break-all' }}>{path || mn['maker_checker.diff.root']}</div>
           <Tag color={KIND_COLOR[r.kind]} style={{ marginTop: 4 }}>
             {mn[`maker_checker.diff.kind.${r.kind}`]}

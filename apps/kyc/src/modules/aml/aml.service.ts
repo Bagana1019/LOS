@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, HttpExcepti
 import { amlRisk, type AmlRiskInput } from '@los/calc';
 import {
   ScreeningList, type AmlHit, type AmlHitReviewRequest, type AmlListStatus, type AmlPolicy, type AmlScreenRequest,
-  type AmlScreeningResult, type AmlSubject, type DomainEvent, type HitStatus,
+  type AmlScreeningDetail, type AmlScreeningResult, type AmlScreeningSubjectView, type AmlSubject, type DomainEvent, type HitStatus,
 } from '@los/contracts';
 import { hashRegisterNo, maskRegisterNoStrict, normalizeRegisterNo, registerNoHashVariants } from '@los/database';
 import type { RequestContext } from './aml.context';
@@ -47,6 +47,15 @@ export function toResult(s: StoredScreening): AmlScreeningResult {
     status: s.status, blocking: s.blocking, riskScore: s.riskScore, riskLevel: s.riskLevel, riskFactors: s.riskFactors,
     subjectName: s.subjectName, registerNoMasked: s.registerNoMasked, hits: s.hits, listVersions: s.listVersions,
     screenedAt: s.screenedAt.toISOString(), screenedBy: s.screenedBy,
+  };
+}
+
+/** Review дэлгэцийн субъект: регистргүй, төрсөн огноог зөвхөн оноор (PII-г шаардлагатай хэмжээнд). */
+export function subjectViewOf(subject: StoredScreening['subject']): AmlScreeningSubjectView {
+  const year = subject.birthDate ? Number(subject.birthDate.slice(0, 4)) : NaN;
+  return {
+    subjectType: subject.subjectType, lastName: subject.lastName ?? null, firstName: subject.firstName, aliases: [...(subject.aliases ?? [])],
+    birthYear: Number.isInteger(year) ? year : null, countries: [...(subject.countries ?? [])], isPep: Boolean(subject.isPep), isRelatedParty: Boolean(subject.isRelatedParty),
   };
 }
 
@@ -157,10 +166,10 @@ export class AmlService {
     return { fresh, listVersions };
   }
 
-  async getScreening(orgId: string, id: string): Promise<AmlScreeningResult> {
+  async getScreening(orgId: string, id: string): Promise<AmlScreeningDetail> {
     const s = await this.repo.findScreening(orgId, id);
     if (!s) throw new NotFoundException('Screening not found');
-    return toResult(s);
+    return { ...toResult(s), subject: subjectViewOf(s.subject) };
   }
 
   /** Харилцагчийн хамгийн сүүлийн шалгалт (wizard-ийн "Лавлагаа" алхамд). */
@@ -211,6 +220,17 @@ export class AmlService {
             ...this.baseEvent(ctx), type: 'AmlHitReviewed', screeningId: screening.id, hitId, customerId: screening.customerId,
             applicationId: screening.applicationId, list: hit.list, decision: body.decision, screeningStatus: status,
             blocking, riskScore: risk.score, riskLevel: risk.level,
+          },
+          // NFR-4: тайлбарын текст (чөлөөт, PII агуулж болно) аудитад орохгүй — hit-ийн мөрд хадгалагдсан.
+          audit: {
+            orgId: ctx.orgId, entity: 'aml_hit', entityId: hitId, action: 'AML_HIT_REVIEWED', actorId: ctx.userId,
+            applicationId: screening.applicationId, correlationId: ctx.correlationId,
+            // Өмнөх төлөв: түгжээн доорх hit-үүдээс (энэ hit OPEN байхад) — түгжээний өмнөх snapshot биш
+            beforeJson: (() => {
+              const before = deriveScreeningStatus(hits.map((h) => (h.id === hitId ? { ...h, status: 'OPEN' as const } : h)));
+              return { status: 'OPEN', screeningStatus: before, blocking: isBlocking(before) };
+            })(),
+            afterJson: { status: body.decision, screeningId: screening.id, list: hit.list, screeningStatus: status, blocking },
           },
         };
       },

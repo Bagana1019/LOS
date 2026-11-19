@@ -1,7 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { DecisionView, MyApprovalListResponse } from '@los/contracts';
-import { actors, createApplication, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
+import { actors, createApplication, createBorrower, createCustomer, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
+import { KYC_AML_PORT } from '../aml/ports/kyc-aml.port';
+import { FakeKycAml } from '../aml/testing/fake-kyc-aml.port';
+import { DMS_DOCUMENTS } from '../document/dms-documents.port';
+import { FakeDmsDocuments } from '../document/testing/fake-dms-documents';
 import { createTestApp, type TestApp } from '../../test-utils/test-app';
 import { ApprovalModule } from './approval.module';
 import { ApprovalService } from './approval.service';
@@ -20,7 +24,8 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
   beforeAll(async () => {
     process.env.NOTIFICATION_QUEUE = 'inline';
     process.env.NOTIFICATION_SWEEP = 'off';
-    t = await createTestApp([ApprovalModule]);
+    // G1 (AML) + FR-9.2 (баримт) gate-ууд илгээх үед kyc/dms-ийг дууддаг — тестэд fake
+    t = await createTestApp([ApprovalModule], (b) => b.overrideProvider(KYC_AML_PORT).useValue(new FakeKycAml(() => t.clock.now())).overrideProvider(DMS_DOCUMENTS).useValue(new FakeDmsDocuments()));
     if (!(await t.prisma.contractNumberTemplate.findFirst({ where: { orgId: ORG } }))) {
       templateId = (await t.prisma.contractNumberTemplate.create({ data: { orgId: ORG, pattern: '{PREFIX}{BRANCH}{YYMMDD}{SEQ:2}', prefix: 'B', seqScope: 'DAY', nextSeq: 1 } })).id;
     }
@@ -43,23 +48,35 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     await level(2, 'Төв', 5_000_000, 30_000_000, ['ap-1']);
     await level(3, 'Зээлийн хороо', 30_000_000, null, ['ap-1', 'ap-2', 'ap-3']);
     await t.prisma.contractNumberCounter.deleteMany({});
+    await setBranchCodes({ 'branch-1': 'BRANCH1' }); // BR-11: {BRANCH} нь тохируулсан кодоос л (UUID-аас гаргахгүй)
     t.clock.set(new Date('2026-11-03T02:00:00Z'));
   });
 
+  const setBranchCodes = (codes: Record<string, string>) =>
+    t.prisma.setting.upsert({ where: { orgId_key: { orgId: ORG, key: 'contract.branch_codes' } }, create: { orgId: ORG, key: 'contract.branch_codes', valueJson: codes }, update: { valueJson: codes } });
+
   const STEP_KEYS = ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score', 'document', 'decision', 'contract', 'official_documents', 'disburse'];
+  /** G1 AML: үндсэн зээлдэгч; updated_at тестийн цагаас өмнө — шалгалт «хуучирсан» гэж үзэгдэхгүй */
+  async function primaryBorrower(appId: string) {
+    const customer = await createCustomer(t.prisma);
+    await createBorrower(t.prisma, appId, customer.id, 'PRIMARY');
+    await t.prisma.customer.update({ where: { id: customer.id }, data: { updatedAt: new Date(t.clock.now().getTime() - 86_400_000) } });
+  }
   async function draft(amount: number, o: { officerId?: string; complete?: boolean } = {}) {
     const app = await createApplication(t.prisma, { productId, amount, officerId: o.officerId ?? 'officer-1', createdBy: o.officerId ?? 'officer-1' });
     await t.prisma.loanApplicationStep.createMany({
-      data: STEP_KEYS.map((stepKey, i) => ({ orgId: ORG, applicationId: app.id, stepKey, status: i >= 9 ? 'LOCKED' : i < 7 && o.complete !== false ? 'COMPLETED' : 'PENDING' })),
+      data: STEP_KEYS.map((stepKey, i) => ({ orgId: ORG, applicationId: app.id, stepKey, status: i >= 9 ? 'LOCKED' : i < 8 && o.complete !== false ? 'COMPLETED' : 'PENDING' })),
     });
+    await primaryBorrower(app.id);
     return app;
   }
   async function submit(appId: string, actor: Record<string, string> = officer) {
     const res = await http().post(`/api/applications/${appId}/transition`).set(actor).send({ to: 'SUBMITTED' });
     expect(res.status, JSON.stringify(res.body)).toBe(200);
   }
-  const vote = (appId: string, actor: Record<string, string>, decision: 'APPROVE' | 'RETURN', comment?: string) =>
-    http().post(`/api/applications/${appId}/approval/vote`).set(actor).send({ decision, ...(comment ? { comment } : {}) });
+  /** `expected`: санал өгөгчийн харсан түвшин / хувилбар (FR-1.5 жагсаалтын мөр). Өгөөгүй бол хуучин үйлдэл. */
+  const vote = (appId: string, actor: Record<string, string>, decision: 'APPROVE' | 'RETURN', comment?: string, expected: { levelNo?: number; version?: number } = {}) =>
+    http().post(`/api/applications/${appId}/approval/vote`).set(actor).send({ decision, ...(comment ? { comment } : {}), ...expected });
   const view = async (appId: string, actor: Record<string, string> = officer) => DecisionView.parse((await http().get(`/api/applications/${appId}/decision`).set(actor).expect(200)).body);
 
   it('1.2M → 1 түвшин: илгээмэгц IN_APPROVAL, салбар батлахад APPROVED + гэрээний дугаар + 2-р үе шат нээгдэнэ + аудит', async () => {
@@ -78,7 +95,7 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     v = DecisionView.parse(res.body);
     expect(v.status).toBe('APPROVED');
     const row = await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: app.id } });
-    expect(row.contractNo).toBe('BBRANCH126110301'); // {PREFIX}B + {BRANCH}BRANCH1 + {YYMMDD}261103 + {SEQ:2}01
+    expect(row.contractNo).toBe('BBRANCH126110301'); // {PREFIX}B + {BRANCH}BRANCH1 (contract.branch_codes) + {YYMMDD}261103 + {SEQ:2}01
     expect(row.decidedAt).not.toBeNull();
     expect(v.decisionRecord).toMatchObject({ decisionNo: `${app.appNo}/V1`, contractNo: row.contractNo });
     expect(v.decisionRecord?.minutesText).toContain('bm-1');
@@ -153,7 +170,8 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     const other = await t.prisma.product.create({ data: { orgId: ORG, code: 'M10-X', name: 'Бусад', productType: 'CONSUMER', minAmount: 1, maxAmount: 9e9, minTerm: 1, maxTerm: 36, minRate: 1, maxRate: 40 } });
     await t.prisma.approvalLevel.create({ data: { orgId: ORG, productId: other.id, levelNo: 1, name: 'Хоосон', amountFrom: 0, slaHours: 24 } });
     const app = await createApplication(t.prisma, { productId: other.id, amount: 1_000_000, officerId: 'officer-1' });
-    await t.prisma.loanApplicationStep.createMany({ data: STEP_KEYS.map((stepKey, i) => ({ orgId: ORG, applicationId: app.id, stepKey, status: i >= 9 ? 'LOCKED' : i < 7 ? 'COMPLETED' : 'PENDING' })) });
+    await t.prisma.loanApplicationStep.createMany({ data: STEP_KEYS.map((stepKey, i) => ({ orgId: ORG, applicationId: app.id, stepKey, status: i >= 9 ? 'LOCKED' : i < 8 ? 'COMPLETED' : 'PENDING' })) });
+    await primaryBorrower(app.id);
     const res = await http().post(`/api/applications/${app.id}/transition`).set(officer).send({ to: 'SUBMITTED' });
     expect(res.status).toBe(422);
     expect(res.body.code).toBe('APPROVAL_LEVEL_WITHOUT_MEMBERS');
@@ -172,7 +190,108 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     expect(list.body.myApprovalCount).toBe(1);
     await vote(app.id, bm, 'APPROVE').expect(200);
     expect((await mine(bm)).total).toBe(0);
-    expect((await mine(ap(1))).items[0]).toMatchObject({ applicationId: app.id, levelNo: 2, levelName: 'Төв' });
+    expect((await mine(ap(1))).items[0]).toMatchObject({ applicationId: app.id, levelNo: 2, levelName: 'Төв', version: 1 });
+  });
+
+  // FR-1.5 / FR-10.2 (M3 review): жагсаалтын мөрөөс санал өгөхдөө харсан түвшин, хувилбараа дамжуулна. Хоцрогдсон бол өөр шийдвэрт санал өгөхгүй — 409 VOTE_TARGET_CHANGED.
+  describe('хүлээгдэж буй levelNo / version', () => {
+    const mine = async (actor: Record<string, string>) => MyApprovalListResponse.parse((await http().get('/api/approvals/mine').set(actor).expect(200)).body);
+    const voteCount = (appId: string, where: { approverId?: string; levelNo?: number } = {}) =>
+      t.prisma.approvalVote.count({ where: { ...(where.approverId ? { approverId: where.approverId } : {}), request: { applicationId: appId, ...(where.levelNo ? { levelNo: where.levelNo } : {}) } } });
+    /** 35M → 3 түвшин; ap-1 нь 2, 3-р түвшний аль алиных нь гишүүн. Дуудахад 3-р түвшин идэвхтэй, ap-1 тэнд хараахан санал өгөөгүй. */
+    async function atLevel3() {
+      const app = await draft(35_000_000);
+      await submit(app.id);
+      await vote(app.id, bm, 'APPROVE').expect(200);
+      await vote(app.id, ap(1), 'APPROVE').expect(200);
+      expect((await view(app.id)).approval.currentLevel).toBe(3);
+      return app;
+    }
+
+    it('таарвал 200: жагсаалтын мөрийн levelNo, version-оор санал өгч болно', async () => {
+      const app = await draft(1_200_000);
+      await submit(app.id);
+      const row = (await mine(bm)).items[0]!;
+      expect(row).toMatchObject({ applicationId: app.id, levelNo: 1, version: 1 });
+      const res = await vote(app.id, bm, 'APPROVE', undefined, { levelNo: row.levelNo, version: row.version });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(DecisionView.parse(res.body).status).toBe('APPROVED');
+    });
+
+    it('түвшин ахисан (хоцрогдсон levelNo) → 409 VOTE_TARGET_CHANGED; ижил хүн дараагийн түвшний гишүүн ч санал бүртгэгдэхгүй', async () => {
+      const app = await atLevel3();
+      const res = await vote(app.id, ap(1), 'APPROVE', undefined, { levelNo: 2 }); // 2-р түвшнийг харж байсан
+      expect(res.status, JSON.stringify(res.body)).toBe(409);
+      expect(res.body.code).toBe('VOTE_TARGET_CHANGED');
+      expect(res.body.message).toMatch(/өөрчлөгдсөн/);
+      expect(await voteCount(app.id, { approverId: 'ap-1', levelNo: 3 })).toBe(0);
+      expect((await view(app.id)).approval.currentLevel).toBe(3);
+      // Шинэчилсний дараа зөв түвшнээр санал өгнө.
+      await vote(app.id, ap(1), 'APPROVE', undefined, { levelNo: 3, version: 1 }).expect(200);
+      expect(await voteCount(app.id, { approverId: 'ap-1', levelNo: 3 })).toBe(1);
+    });
+
+    it('буцаж дахин илгээгдсэн (хоцрогдсон version) → 409 VOTE_TARGET_CHANGED; түвшин ижил байсан ч', async () => {
+      const app = await draft(1_000_000);
+      await submit(app.id);
+      const stale = (await mine(bm)).items[0]!;
+      expect(stale).toMatchObject({ levelNo: 1, version: 1 });
+      await vote(app.id, bm, 'RETURN', 'Орлого дутуу').expect(200);
+      await submit(app.id); // version 2, 1-р түвшин дахин идэвхтэй
+      const fresh = (await mine(bm)).items[0]!;
+      expect(fresh).toMatchObject({ applicationId: app.id, levelNo: 1, version: 2 });
+
+      const res = await vote(app.id, bm, 'APPROVE', undefined, { version: stale.version }); // levelNo өгөөгүй — зөвхөн version
+      expect(res.status, JSON.stringify(res.body)).toBe(409);
+      expect(res.body.code).toBe('VOTE_TARGET_CHANGED');
+      expect((await view(app.id)).status).toBe('IN_APPROVAL');
+      expect(await voteCount(app.id, { approverId: 'bm-1' })).toBe(1); // зөвхөн v1-ийн RETURN
+      const ok = await vote(app.id, bm, 'APPROVE', undefined, { levelNo: fresh.levelNo, version: fresh.version });
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+      expect(DecisionView.parse(ok.body).status).toBe('APPROVED');
+    });
+
+    it('өгөөгүй бол хуучин үйлдэл: түвшин ахисан байсан ч одоогийн түвшинд санал бүртгэгдэнэ (DecisionStep-ийн хуучин дуудлага)', async () => {
+      const app = await atLevel3();
+      const res = await vote(app.id, ap(1), 'APPROVE');
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(await voteCount(app.id, { approverId: 'ap-1', levelNo: 3 })).toBe(1);
+    });
+
+    it('буруу төрөл (0, string, бутархай) → 400, санал бүртгэгдэхгүй', async () => {
+      const app = await draft(1_000_000);
+      await submit(app.id);
+      for (const body of [{ levelNo: 0 }, { levelNo: '1' }, { levelNo: 1.5 }, { version: 0 }, { version: '1' }, { version: -2 }]) {
+        const res = await http().post(`/api/applications/${app.id}/approval/vote`).set(bm).send({ decision: 'APPROVE', ...body });
+        expect(res.status, JSON.stringify(body)).toBe(400);
+      }
+      expect(await voteCount(app.id)).toBe(0);
+    });
+
+    it('хүлээгдэж буйг зөв өгсөн ч эрхийн шалгалтыг тойроогүй: гишүүн биш 403, өөрийн хүсэлт 403 (хоцрогдсон гэсэн ч 409 биш)', async () => {
+      const app = await draft(1_000_000);
+      await submit(app.id);
+      const outsider = await vote(app.id, ap(9), 'APPROVE', undefined, { levelNo: 1, version: 1 });
+      expect(outsider.status).toBe(403);
+      expect(outsider.body.code).toBe('NOT_LEVEL_APPROVER');
+
+      const own = await draft(1_000_000, { officerId: 'bm-1' });
+      await submit(own.id, actors.officer('bm-1'));
+      for (const expected of [{ levelNo: 1, version: 1 }, { levelNo: 99, version: 99 }]) {
+        const res = await vote(own.id, bm, 'APPROVE', undefined, expected);
+        expect(res.status, JSON.stringify(expected)).toBe(403);
+        expect(res.body.code).toBe('SELF_APPROVAL_FORBIDDEN');
+      }
+    });
+
+    it('батлагдсан хүсэлтэд хоцрогдсон мөрөөр санал өгвөл одоогийн NOT_IN_APPROVAL 409 хэвээр', async () => {
+      const app = await draft(1_000_000);
+      await submit(app.id);
+      await vote(app.id, bm, 'APPROVE').expect(200);
+      const res = await vote(app.id, bm, 'APPROVE', undefined, { levelNo: 1, version: 1 });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('NOT_IN_APPROVAL');
+    });
   });
 
   it('SLA хэтэрвэл улаан (overdue) + нэг удаа SLA_BREACH мэдэгдэл', async () => {
@@ -191,6 +310,37 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     await t.prisma.setting.upsert({ where: { orgId_key: { orgId: ORG, key: 'contract.branch_codes' } }, create: { orgId: ORG, key: 'contract.branch_codes', valueJson: { 'branch-1': '10026' } }, update: { valueJson: { 'branch-1': '10026' } } });
     const a = await draft(1_000_000); await submit(a.id); await vote(a.id, bm, 'APPROVE').expect(200);
     expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } })).contractNo).toBe('B1002626110301');
+  });
+
+  it('{BRANCH} код тохируулаагүй салбар → 422 BRANCH_CODE_MISSING; батлалт хийгдэхгүй, UUID-аас дугаар гаргахгүй, тоолуур зарцуулахгүй', async () => {
+    await setBranchCodes({ 'other-branch': '300' });
+    const a = await draft(1_000_000); await submit(a.id);
+    const res = await vote(a.id, bm, 'APPROVE');
+    expect(res.status).toBe(422);
+    expect(res.body.code).toBe('BRANCH_CODE_MISSING');
+    expect(res.body.message).toMatch(/салбар/i);
+    const row = await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } });
+    expect(row.contractNo).toBeNull();
+    expect(row.status).toBe('IN_APPROVAL');
+    expect(await t.prisma.contractNumberCounter.count()).toBe(0);
+    expect(await t.prisma.decisionRecord.count({ where: { applicationId: a.id } })).toBe(0);
+    // Код тохируулсны дараа ижил санал амжилттай
+    await setBranchCodes({ 'branch-1': '777' });
+    await vote(a.id, bm, 'APPROVE').expect(200);
+    expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } })).contractNo).toBe('B77726110301');
+  });
+
+  it('загварт {BRANCH} байхгүй бол салбарын кодгүй ч батлагдана', async () => {
+    await t.prisma.setting.deleteMany({ where: { orgId: ORG, key: 'contract.branch_codes' } });
+    const tpl = await t.prisma.contractNumberTemplate.findFirstOrThrow({ where: { orgId: ORG }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+    await t.prisma.contractNumberTemplate.update({ where: { id: tpl.id }, data: { pattern: '{PREFIX}-{YYMMDD}-{SEQ:3}' } });
+    try {
+      const a = await draft(1_000_000); await submit(a.id);
+      await vote(a.id, bm, 'APPROVE').expect(200);
+      expect((await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: a.id } })).contractNo).toBe('B-261103-001');
+    } finally {
+      await t.prisma.contractNumberTemplate.update({ where: { id: tpl.id }, data: { pattern: tpl.pattern } });
+    }
   });
 
   it('гэрээний дугаар: нэг өдөр 01, 02 дарааллаар; маргааш (DAY хүрээ) дахин 01', async () => {

@@ -5,14 +5,16 @@ import { Clock } from '@los/nest-common';
 import { IntegrationNotConfiguredError } from '../../shared/integration-mode';
 import { Prisma } from '.prisma/client-origination';
 import { PrismaService } from '../../prisma.service';
-import type { RequestContext } from '@los/contracts';
+import type { OrgDirectory, RequestContext } from '@los/contracts';
 import { OrgSettings } from '../../shared/org-settings';
+import { OrgDirectoryService, directoryName } from '../../shared/org-directory';
 import { CoreDepositNotImplementedError } from '../../integrations/core-deposit/core-deposit.errors';
 import type { CoreDepositPort } from '../../integrations/core-deposit/core-deposit.port';
 import { CORE_DEPOSIT_PORT } from '../../integrations/core-deposit/core-deposit.provider';
 import { Semaphore, SemaphoreFullError } from './concurrency';
 import { buildReportWorkbook } from './excel.exporter';
 import { EXPORT_STATEMENT_TIMEOUT_MS, isStatementTimeout } from './report-db';
+import { applyDirectoryNames, hasDirectoryColumns } from './report-directory';
 import { labelOf } from './report-labels';
 import { ReportRegistry } from './report-registry';
 import { effectiveScope, resolveReportScope, type ReportScope } from './report-scope';
@@ -46,6 +48,7 @@ export class ReportService {
     private readonly settings: OrgSettings,
     private readonly registry: ReportRegistry,
     @Inject(CORE_DEPOSIT_PORT) private readonly deposit: CoreDepositPort,
+    private readonly directory: OrgDirectoryService,
   ) {}
 
   /** GET reports — 9 тайлангийн тодорхойлолт. `productId` шүүлтэд бүтээгдэхүүний каталогийг сонголт болгоно. */
@@ -99,10 +102,15 @@ export class ReportService {
       throw new UnprocessableEntityException({ code: 'EXPORT_TOO_LARGE', message: `Экспортлох мөрийн тоо (${res.total}) зөвшөөрөгдсөн дээд хэмжээ (${max})-ээс хэтэрсэн тул шүүлтээ нарийсгана уу` });
     }
     const generatedAt = this.clock.now().toISOString();
-    const buffer = await buildReportWorkbook(def.columns, res.rows, res.totals, {
-      title: def.title, asOf: input.filters.asOf, generatedAt, filterLines: await this.filterLines(ctx, def, input.filters), mixedCurrency: !!res.mixedCurrency, dataSource,
-    });
+    // Салбар/ЗЭЗ-ийн UUID → нэр: лавлахыг экспорт бүрт НЭГ удаа (мөр тутамд биш) авна; унавал id хэвээр
     const f = input.filters;
+    const rowsNeedNames = res.rows.length > 0 && hasDirectoryColumns(def.columns);
+    const filtersNeedNames = def.filters.some((x) => (x.key === 'branchId' && !!f.branchId) || (x.key === 'officerId' && !!f.officerId));
+    const names = rowsNeedNames || filtersNeedNames ? await this.directory.load(ctx) : { branches: {}, users: {} };
+    const rows = applyDirectoryNames(def.columns, res.rows, names);
+    const buffer = await buildReportWorkbook(def.columns, rows, res.totals, {
+      title: def.title, asOf: f.asOf, generatedAt, filterLines: await this.filterLines(ctx, def, f, names), mixedCurrency: !!res.mixedCurrency, dataSource,
+    });
     await this.prisma.reportRun.create({
       data: {
         orgId: ctx.orgId, reportKey: def.key, format: 'XLSX', rowCount: res.rows.length, runBy: ctx.userId,
@@ -174,7 +182,7 @@ export class ReportService {
   }
 
   /** Excel-ийн "Шүүлт" мөр: тайланд хамаарах, утгатай шүүлтүүд. */
-  private async filterLines(ctx: RequestContext, def: ReportDefinition, f: ResolvedFilters): Promise<string[]> {
+  private async filterLines(ctx: RequestContext, def: ReportDefinition, f: ResolvedFilters, names: OrgDirectory): Promise<string[]> {
     const products = def.filters.some((x) => x.key === 'productId') && f.productId
       ? await this.prisma.product.findMany({ where: { orgId: ctx.orgId, id: f.productId }, select: { id: true, name: true } })
       : [];
@@ -185,6 +193,8 @@ export class ReportService {
       if (!value) continue;
       // Регистр хэлбэртэй хайлтыг Excel-ийн толгойд ч нуулна (NFR-5)
       const shown = filter.key === 'productId' ? products.find((p) => p.id === value)?.name ?? value
+        : filter.key === 'branchId' ? directoryName(names.branches, value)
+        : filter.key === 'officerId' ? directoryName(names.users, value)
         : filter.key === 'search' && REGISTER_LIKE.test(value) ? maskRegisterNo(value) : labelOf(filter.options, value);
       lines.push(`${filter.label} = ${shown}`);
     }

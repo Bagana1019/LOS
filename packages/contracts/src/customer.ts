@@ -110,6 +110,25 @@ export type CreateCustomerRequest = z.infer<typeof CreateCustomerRequest>;
 /** PUT /customers/:id: өгсөн талбарыг л солино (регистр, төрөл өөрчлөгдөхгүй). `contacts` өгвөл жагсаалтыг бүхэлд нь солино. */
 export const UpdateCustomerRequest = CustomerFieldsShape.omit({ customerType: true, registerNo: true }).partial();
 export type UpdateCustomerRequest = z.infer<typeof UpdateCustomerRequest>;
+export const UPDATE_CUSTOMER_FIELD_KEYS = Object.keys(UpdateCustomerRequest.shape) as [keyof UpdateCustomerRequest, ...(keyof UpdateCustomerRequest)[]];
+
+/**
+ * Эзэмшигч бус салбарын засварын хүсэлт (maker-checker `CUSTOMER/UPDATE`, эзэмшигчийн шийдвэр 2026-11-18 хувилбар A).
+ * `changes` нь PUT-ийн `UpdateCustomerRequest` яг өөрөө; `cleared` нь PUT-д `""` илгээсэн («арилгах») талбарууд — хадгалсны дараа ч утга нь алдагдахгүй.
+ */
+export const CUSTOMER_TARGET_TYPE = 'CUSTOMER';
+export const CUSTOMER_ACTION_UPDATE = 'UPDATE';
+export const CustomerEditPayload = z.object({
+  changes: UpdateCustomerRequest,
+  cleared: z.array(z.enum(UPDATE_CUSTOMER_FIELD_KEYS)).max(UPDATE_CUSTOMER_FIELD_KEYS.length).default([]),
+});
+export type CustomerEditPayload = z.infer<typeof CustomerEditPayload>;
+/** POST /customers/:id/edit-requests: `changes` = PUT-ийн бие (шалгалт ижил), `reason` заавал (MC-BR-4) */
+export const CustomerEditRequestBody = z.object({
+  changes: z.record(z.unknown()),
+  reason: z.string(),
+});
+export type CustomerEditRequestBody = z.infer<typeof CustomerEditRequestBody>;
 
 // ── Хар жагсаалт (BR-9: зөвхөн анхааруулга, хориг биш) ──
 export const BlacklistWarning = z.object({

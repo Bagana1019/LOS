@@ -4,12 +4,18 @@ import request from 'supertest';
 import { Logger } from '@nestjs/common';
 import { LoanTermsView, ScheduleResponse } from '@los/contracts';
 import { createTestApp, type TestApp } from '../../test-utils/test-app';
-import { actors, createApplication, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
+import { actors, createApplication, createBorrower, createCustomer, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
+import { KYC_AML_PORT } from '../aml/ports/kyc-aml.port';
+import { FakeKycAml } from '../aml/testing/fake-kyc-aml.port';
+import { DMS_DOCUMENTS } from '../document/dms-documents.port';
+import { FakeDmsDocuments } from '../document/testing/fake-dms-documents';
 import { ApplicationModule } from '../application/application.module';
 import { ScheduleModule } from '../schedule/schedule.module';
 import { ScoreModule } from '../score/score.module';
 import { SCORING_CLIENT } from '../score/scoring.client';
 import { FakeScoringClient } from '../score/testing/fake-scoring.client';
+import { DEFAULT_PRICING_TIERS } from './pricing/pricing.defaults';
+import { replaceActiveSet } from './pricing/pricing-tier.store';
 import { LoanTermsModule } from './loan-terms.module';
 
 Logger.overrideLogger(false);
@@ -26,7 +32,9 @@ describe.skipIf(!hasTestDb)('loan terms (FR-5) + repayment schedule (FR-7) API',
   const http = () => request(t.app.getHttpServer());
 
   beforeAll(async () => {
-    t = await createTestApp([ApplicationModule, LoanTermsModule, ScheduleModule, ScoreModule], (b) => b.overrideProvider(SCORING_CLIENT).useValue(scoring));
+    t = await createTestApp([ApplicationModule, LoanTermsModule, ScheduleModule, ScoreModule], (b) => b.overrideProvider(SCORING_CLIENT).useValue(scoring)
+      // G1 (AML) + FR-9.2 (баримт) gate-ууд илгээх үед kyc/dms-ийг дууддаг — тестэд fake
+      .overrideProvider(KYC_AML_PORT).useValue(new FakeKycAml(() => t.clock.now())).overrideProvider(DMS_DOCUMENTS).useValue(new FakeDmsDocuments()));
   });
   afterAll(async () => { await t.close(); });
   beforeEach(async () => { await resetDb(t.prisma); scoring.reset(); });
@@ -36,7 +44,7 @@ describe.skipIf(!hasTestDb)('loan terms (FR-5) + repayment schedule (FR-7) API',
       data: { orgId: ORG, code: `P${Math.random().toString(36).slice(2, 8)}`, name: 'Хэрэглээний', productType: 'CONSUMER', minAmount: 100_000, maxAmount: 50_000_000, minTerm: 1, maxTerm: 36, minRate: 18, maxRate: 42, defaultFeeRate: 0.01, requiresCollateral: false },
     });
     const app = await createApplication(t.prisma, { productId: product.id, amount: null, interestRate: null, termMonths: null, ...(o.status ? { status: o.status } : {}) });
-    const keys = ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score'];
+    const keys = ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score', 'document'];
     await t.prisma.loanApplicationStep.createMany({ data: keys.map((stepKey) => ({ orgId: ORG, applicationId: app.id, stepKey, status: 'PENDING' })) });
     return { app, product };
   }
@@ -74,6 +82,22 @@ describe.skipIf(!hasTestDb)('loan terms (FR-5) + repayment schedule (FR-7) API',
       expect(res.status, JSON.stringify(res.body)).toBe(200);
       const view = LoanTermsView.parse(res.body);
       expect(view).toMatchObject({ interestRate: 18, feeRate: 0.01, feeAmount: 300_000, currency: 'MNT' });
+    });
+
+    it('M11 · FR-5.5/BR-14: хүү/шимтгэл хоосон бол хүсэлтийн сүүлийн Sosco Score-оор санал; оноогүй/буруу бол default шатлал; view-д soscoScore', async () => {
+      await t.prisma.$transaction((tx) => replaceActiveSet(tx, { orgId: ORG, productId: null, tiers: DEFAULT_PRICING_TIERS, actorId: null }));
+      const { interestRate: _omit, ...noRate } = TERMS;
+      const snapshot = (soscoScore: number) => ({ computedAt: '2026-11-01T00:00:00.000Z', syncedAt: '2026-11-01T00:00:00.000Z', soscoScore, soscoGrade: 'B' });
+      const cases: Array<[number | null, number, number, number | null]> = [[700, 22, 0.01, 700], [null, 28, 0.015, null], [5000, 28, 0.015, null], [850, 18, 0.005, 850]];
+      for (const [score, rate, fee, exposed] of cases) {
+        const { app, product } = await seed();
+        if (score !== null) await t.prisma.loanApplication.update({ where: { id: app.id }, data: { calcSnapshotJson: snapshot(score) } });
+        const res = await http().put(`/api/applications/${app.id}/loan-terms`).set(officer).send({ productId: product.id, ...noRate });
+        expect(res.status, JSON.stringify(res.body)).toBe(200);
+        expect(LoanTermsView.parse(res.body), String(score)).toMatchObject({ interestRate: rate, feeRate: fee, soscoScore: exposed });
+        // ЗЭЗ хязгаарт багтаан гараар өөрчилж болно — санал дарагдахгүй
+        expect(LoanTermsView.parse((await saveTerms(app.id, product.id, { interestRate: 30 })).body).interestRate).toBe(30);
+      }
     });
 
     it('хадгалахад 4-р алхам COMPLETED + audit; ЗМС ангилал буруу бол 400', async () => {
@@ -205,7 +229,11 @@ describe.skipIf(!hasTestDb)('loan terms (FR-5) + repayment schedule (FR-7) API',
       const { app, product } = await seed();
       await saveTerms(app.id, product.id);
       await generate(app.id);
-      await setSteps(app.id, ['client', 'inquiry', 'income', 'collateral', 'score'], 'COMPLETED');
+      await setSteps(app.id, ['client', 'inquiry', 'income', 'collateral', 'score', 'document'], 'COMPLETED');
+      // G1 AML: үндсэн зээлдэгч; updated_at тестийн цагаас өмнө
+      const customer = await createCustomer(t.prisma);
+      await createBorrower(t.prisma, app.id, customer.id, 'PRIMARY');
+      await t.prisma.customer.update({ where: { id: customer.id }, data: { updatedAt: new Date(t.clock.now().getTime() - 86_400_000) } });
       await saveTerms(app.id, product.id, { amount: 25_000_000 });
       await setSteps(app.id, ['score'], 'COMPLETED');
       const blocked = await http().post(`/api/applications/${app.id}/transition`).set(officer).send({ to: 'SUBMITTED' });

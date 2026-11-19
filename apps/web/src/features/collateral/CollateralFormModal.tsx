@@ -95,8 +95,9 @@ function FormBody({ mode, applicationId, collateral, owners, onClose, onChanged 
   };
 
   const pick = (c: CollateralCandidate) => {
-    form.setFieldValue('assetType', c.assetType);
-    form.setFieldValue('description', cleanDescription(c.assetType, c.description));
+    // setFieldValue нь mount хийгдсэн Field-д meta event өдөөж rc-util dev анхааруулга ("circular references") гаргадаг тул setFieldsValue (valueUpdate); description-г бүхэлд нь солино
+    form.resetFields(['description']);
+    form.setFieldsValue({ assetType: c.assetType, description: cleanDescription(c.assetType, c.description) } as Parameters<typeof form.setFieldsValue>[0]);
     setXyp({ ref: c.xypRef, label: c.label });
     setPickerOpen(false);
   };
@@ -107,11 +108,10 @@ function FormBody({ mode, applicationId, collateral, owners, onClose, onChanged 
       form={form}
       layout="vertical"
       requiredMark="optional"
-      preserve={false}
       initialValues={initialValues}
       onValuesChange={(changed) => {
         if (mode === 'create' && changed.assetType) {
-          // Төрөл солиход өмнөх төрлийн талбар арилж (preserve=false), шинэ төрлийн анхдагч утга орно; ХУР-аас авсан холбоос хүчингүй
+          // Төрөл солиход шинэ төрлийн анхдагч утга бүхэлд нь орно (өмнөх төрлийн түлхүүр хаягдана; илгээхэд cleanDescription бас цэвэрлэнэ); ХУР-аас авсан холбоос хүчингүй. preserve=false хэрэглэхгүй: dev StrictMode нь шинэ Field бүрийг unmount→mount хийхдээ ХУР-аас тавьсан утгыг цэвэрлэдэг байсан
           form.setFieldValue('description', defaultDescription(changed.assetType));
           setXyp(null);
           setPickerOpen(false);

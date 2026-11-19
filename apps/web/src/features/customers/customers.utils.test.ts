@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPayload, issuePath, pruneEmpty, validateCustomer } from './customers.utils';
+import { buildPayload, canEditCustomer, issuePath, pruneEmpty, validateCustomer, xypLockedFields } from './customers.utils';
 
 const fixed = { customerType: 'INDIVIDUAL', registerNo: 'УБ90010112' };
 const addr = { province: 'УБ', district: 'БЗД', khoroo: '1', detail: 'Байр 1' };
@@ -40,5 +40,28 @@ describe('buildPayload / validateCustomer', () => {
 describe('issuePath', () => {
   it('сервер талын "contacts.0.phone" зам → массивын индекс тоо', () => {
     expect(issuePath('contacts.0.phone')).toEqual(['contacts', 0, 'phone']);
+  });
+});
+
+// NFR-3 (эзэмшигчийн шийдвэр 2026-11-18, A): сервер эх сурвалж; UI зөвхөн засах боломжгүйг урьдчилан тайлбарлана.
+describe('canEditCustomer', () => {
+  const me = (branchId: string | null, permissions: string[] = ['customer:read', 'customer:write']) => ({ user: { branchId }, permissions });
+  it('the owning branch with customer:write may edit', () => expect(canEditCustomer(me('B1'), { branchId: 'B1' })).toEqual({ editable: true, reason: null }));
+  it('another branch may not, with reason OTHER_BRANCH', () => expect(canEditCustomer(me('B2'), { branchId: 'B1' })).toEqual({ editable: false, reason: 'OTHER_BRANCH' }));
+  it('a user without a branch may not edit a branch-owned customer', () => expect(canEditCustomer(me(null), { branchId: 'B1' }).reason).toBe('OTHER_BRANCH'));
+  it('a legacy customer without an owner is editable by any writer', () => expect(canEditCustomer(me('B2'), { branchId: null }).editable).toBe(true));
+  it('no customer:write gives NO_PERMISSION regardless of branch', () => expect(canEditCustomer(me('B1', ['customer:read']), { branchId: 'B1' })).toEqual({ editable: false, reason: 'NO_PERMISSION' }));
+  it('not signed in yet is not editable', () => expect(canEditCustomer(null, { branchId: 'B1' }).editable).toBe(false));
+});
+
+describe('xypLockedFields (M5: ХУР-ын эзэмшдэг талбар засагдахгүй)', () => {
+  it('locks the official address and identity fields that XYP filled; leaves officer-owned and fill-only fields editable', () => {
+    const locked = xypLockedFields(['officialAddress.province', 'officialAddress.detail', 'lastName', 'firstName', 'birthDate', 'maritalStatus', 'familySize', 'segment']);
+    expect([...locked].sort()).toEqual(['birthDate', 'firstName', 'lastName', 'officialAddress']);
+  });
+
+  it('nothing is locked for a manual entry or when XYP returned no address', () => {
+    expect(xypLockedFields([]).size).toBe(0);
+    expect(xypLockedFields(['firstName']).has('officialAddress')).toBe(false);
   });
 });
