@@ -12,6 +12,7 @@ export interface DwhMigration { readonly version: number; readonly name: string;
 const MIGRATION_FILES: readonly { version: number; file: string }[] = [
   { version: 1, file: '01-star-schema.sql' },
   { version: 2, file: '02-event-ordering.sql' },
+  { version: 3, file: '03-fact-dimensions.sql' },
 ];
 export const REQUIRED_DWH_SCHEMA_VERSION = MIGRATION_FILES[MIGRATION_FILES.length - 1]!.version;
 /** Same relative depth from src/modules/etl and dist/modules/etl; the Docker image copies the whole repo (packages/config/Dockerfile.nest). */

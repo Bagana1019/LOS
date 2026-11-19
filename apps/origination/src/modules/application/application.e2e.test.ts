@@ -130,7 +130,7 @@ describe.skipIf(!hasTestDb)('application API (DB)', () => {
     expect(detail.transitions).toEqual([{ to: 'SUBMITTED', allowed: true, blockedBy: ['installment', 'score'] }]);
 
     await completeSteps(a.id, REQUIRED);
-    await t.prisma.loanApplication.update({ where: { id: a.id }, data: { amount: 5_000_000 } });
+    await t.prisma.loanApplication.update({ where: { id: a.id }, data: { amount: 5_000_000, interestRate: 23.99, termMonths: 18 } });
     const ok = await http().post(`/api/applications/${a.id}/transition`).set(officerA).send({ to: 'SUBMITTED' });
     expect(ok.status, JSON.stringify(ok.body)).toBe(200);
     const submitted = ApplicationDetail.parse(ok.body);
@@ -148,6 +148,11 @@ describe.skipIf(!hasTestDb)('application API (DB)', () => {
     expect(changed).toMatchObject([{ applicationId: a.id, from: 'DRAFT', to: 'SUBMITTED' }]);
     const sub = outbox.filter((o) => o.type === 'ApplicationSubmitted').map((o) => ApplicationSubmitted.parse(o.payload));
     expect(sub).toMatchObject([{ applicationId: a.id, amount: 5_000_000, productId: p.id }]);
+    // N4: DWH dimensions in the same outbox row — ids/rate/term only, no PII (CLAUDE.md §6.5)
+    expect(sub[0]).toMatchObject({ branchId: BRANCH, officerId: 'officer-a', customerId: c.id, interestRatePercent: 23.99, termMonths: 18 });
+    const rawSubmitted = outbox.find((o) => o.type === 'ApplicationSubmitted')!.payload as Record<string, unknown>;
+    expect(Object.keys(rawSubmitted)).not.toEqual(expect.arrayContaining(['registerNo']));
+    expect(JSON.stringify(rawSubmitted)).not.toMatch(/register|phone|lastName|firstName/i);
     // G1 AML (FR-3.4): үндсэн зээлдэгчийг kyc-ээр шалгасан, лавлагаа хадгалагдсан
     expect(aml.screenCalls()).toEqual([c.id]);
     expect(await t.prisma.applicationAmlScreening.count({ where: { applicationId: a.id, customerId: c.id, status: 'CLEAR' } })).toBe(1);

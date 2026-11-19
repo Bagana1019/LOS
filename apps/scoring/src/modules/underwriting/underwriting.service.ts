@@ -110,7 +110,11 @@ export class UnderwritingService {
   /** `ScoringCompleted` (v1): soscoScore = үндсэн зээлдэгчийн сүүлийн sosco_result (байхгүй бол null); dtiPercent = сонгосон аргын burdenPercent */
   private async announce(tx: Tx, ctx: RequestContext, row: Calculation, result: UnderwriteResult, method: CalcMethod): Promise<void> {
     const soscoScore = await latestSoscoScore(tx, ctx.orgId, row.applicationId, row.customerId);
-    const dtiPercent = result.methods.find((m) => m.method === method)?.burdenPercent ?? null;
-    await enqueueOutbox(tx, buildEvent(ctx, 'ScoringCompleted', { applicationId: row.applicationId, selectedMethod: method, soscoScore, dtiPercent }, this.clock.now()));
+    const verdict = result.methods.find((m) => m.method === method);
+    const dtiPercent = verdict?.burdenPercent ?? null;
+    // N4 (DWH): ӨТЧХ only for DSCR methods (B/C) — never the A-method DTI ratio; LTV = collateral verdict (fraction, null without collateral)
+    const dscr = verdict?.ratioKind === 'DSCR' ? verdict.ratio : null;
+    const ltv = result.collateral.ltv;
+    await enqueueOutbox(tx, buildEvent(ctx, 'ScoringCompleted', { applicationId: row.applicationId, selectedMethod: method, soscoScore, dtiPercent, dscr, ltv }, this.clock.now()));
   }
 }

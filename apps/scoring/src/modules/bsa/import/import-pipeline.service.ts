@@ -347,7 +347,10 @@ export class ImportPipelineService {
         await this.publisher.enqueue(
           tx,
           buildStatementImportedEvent(
-            { analysisId: analysis.id, applicationId: analysis.applicationId, rows: inserted, status: 'COMPLETED', ctx: this.eventContext(analysis.orgId, job.id) },
+            {
+              analysisId: analysis.id, applicationId: analysis.applicationId, rows: inserted, status: 'COMPLETED', ctx: this.eventContext(analysis.orgId, job.id),
+              snapshot: { customerId: analysis.customerId, summary: recalculated.summary }, // N4: DWH metrics, same tx as the outbox row
+            },
             { now: () => this.clock.now() },
           ),
         );
