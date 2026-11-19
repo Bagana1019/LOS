@@ -10,7 +10,8 @@
     "db:generate": "node ../../scripts/prisma.mjs gateway generate",
     "db:migrate": "node ../../scripts/prisma.mjs gateway migrate deploy",
     "db:migrate:dev": "node ../../scripts/prisma.mjs gateway migrate dev",
-    "db:seed": "node ../../scripts/prisma.mjs gateway seed"
+    "db:seed": "node ../../scripts/prisma.mjs gateway seed",
+    "audit:dlq": "node dist/modules/audit/audit-dlq.cli.js"
   },
   "dependencies": {
     "@los/contracts": "workspace:*",
