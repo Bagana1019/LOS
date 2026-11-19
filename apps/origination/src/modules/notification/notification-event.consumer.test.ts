@@ -18,7 +18,7 @@ describe('NotificationEventConsumer subscription (FR-13.2, C1)', () => {
     const [group, types] = subscribe.mock.calls[0]!;
     expect(NOTIFICATION_EVENT_GROUP).toBe('origination-notification');
     expect(group).toBe('origination-notification');
-    expect(types).toEqual(['ApplicationApproved', 'ApplicationReturned', 'DisbursementApproved', 'PaymentReceived']);
+    expect(types).toEqual(['ApplicationApproved', 'DisbursementApproved', 'PaymentReceived']); // N1: no ApplicationReturned — ApprovalService writes that bell
   });
 
   it('a newly created group replays only the last 24h (no months-old customer notifications after deploy)', async () => {

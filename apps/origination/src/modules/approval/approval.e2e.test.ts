@@ -6,7 +6,7 @@ import { KYC_AML_PORT } from '../aml/ports/kyc-aml.port';
 import { FakeKycAml } from '../aml/testing/fake-kyc-aml.port';
 import { DMS_DOCUMENTS } from '../document/dms-documents.port';
 import { FakeDmsDocuments } from '../document/testing/fake-dms-documents';
-import { createTestApp, type TestApp } from '../../test-utils/test-app';
+import { createTestApp, OutboxRelayService, type TestApp } from '../../test-utils/test-app';
 import { ApprovalModule } from './approval.module';
 import { ApprovalService } from './approval.service';
 
@@ -105,6 +105,28 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     expect(audit).toEqual(expect.arrayContaining(['STATUS_CHANGED', 'APPROVAL_STARTED', 'APPROVAL_VOTE', 'APPLICATION_APPROVED']));
     expect(await t.prisma.outbox.findMany({ where: {} }).then((rows) => rows.map((r) => (r.payload as { type?: string }).type))).toEqual(expect.arrayContaining(['ApplicationSubmitted', 'ApplicationApproved']));
     expect((await t.prisma.notification.findMany({ where: { applicationId: app.id, userId: 'officer-1' } })).map((n) => n.type)).toEqual(['APPROVED']);
+  });
+
+  // N1 (phase 7): ApprovalService writes the officer's bell in the decision transaction. The notification consumer (customers' SMS/EMAIL,
+  // run when the outbox is relayed) must not add a second bell; the in-memory bus never delivered before, so the duplicate went unseen.
+  it('N1: after the outbox is relayed the officer still has exactly one APPROVED bell; the borrower gets SMS and EMAIL', async () => {
+    const app = await draft(1_200_000);
+    await submit(app.id);
+    await vote(app.id, bm, 'APPROVE', 'Зөвшөөрөв').expect(200);
+    expect(await t.app.get(OutboxRelayService).relayOnce()).toBeGreaterThan(0);
+    expect(await t.prisma.notification.findMany({ where: { applicationId: app.id, userId: 'officer-1', type: 'APPROVED' } })).toHaveLength(1);
+    expect((await t.prisma.notificationDelivery.findMany({ where: { applicationId: app.id, type: 'APPROVED' } })).map((d) => d.channel).sort()).toEqual(['EMAIL', 'SMS']);
+    const { contractNo } = await t.prisma.loanApplication.findUniqueOrThrow({ where: { id: app.id } });
+    const inbox = await http().get('/api/notifications').set(officer).expect(200);
+    expect(inbox.body.items.filter((n: { type: string }) => n.type === 'APPROVED')).toEqual([expect.objectContaining({ title: 'Хүсэлт батлагдлаа', body: `${app.appNo} дугаартай хүсэлт батлагдлаа. Гэрээний дугаар: ${contractNo}.` })]);
+  });
+
+  it('N1: after the outbox is relayed the officer still has exactly one RETURNED bell', async () => {
+    const app = await draft(1_200_000);
+    await submit(app.id);
+    await vote(app.id, bm, 'RETURN', 'Орлого баталгаажаагүй').expect(200);
+    await t.app.get(OutboxRelayService).relayOnce();
+    expect(await t.prisma.notification.findMany({ where: { applicationId: app.id, userId: 'officer-1', type: 'RETURNED' } })).toHaveLength(1);
   });
 
   it('50M → 3 түвшин; 3 батлагчтай түвшинд 1 RETURN + 2 APPROVE → үргэлжилж APPROVED', async () => {

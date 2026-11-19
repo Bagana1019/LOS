@@ -25,7 +25,7 @@ describe.skipIf(!hasTestDb)('notification: NotificationEventConsumer (bus → м
   }
 
   describe('ApplicationApproved', () => {
-    it('PRIMARY + CO_BORROWER-д APPROVED (SMS/EMAIL), ЗЭЗ-д хонх; GUARANTOR-т илгээхгүй', async () => {
+    it('PRIMARY + CO_BORROWER-д APPROVED (SMS/EMAIL); GUARANTOR-т илгээхгүй; ЗЭЗ-ийн хонхыг энд бичихгүй (N1: ApprovalService бичнэ)', async () => {
       const { app, primary, guarantor } = await seed({ coBorrower: true, guarantor: true });
       const ev = await publish(env, { type: 'ApplicationApproved', applicationId: app.id, contractNo: 'BZ-2026-0001' });
       const rows = await deliveries(env);
@@ -39,11 +39,7 @@ describe.skipIf(!hasTestDb)('notification: NotificationEventConsumer (bus → м
       expect(env.sms.outbox.find((m) => m.to === '+97688112233')!.text.startsWith('Сараа,')).toBe(true);
       expect(env.email.outbox[0].subject).toBe('Таны зээлийн хүсэлт батлагдлаа');
 
-      const bell = await env.t.prisma.notification.findMany();
-      expect(bell).toHaveLength(1);
-      expect(bell[0]).toMatchObject({ userId: 'officer-1', type: 'APPROVED', applicationId: app.id });
-      const list = await env.http().get('/api/notifications').set(actors.officer('officer-1')).expect(200);
-      expect(list.body.items[0]).toMatchObject({ title: 'Хүсэлт батлагдлаа', body: `${app.appNo} дугаартай хүсэлт батлагдлаа. Гэрээний дугаар: BZ-2026-0001.` });
+      expect(await env.t.prisma.notification.count()).toBe(0); // N1: the officer's bell comes from ApprovalService (approval.e2e), not from this consumer
     });
 
     it('idempotent: ижил eventId дахин хүргэгдэхэд давхар илгээхгүй; өөр eventId (дахин батлалт) шинээр', async () => {
@@ -52,7 +48,7 @@ describe.skipIf(!hasTestDb)('notification: NotificationEventConsumer (bus → м
       const smsBefore = env.sms.outbox.length;
       await publish(env, { type: 'ApplicationApproved', applicationId: app.id, contractNo: 'BZ-2026-0001' }, ev.eventId);
       expect(env.sms.outbox).toHaveLength(smsBefore);
-      expect(await env.t.prisma.notification.count()).toBe(1);
+      expect(await env.t.prisma.notificationDelivery.count()).toBe(2); // SMS + EMAIL, once
       expect(await env.t.prisma.processedEvent.count({ where: { consumer: 'notification', eventId: ev.eventId } })).toBe(1);
       await publish(env, { type: 'ApplicationApproved', applicationId: app.id, contractNo: 'BZ-2026-0001' });
       expect(env.sms.outbox).toHaveLength(smsBefore + 1);
@@ -63,7 +59,7 @@ describe.skipIf(!hasTestDb)('notification: NotificationEventConsumer (bus → м
       const ev = { type: 'ApplicationApproved', applicationId: app.id, contractNo: 'BZ-2026-0001' } as const;
       const eventId = '6f9c2a52-6a39-4a6c-9d3e-0d4b3e8e2b11';
       await Promise.all(Array.from({ length: 5 }, () => publish(env, ev, eventId)));
-      expect(await env.t.prisma.notification.count()).toBe(1);
+      expect(await env.t.prisma.notificationDelivery.count()).toBe(2); // SMS + EMAIL, once
       expect(env.sms.outbox).toHaveLength(1);
       expect(env.email.outbox).toHaveLength(1);
     });
@@ -105,21 +101,16 @@ describe.skipIf(!hasTestDb)('notification: NotificationEventConsumer (bus → м
     expect(await env.t.app.get(OutboxRelayService).relayOnce()).toBe(1);
     expect(env.sms.outbox).toHaveLength(1);
     expect(env.sms.outbox[0].text).toContain('BZ-2026-0001');
-    expect(await env.t.prisma.notification.count()).toBe(1);
+    expect(await env.t.prisma.notificationDelivery.count()).toBe(2);
     expect(await env.t.app.get(OutboxRelayService).relayOnce()).toBe(0);
   });
 
   describe('ApplicationReturned', () => {
-    it('ЗЭЗ-д RETURNED хонх (тайлбар, түвшин); зээлдэгчид мэдэгдэхгүй', async () => {
+    it('N1: consumer does nothing — the officer\'s RETURNED bell is written by ApprovalService (approval.e2e), borrowers are not told', async () => {
       const { app } = await seed();
       await publish(env, { type: 'ApplicationReturned', applicationId: app.id, levelNo: 2, comment: 'Орлогын баримт дутуу' });
-      const bell = await env.t.prisma.notification.findMany();
-      expect(bell).toHaveLength(1);
-      expect(bell[0]).toMatchObject({ userId: 'officer-1', type: 'RETURNED', applicationId: app.id });
-      expect(bell[0].payloadJson).toMatchObject({ comment: 'Орлогын баримт дутуу', levelNo: 2, applicationNo: app.appNo });
+      expect(await env.t.prisma.notification.count()).toBe(0);
       expect(await env.t.prisma.notificationDelivery.count()).toBe(0);
-      const list = await env.http().get('/api/notifications').set(actors.officer('officer-1')).expect(200);
-      expect(list.body.items[0].body).toBe(`${app.appNo} дугаартай хүсэлт буцаагдлаа. Тайлбар: Орлогын баримт дутуу`);
     });
   });
 
@@ -160,11 +151,11 @@ describe.skipIf(!hasTestDb)('notification: NotificationEventConsumer (bus → м
       expect(await env.t.prisma.processedEvent.count({ where: { eventId: ev.eventId } })).toBe(1);
     });
 
-    it('зээлдэгчгүй хүсэлт: хонх явна, хүргэлт үүсэхгүй', async () => {
+    it('зээлдэгчгүй хүсэлт: юу ч үүсэхгүй (хүргэх хүн алга, ЗЭЗ-ийн хонхыг энд бичихгүй)', async () => {
       const app = await createApplication(env.t.prisma, { status: 'APPROVED', contractNo: 'BZ-1' });
       await publish(env, { type: 'ApplicationApproved', applicationId: app.id, contractNo: 'BZ-1' });
       expect(await env.t.prisma.notificationDelivery.count()).toBe(0);
-      expect(await env.t.prisma.notification.count()).toBe(1);
+      expect(await env.t.prisma.notification.count()).toBe(0);
     });
 
     it('өөр байгууллагын event-д хандахгүй (orgId таарахгүй хүсэлт олдохгүй)', async () => {
