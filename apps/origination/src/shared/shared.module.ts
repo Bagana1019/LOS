@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { SettingsModule } from '../modules/settings/settings.module';
 import { ApplicationAccessService } from './application-access.service';
 import { DomainEvents } from './domain-events';
+import { IntegrationModeReporter } from './integration-mode.reporter';
 import { ORG_DIRECTORY_SOURCE, OrgDirectoryService, createOrgDirectorySource } from './org-directory';
 import { OrgSettings } from './org-settings';
 
@@ -9,7 +10,7 @@ import { OrgSettings } from './org-settings';
 @Global()
 @Module({
   imports: [SettingsModule],
-  providers: [DomainEvents, OrgSettings, ApplicationAccessService, { provide: ORG_DIRECTORY_SOURCE, useFactory: () => createOrgDirectorySource() }, OrgDirectoryService],
+  providers: [DomainEvents, OrgSettings, ApplicationAccessService, { provide: ORG_DIRECTORY_SOURCE, useFactory: () => createOrgDirectorySource() }, OrgDirectoryService, IntegrationModeReporter],
   exports: [DomainEvents, OrgSettings, ApplicationAccessService, OrgDirectoryService],
 })
 export class SharedModule {}

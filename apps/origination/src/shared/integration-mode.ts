@@ -28,6 +28,18 @@ export function resolveIntegrationMode(name: string, env: Env = process.env): In
   return value;
 }
 
+/** `resolveIntegrationMode(name)`-ээр сонгогддог origination-ий бүх интеграци (N3 тайланд ашиглана). */
+export const ORIGINATION_INTEGRATIONS = ['sms', 'email', 'push', 'qpay', 'socialpay', 'bank-transfer', 'core-loan', 'core-deposit', 'credit-history'] as const;
+
+/**
+ * N3: NODE_ENV=production үед mock-оор ажиллаж буй интеграцийн нэрс. Staging production-тэй ижил NODE_ENV-ээр ажилладаг тул (H3) mock-ийг хориглохгүй,
+ * харин `INTEGRATION_MODE=real` дээр нэг `INTEGRATION_MODE_<X>=mock` үлдсэн нь чимээгүй байж болохгүй тул нэрсийг гаргаж startup-д анхааруулна.
+ */
+export function mockIntegrationsInProduction(env: Env = process.env, names: readonly string[] = ORIGINATION_INTEGRATIONS): string[] {
+  if (!isProduction(env)) return [];
+  return names.filter((name) => resolveIntegrationMode(name, env) === 'mock');
+}
+
 /** Real горимд шаардлагатай тохиргоо дутуу үед тодорхой алдаа. */
 export class IntegrationNotConfiguredError extends Error {
   constructor(readonly integration: string, readonly missing: string[]) {
