@@ -11,6 +11,8 @@ export interface XypSoapTransportOptions {
   endpointOverride?: string;
   /** production: WSDL-ийн зарласан endpoint заавал https. */
   requireHttps: boolean;
+  /** Татгалзсан endpoint-ийн алдаанд заах env-ийн НЭР (citizen: XYP_CITIZEN_ENDPOINT_URL, meta: XYP_META_ENDPOINT_URL). */
+  endpointEnvName: string;
 }
 
 interface WsdlServices { [service: string]: { ports?: { [port: string]: { location?: unknown } } } }
@@ -57,7 +59,7 @@ export class XypSoapTransport {
         return false;
       }
     });
-    if (!trusted) throw new IntegrationNotConfiguredError('xyp', ['XYP_CITIZEN_ENDPOINT_URL (WSDL endpoint rejected)']);
+    if (!trusted) throw new IntegrationNotConfiguredError('xyp', [`${this.opts.endpointEnvName} (WSDL endpoint rejected)`]);
   }
 
   /** @returns SOAP хариуны бие (wrapper-ийн хүүхдүүд). Алдаа (fault, сүлжээ, timeout) шидэгдэнэ — дуудагч нь ангилна. */

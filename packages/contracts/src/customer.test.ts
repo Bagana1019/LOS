@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreateCustomerRequest, CustomerContactInput, CustomerEditPayload, CustomerInput, UpdateCustomerRequest, XypCitizen, customerTypeOfRegister, isValidRegisterNo, normalizePhone, normalizeRegisterNo } from './customer';
+import { CreateCustomerRequest, CustomerContactInput, CustomerEditPayload, CustomerInput, UpdateCustomerRequest, XypCitizen, XypCitizenRequest, XypOtpRequest, XypOtpResponse, customerTypeOfRegister, isValidRegisterNo, normalizePhone, normalizeRegisterNo } from './customer';
 
 const address = { province: 'Улаанбаатар', district: 'Баянзүрх', khoroo: '5-р хороо', detail: 'Хан-Уул хотхон 12-45' };
 export const validIndividual = {
@@ -92,6 +92,32 @@ describe('request schemas', () => {
 describe('XypCitizen', () => {
   it('requires every key (nullable, not optional) so a partial upstream reply is caught at the boundary', () => {
     expect(XypCitizen.safeParse({ registerNo: 'УБ90010112', firstName: 'Бат' }).success).toBe(false);
+  });
+});
+
+// ХУР: иргэний зөвшөөрөл = иргэний ХУР-д бүртгэлтэй утсанд очдог нэг удаагийн код (WS100008 → WS100101 `auth.citizen.otp`).
+describe('XYP citizen consent contracts', () => {
+  it('XypCitizenRequest: регистрийг нормчилж, otp-г (trim) 4–8 цифрээр шаардана', () => {
+    expect(XypCitizenRequest.parse({ registerNo: ' уб90010112 ', otp: ' 123456 ' })).toEqual({ registerNo: 'УБ90010112', otp: '123456' });
+    expect(XypCitizenRequest.safeParse({ registerNo: 'УБ90010112', otp: '1234' }).success).toBe(true);
+    expect(XypCitizenRequest.safeParse({ registerNo: 'УБ90010112', otp: '12345678' }).success).toBe(true);
+  });
+
+  it.each([[''], ['123'], ['123456789'], ['12a456'], ['12 34 56'], ['-12345'], ['1e5000'], [undefined], [123456]])('otp %j → татгалзана (кодгүй / тоо биш / буруу урттай ХУР руу явахгүй)', (otp) => {
+    expect(XypCitizenRequest.safeParse({ registerNo: 'УБ90010112', otp }).success).toBe(false);
+  });
+
+  it('XypOtpRequest: зөвхөн registerNo. Дуудагчийн өгсөн `phone` (кодыг өөр утас руу чиглүүлэх) → татгалзана (зөвшөөрөл иргэний бүртгэлтэй утаснаас л ирнэ)', () => {
+    expect(XypOtpRequest.parse({ registerNo: 'уб90010112' })).toEqual({ registerNo: 'УБ90010112' });
+    expect(XypOtpRequest.safeParse({ registerNo: 'УБ90010112', phone: '99112233' }).success).toBe(false);
+    expect(XypOtpRequest.safeParse({ registerNo: 'УБ90010112', otp: '123456' }).success).toBe(false);
+  });
+
+  it('XypOtpResponse: sent=true ба ISO requestedAt заавал', () => {
+    expect(XypOtpResponse.safeParse({ sent: true, requestedAt: '2026-11-19T10:00:00.000Z' }).success).toBe(true);
+    expect(XypOtpResponse.safeParse({ sent: false, requestedAt: '2026-11-19T10:00:00.000Z' }).success).toBe(false);
+    expect(XypOtpResponse.safeParse({ sent: true, requestedAt: 'yesterday' }).success).toBe(false);
+    expect(XypOtpResponse.safeParse({ sent: true }).success).toBe(false);
   });
 });
 

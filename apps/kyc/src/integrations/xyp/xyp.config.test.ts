@@ -1,7 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { IntegrationNotConfiguredError } from '../errors';
-import { assertXypProductionConfig, loadXypConfig, XYP_DEFAULT_CITIZEN_WSDL, XYP_REQUIRED_ENV } from './xyp.config';
+import { assertXypProductionConfig, loadXypConfig, XYP_DEFAULT_CITIZEN_WSDL, XYP_DEFAULT_META_WSDL, XYP_REQUIRED_ENV } from './xyp.config';
 
 const keyPem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
 const readOk = (): Buffer => Buffer.from(keyPem);
@@ -62,6 +62,27 @@ describe('XYP_CITIZEN_ENDPOINT_URL (SOAP endpoint-ийн тодорхой overri
   it('production + real: override http бол эхлэхгүй; https бол зөвшөөрнө', () => {
     expect(() => assertXypProductionConfig({ ...PROD, XYP_CITIZEN_ENDPOINT_URL: 'http://xyp.example/ws' }, readOk)).toThrow(/XYP_CITIZEN_ENDPOINT_URL/);
     expect(() => assertXypProductionConfig({ ...PROD, XYP_CITIZEN_ENDPOINT_URL: 'https://xyp.example/ws' }, readOk)).not.toThrow();
+  });
+});
+
+// WS100008 (иргэний кодыг илгээх) нь `meta` WSDL-д (vendor demo OTPApprove.py: https://xyp.gov.mn/meta-1.5.0/ws?WSDL); citizen-ээс тусдаа WSDL, endpoint.
+describe('XYP_META_WSDL_URL / XYP_META_ENDPOINT_URL (иргэний код хүсэх)', () => {
+  it('анхдагч meta WSDL (vendor demo), endpoint override байхгүй', () => {
+    expect(XYP_DEFAULT_META_WSDL).toBe('https://xyp.gov.mn/meta-1.5.0/ws?WSDL');
+    expect(loadXypConfig(ENV, readOk)).toMatchObject({ metaWsdlUrl: XYP_DEFAULT_META_WSDL, metaEndpointOverride: undefined });
+  });
+  it('env-ээр дарна (trim)', () => {
+    const c = loadXypConfig({ ...ENV, XYP_META_WSDL_URL: ' https://m.example/ws?WSDL ', XYP_META_ENDPOINT_URL: ' https://m.example/meta/ws ' }, readOk);
+    expect(c).toMatchObject({ metaWsdlUrl: 'https://m.example/ws?WSDL', metaEndpointOverride: 'https://m.example/meta/ws' });
+  });
+  it('XYP_META_ENDPOINT_URL буруу → "(invalid)"', () => {
+    expect(messageOf(() => loadXypConfig({ ...ENV, XYP_META_ENDPOINT_URL: 'ftp://x.example/ws' }, readOk))).toContain('XYP_META_ENDPOINT_URL (invalid)');
+  });
+  it('production + real: meta WSDL / endpoint http бол эхлэхгүй (иргэний регистр, гарын үсэг http-ээр явахгүй); https бол зөвшөөрнө', () => {
+    expect(() => assertXypProductionConfig({ ...PROD, XYP_META_WSDL_URL: 'http://xyp.gov.mn/meta?WSDL' }, readOk)).toThrow(/XYP_META_WSDL_URL/);
+    expect(() => assertXypProductionConfig({ ...PROD, XYP_META_WSDL_URL: 'nope' }, readOk)).toThrow(/XYP_META_WSDL_URL/);
+    expect(() => assertXypProductionConfig({ ...PROD, XYP_META_ENDPOINT_URL: 'http://xyp.example/meta' }, readOk)).toThrow(/XYP_META_ENDPOINT_URL/);
+    expect(() => assertXypProductionConfig({ ...PROD, XYP_META_WSDL_URL: 'https://m.example/ws?WSDL', XYP_META_ENDPOINT_URL: 'https://m.example/meta' }, readOk)).not.toThrow();
   });
 });
 

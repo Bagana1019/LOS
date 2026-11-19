@@ -4,8 +4,16 @@
 import type { XypAssetsResponse, XypCitizen, XypPropertyAsset } from '@los/contracts';
 
 export interface XypClient {
-  /** @param registerNo нормчилсон регистр (том үсэг, зайгүй). Олдохгүй бол `null`. */
-  getCitizen(registerNo: string): Promise<XypCitizen | null>;
+  /**
+   * Иргэний зөвшөөрөл: иргэний ХУР-д БҮРТГЭЛТЭЙ утсанд нэг удаагийн код (OTP) илгээнэ (WS100008). Утсыг дуудагч СОНГОХГҮЙ — ажилтан өөр утас руу чиглүүлж болохгүй.
+   * @returns `false` — регистр ХУР-д олдсонгүй. Код явсан эсэх тодорхойгүй алдаа → XypUnavailableError (иргэнд SMS давхар явахаас сэргийлж дахин оролдохгүй).
+   */
+  requestCitizenOtp(registerNo: string): Promise<boolean>;
+  /**
+   * @param registerNo нормчилсон регистр (том үсэг, зайгүй). Олдохгүй бол `null`.
+   * @param otp иргэний утсанд ирсэн код (4–8 цифр). Буруу / хугацаа дууссан / ХУР татгалзсан → XypOtpRejectedError. Код нууц: лог, алдаанд орохгүй.
+   */
+  getCitizen(registerNo: string, otp: string): Promise<XypCitizen | null>;
   /**
    * FR-6.3: регистрийн эзэмшлийн үл хөдлөх хөрөнгө (өмчлөгчидтэй нь) ба тээврийн хэрэгсэл.
    * @param registerNo нормчилсон регистр. Регистр ХУР-д олдохгүй бол `null` (хөрөнгөгүй регистр нь хоосон жагсаалттай хариу).
@@ -18,6 +26,22 @@ export interface XypClient {
   getProperty(propertyId: string): Promise<XypPropertyAsset | null>;
 }
 export const XYP_CLIENT = Symbol('XYP_CLIENT');
+
+/**
+ * Иргэний кодыг өгсний дараа ХУР ХАРИУЛСАН (SOAP fault / resultCode≠0) ч иргэний мэдээллийг өгсөнгүй: код буруу, хугацаа дууссан, ашиглагдсан эсвэл ХУР татгалзсан.
+ * Vendor-ийн алдааны хүснэгт repo-д байхгүй тул шалтгааныг ялгахгүй. Сүлжээ / timeout / хэлбэр буруу хариу нь ЭНЭ БИШ (XypUnavailableError).
+ * `faultCode` / `resultCode` нь зөвхөн оношлогоонд (PII, нууц биш: SOAP faultcode, тоон код); мессеж нь код, регистр, vendor-ийн текстийг агуулахгүй.
+ */
+export class XypOtpRejectedError extends Error {
+  readonly faultCode?: string;
+  readonly resultCode?: number;
+  constructor(detail: { faultCode?: string; resultCode?: number } = {}) {
+    super('ХУР иргэний кодыг хүлээн авсангүй');
+    this.name = 'XypOtpRejectedError';
+    this.faultCode = detail.faultCode;
+    this.resultCode = detail.resultCode;
+  }
+}
 
 /** ХУР түр ажиллахгүй/хугацаа хэтэрсэн (дахин оролдож болно). Зохиомол алдааг mock мөн гаргана. */
 export class XypUnavailableError extends Error {

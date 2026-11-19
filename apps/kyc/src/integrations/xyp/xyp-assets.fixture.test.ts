@@ -1,7 +1,7 @@
 import { COLLATERAL_DESCRIPTION_SCHEMAS, XypAssetsResponse, XypPropertyAsset, customerTypeOfRegister, type XypVehicleAsset } from '@los/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IntegrationNotImplementedError } from '../errors';
-import { MockXypClient } from './mock-xyp.client';
+import { MOCK_XYP_OTP, MockXypClient } from './mock-xyp.client';
 import { RealXypClient } from './real-xyp.client';
 import { XypUnavailableError } from './xyp.client';
 import { createXypClient } from './xyp.module';
@@ -151,7 +151,7 @@ describe('xyp assets fixture · properties', () => {
   });
 
   it('owner names equal the ХУР citizen fixture of the same register (consistent within the mock ХУР)', async () => {
-    const citizen = (await xyp.getCitizen('УБ90010112'))!;
+    const citizen = (await xyp.getCitizen('УБ90010112', MOCK_XYP_OTP))!;
     expect((await xyp.getAssets('УБ90010112'))!.properties[0]!.owners[0]!.name).toBe(`${citizen.lastName} ${citizen.firstName}`);
   });
 

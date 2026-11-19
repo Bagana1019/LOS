@@ -14,12 +14,13 @@ DB schema: `kyc`. Модулиуд: inquiry, xyp, dan, cib, ndsh, aml, collatera
 
 | Зам | Эрх | Хүсэлт → хариу (`@los/contracts`) | Алдаа |
 | --- | --- | --- | --- |
-| `/xyp/citizen` | `customer:write` | `XypCitizenRequest` → `XypCitizen` (FR-2.2) | 400 `INVALID_REGISTER_NO`, 404 `XYP_NOT_FOUND`, 503 `XYP_UNAVAILABLE`, 501 |
+| `/xyp/citizen/otp` | `customer:write` | `XypOtpRequest {registerNo}` → `{sent, requestedAt}` — иргэний БҮРТГЭЛТЭЙ утсанд нэг удаагийн код (FR-2.2, зөвшөөрөл) | 400 `INVALID_REGISTER_NO` / `VALIDATION_FAILED` (утасны дугаар өгвөл), 404 `XYP_NOT_FOUND`, 503 `XYP_UNAVAILABLE`, 501 |
+| `/xyp/citizen` | `customer:write` | `XypCitizenRequest {registerNo, otp}` → `XypCitizen` (FR-2.2). Mock горимд код `123456` | 400 `INVALID_REGISTER_NO`, 404 `XYP_NOT_FOUND`, 422 `XYP_OTP_INVALID`, 503 `XYP_UNAVAILABLE`, 501 |
 | `/xyp/assets` | `customer:read` | `XypAssetsRequest {registerNo}` → `XypAssetsResponse {properties, vehicles, fetchedAt}` (FR-6.3) | 400 `INVALID_REGISTER_NO`, 400 `VALIDATION_FAILED`, 404 `XYP_NOT_FOUND` (регистр ХУР-д алга; хөрөнгөгүй бол хоосон жагсаалт), 503 `XYP_UNAVAILABLE`, 501 `INTEGRATION_NOT_IMPLEMENTED` |
 | `/xyp/property` | `customer:read` | `XypPropertyRequest {propertyId}` → `XypPropertyAsset` өмчлөгчидтэй нь (FR-6.5) | 400 `VALIDATION_FAILED`, 404 `XYP_NOT_FOUND`, 503 `XYP_UNAVAILABLE`, 501 |
 | `/collateral-checks/encumbrance` | `customer:read` | `EncumbranceCheckRequest {assetType, identifier}` → `EncumbranceCheckResult {status, sources[], checkedAt}` (FR-6.6) | 400 `VALIDATION_FAILED` / `INVALID_IDENTIFIER`, 422 `ENCUMBRANCE_CHECK_NOT_APPLICABLE`, 503 `ENCUMBRANCE_UNAVAILABLE`, 501 |
 
-Алдааны мессеж монгол, `code` тогтвортой. `customer:read` нь `OFFICER`, `BRANCH_MANAGER`, `APPROVER`, `ADMIN` дүрд бий (`ROLE_PERMISSIONS`); `/xyp/citizen` нь зөвхөн `customer:write` (`OFFICER`).
+Алдааны мессеж монгол, `code` тогтвортой. `customer:read` нь `OFFICER`, `BRANCH_MANAGER`, `APPROVER`, `ADMIN` дүрд бий (`ROLE_PERMISSIONS`); `/xyp/citizen`, `/xyp/citizen/otp` нь зөвхөн `customer:write` (`OFFICER`).
 Нэвтрээгүй хүсэлт 401, эрхгүй дүр 403.
 
 ### Ачаалал шалгах дүрэм
@@ -90,9 +91,9 @@ DB schema: `kyc`. Модулиуд: inquiry, xyp, dan, cib, ndsh, aml, collatera
 
 ## Бүтэц
 ```
-src/integrations/xyp/            XypClient (getCitizen, getAssets, getProperty), MockXypClient, RealXypClient, xyp.fixture.ts, xyp-assets.fixture.ts
+src/integrations/xyp/            XypClient (requestCitizenOtp, getCitizen, getAssets, getProperty), MockXypClient, RealXypClient, xyp.fixture.ts, xyp-assets.fixture.ts
 src/integrations/encumbrance/    EncumbranceRegistry, MockEncumbranceRegistry, RealEncumbranceRegistry, encumbrance.fixture.ts, encumbrance.module.ts
-src/modules/xyp/                 XypController (/xyp/citizen, /xyp/assets, /xyp/property)
+src/modules/xyp/                 XypController (/xyp/citizen/otp, /xyp/citizen, /xyp/assets, /xyp/property)
 src/modules/collateral-checks/   CollateralChecksController + Service, encumbrance.rules.ts (цэвэр дүрэм)
 test/                            e2e (supertest): xyp-assets, collateral-checks, pii-logs; xyp-vehicles-sync (valuation-тэй тулгалт)
 ```
