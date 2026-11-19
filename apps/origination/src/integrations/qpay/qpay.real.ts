@@ -1,12 +1,13 @@
-// QPay merchant API v2 — НИЙТЭД МЭДЭГДЭХ баримтаар бичсэн клиент.
+// QPay merchant API v2 — нийтийн баримт + Python лавлагаа (mobi_loan: apps/integrations/qpay) дээр суурилсан клиент.
 // АНХААР: sandbox (https://merchant-sandbox.qpay.mn/v2)-д ТӨВЛӨРСӨН ТУРШИЛТ ХИЙГЭЭГҮЙ — credential авсны дараа шалгана.
 // Тест нь fetch stub-аар (qpay.real.test.ts) хүсэлт/хариуны хэлбэр, токен, дахин оролдлого, timeout-ийг шалгасан.
-// Баталгаажаагүй таамаглал (credential-тай шалгах):
-//   · auth/token-ийн `expires_in` — epoch секунд (> 1e9) эсвэл үлдсэн секунд аль нь ч байж болно гэж үзсэн;
-//   · payment_date-д цагийн бүс байхгүй бол Asia/Ulaanbaatar (+08:00) гэж үзсэн;
-//   · токен шинэчлэлт нь /auth/refresh биш, /auth/token-оор дахин нэвтрэх хэлбэрээр.
+// Баталгаажсан (Python лавлагаа, vendor xlsx): `expires_in` нь ABSOLUTE unix timestamp (≤ 1e9 бол хамгаалалтын fallback-аар үлдсэн секунд);
+//   токен шинэчлэлт нь /auth/refresh биш /auth/token-оор дахин нэвтрэх хэлбэр; qr_image нь түүхий base64 PNG (data: угтваргүй — LOS гэрээ ч ингэж хадгална).
+// Баталгаагүй (credential-тай шалгах): payment_date-д цагийн бүс байхгүй бол Asia/Ulaanbaatar (+08:00) гэж үзсэн.
+// Дахин оролдлого зөвхөн idempotent дуудлагад (токен, payment/check, DELETE). POST /invoice-ийг дахин илгээхгүй:
+//   sender_invoice_no-ийн давхардлыг QPay хэрхэн авдаг нь баталгаагүй тул давхар нэхэмжлэх үүсэх эрсдэлтэй.
 import { z } from 'zod';
-import { requireEnv } from '../../shared/integration-mode';
+import { assertRealIntegrationEnv, isProduction, requireEnv, resolveIntegrationMode } from '../../shared/integration-mode';
 import type { IntegrationMode, PaymentDeeplink } from '@los/contracts';
 import type {
   CreateProviderInvoiceRequest, ProviderCheckResult, ProviderInvoice, ProviderInvoiceRef, ProviderPayment,
@@ -17,6 +18,10 @@ import type { QPayClient, QPayConfig } from './qpay.client';
 
 export const QPAY_DEFAULT_BASE_URL = 'https://merchant-sandbox.qpay.mn/v2';
 const REQUIRED_ENV = ['QPAY_USERNAME', 'QPAY_PASSWORD', 'QPAY_INVOICE_CODE', 'QPAY_CALLBACK_BASE_URL'];
+/** Production-д QPAY_BASE_URL заавал: sandbox анхдагч утга production-д чимээгүй хэрэглэгдэж болохгүй. */
+const PRODUCTION_REQUIRED_ENV = [...REQUIRED_ENV, 'QPAY_BASE_URL'];
+/** payment/check-ийн нэг хуудасны хэмжээ; count үүнээс их бол хуудаслалт хэрэгжээгүй тул төлөв тодорхойгүй. */
+const CHECK_PAGE_LIMIT = 100;
 
 export interface RealQPayOptions {
   env?: NodeJS.ProcessEnv;
@@ -39,6 +44,7 @@ const InvoiceResponse = z.object({
   urls: z.array(z.object({ name: z.string(), description: z.string().optional().nullable(), logo: z.string().optional().nullable(), link: z.string() }).passthrough()).optional().nullable(),
 }).passthrough();
 const CheckResponse = z.object({
+  count: z.unknown().optional(),
   rows: z.array(z.object({
     payment_id: z.union([z.string(), z.number()]),
     payment_status: z.string(),
@@ -50,6 +56,26 @@ const CheckResponse = z.object({
 
 type Json = Record<string, unknown>;
 interface HttpResult { status: number; body: unknown }
+
+/**
+ * Phase 5: production + real → bootstrap-д шалгана (assertInternalAuthSecret-ийн загвар). QPAY_BASE_URL заавал тодорхой
+ * (sandbox анхдагч утга чимээгүй хэрэглэгдвэл жинхэнэ төлбөр хэзээ ч ирэхгүй), https, sandbox хост биш; QPAY_CALLBACK_BASE_URL мөн https.
+ * Алдаа зөвхөн хувьсагчийн нэрийг заана — утгыг оруулахгүй. Production биш үед юу ч хийхгүй.
+ */
+export function assertQPayProductionConfig(env: NodeJS.ProcessEnv = process.env): void {
+  assertRealIntegrationEnv('qpay', PRODUCTION_REQUIRED_ENV, env);
+  if (!isProduction(env) || resolveIntegrationMode('qpay', env) !== 'real') return;
+  const base = parseHttpsUrl('QPAY_BASE_URL', env.QPAY_BASE_URL as string);
+  if (/sandbox/i.test(base.hostname)) throw new Error('QPAY_BASE_URL points at the QPay sandbox in production: real payments would never arrive. Refusing to start');
+  parseHttpsUrl('QPAY_CALLBACK_BASE_URL', env.QPAY_CALLBACK_BASE_URL as string);
+}
+
+function parseHttpsUrl(name: string, value: string): URL {
+  let url: URL;
+  try { url = new URL(value.trim()); } catch { throw new Error(`${name} is not a valid URL. Refusing to start`); }
+  if (url.protocol !== 'https:') throw new Error(`${name} must use https in production. Refusing to start`);
+  return url;
+}
 
 export class RealQPayClient implements QPayClient {
   readonly provider = 'QPAY' as const;
@@ -98,7 +124,7 @@ export class RealQPayClient implements QPayClient {
       amount: req.amount,
       callback_url: `${cfg.callbackBaseUrl}/payments/callbacks/qpay?invoice=${encodeURIComponent(req.senderInvoiceNo)}`,
     };
-    const res = await this.call('POST', '/invoice', body);
+    const res = await this.call('POST', '/invoice', body, false); // non-idempotent: 5xx/timeout-д дахин илгээхгүй (давхар нэхэмжлэх)
     const parsed = InvoiceResponse.safeParse(res);
     if (!parsed.success) throw new ProviderUnavailableError('QPay', 'QPay: хариуны хэлбэр буруу байна');
     const r = parsed.data;
@@ -110,9 +136,14 @@ export class RealQPayClient implements QPayClient {
   }
 
   async checkInvoice(ref: ProviderInvoiceRef): Promise<ProviderCheckResult> {
-    const res = await this.call('POST', '/payment/check', { object_type: 'INVOICE', object_id: ref.providerInvoiceId, offset: { page_number: 1, page_limit: 100 } });
+    const res = await this.call('POST', '/payment/check', { object_type: 'INVOICE', object_id: ref.providerInvoiceId, offset: { page_number: 1, page_limit: CHECK_PAGE_LIMIT } });
     const parsed = CheckResponse.safeParse(res);
     if (!parsed.success) throw new ProviderUnavailableError('QPay', 'QPay: хариуны хэлбэр буруу байна');
+    // Таслагдсан хуудас төлөгдсөн нэхэмжлэхийг төлөгдөөгүй гэж буруу мэдээлж болзошгүй → хэзээ ч таамаглахгүй (Python лавлагаатай ижил).
+    const { count } = parsed.data;
+    if (typeof count === 'number' && count > CHECK_PAGE_LIMIT) {
+      throw new ProviderUnavailableError('QPay', `QPay: payment/check ${CHECK_PAGE_LIMIT}-аас олон мөртэй (count=${count}); хуудаслалт хэрэгжээгүй тул төлөв тодорхойгүй`);
+    }
     const payments: ProviderPayment[] = [];
     for (const row of parsed.data.rows ?? []) {
       if (row.payment_status !== 'PAID') continue;
@@ -146,14 +177,22 @@ export class RealQPayClient implements QPayClient {
 
   // ── HTTP ────────────────────────────────────────────────────────────────────────
 
-  /** 5xx / сүлжээ / timeout-д exponential backoff-оор maxRetries удаа дахин оролдоно; 4xx-д оролдохгүй. */
-  private async call(method: 'POST' | 'DELETE', path: string, body?: Json): Promise<unknown> {
+  /**
+   * 5xx / сүлжээ / timeout-д exponential backoff-оор maxRetries удаа дахин оролдоно; 4xx-д оролдохгүй.
+   * Токен авах нь side-effect-гүй (нэхэмжлэх явуулаагүй) тул үргэлж дахин оролдоно; бизнес хүсэлтийг зөвхөн `idempotent` үед.
+   */
+  private async call(method: 'POST' | 'DELETE', path: string, body?: Json, idempotent = true): Promise<unknown> {
     const cfg = this.config();
+    await this.retrying(this.maxRetries, () => this.getToken());
+    return this.retrying(idempotent ? this.maxRetries : 0, () => this.callOnce(cfg.baseUrl, method, path, body));
+  }
+
+  private async retrying<T>(retries: number, fn: () => Promise<T>): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.callOnce(cfg.baseUrl, method, path, body);
+        return await fn();
       } catch (e) {
-        if (!(e instanceof ProviderUnavailableError) || attempt >= this.maxRetries) throw e;
+        if (!(e instanceof ProviderUnavailableError) || attempt >= retries) throw e;
         await this.sleep(this.backoffMs * 2 ** attempt);
       }
     }
