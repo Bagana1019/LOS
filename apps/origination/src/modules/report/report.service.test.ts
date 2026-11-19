@@ -1,14 +1,18 @@
 import { HttpStatus } from '@nestjs/common';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ReportExportQuery, ReportQuery } from '@los/contracts';
+import ExcelJS from 'exceljs';
+import { Logger } from '@nestjs/common';
+import type { ReportColumn, ReportExportQuery, ReportFilterDef, ReportQuery, ReportRow } from '@los/contracts';
 import type { Clock } from '@los/nest-common';
 import type { PrismaService } from '../../prisma.service';
 import type { RequestContext } from '@los/contracts';
 import type { OrgSettings } from '../../shared/org-settings';
+import { OrgDirectoryService, type OrgDirectorySource } from '../../shared/org-directory';
 import type { CoreDepositPort } from '../../integrations/core-deposit/core-deposit.port';
 import { EXPORT_CONCURRENCY, EXPORT_MAX_QUEUE, ReportService } from './report.service';
 import { EXPORT_STATEMENT_TIMEOUT_MS } from './report-db';
-import { col } from './report-filters';
+import { EXPORT_HEADER_ROW } from './excel.exporter';
+import { F, col } from './report-filters';
 import type { ReportRegistry } from './report-registry';
 import type { ReportDefinition, ReportInput, ReportRunResult } from './report-types';
 
@@ -17,10 +21,10 @@ const ctx: RequestContext = { userId: 'admin-1', roles: ['ADMIN'], branchId: nul
 const exportQuery = { sortDir: 'asc' } as ReportExportQuery;
 const jsonQuery = { sortDir: 'asc', page: 1, pageSize: 20 } as ReportQuery;
 
-function fixture(o: { source?: 'origination' | 'core-mock' | 'core'; max?: number; run?: (input: ReportInput) => Promise<ReportRunResult> } = {}) {
+function fixture(o: { source?: 'origination' | 'core-mock' | 'core'; max?: number; run?: (input: ReportInput) => Promise<ReportRunResult>; columns?: ReportColumn[]; filters?: ReportFilterDef[]; directory?: OrgDirectorySource['fetch'] } = {}) {
   const runs: ReportInput[] = [];
   const def: ReportDefinition = {
-    key: 'overdue-loans', title: 'Туршилт', description: 'd', columns: [col('name', 'Нэр', 'string')], filters: [], defaultSort: { sortBy: 'name', sortDir: 'asc' }, totalKeys: [],
+    key: 'overdue-loans', title: 'Туршилт', description: 'd', columns: o.columns ?? [col('name', 'Нэр', 'string')], filters: o.filters ?? [], defaultSort: { sortBy: 'name', sortDir: 'asc' }, totalKeys: [],
     dataSource: () => o.source ?? 'origination',
     run: async (_deps, input) => { runs.push(input); return o.run ? o.run(input) : { rows: [{ name: 'А' }], total: 1 }; },
   };
@@ -30,7 +34,8 @@ function fixture(o: { source?: 'origination' | 'core-mock' | 'core'; max?: numbe
   const settings = { get: async () => o.max ?? 50_000 } as unknown as OrgSettings;
   const registry = { get: (k: string) => (k === def.key ? def : undefined), all: () => [def], has: (k: string) => k === def.key } as unknown as ReportRegistry;
   const deposit = { mode: 'mock', listBalances: async () => [] } as unknown as CoreDepositPort;
-  return { service: new ReportService(prisma, clock, settings, registry, deposit), runs, created };
+  const directory = { fetch: vi.fn(o.directory ?? (async () => ({ branches: {}, users: {} }))) };
+  return { service: new ReportService(prisma, clock, settings, registry, deposit, new OrgDirectoryService(directory, clock as never)), runs, created, directory };
 }
 
 const deferred = <T = void>() => { let resolve!: (v: T) => void; const promise = new Promise<T>((r) => { resolve = r; }); return { promise, resolve }; };
@@ -140,5 +145,85 @@ describe('ReportService: өгөгдлийн эх сурвалж (core-mock)', ()
   it('production биш орчинд core-mock экспорт ажиллана', async () => {
     vi.stubEnv('NODE_ENV', 'development');
     expect((await fixture({ source: 'core-mock' }).service.export(ctx, 'overdue-loans', exportQuery)).rowCount).toBe(1);
+  });
+});
+
+// Excel/CSV экспорт: салбар / ЗЭЗ-ийн UUID биш нэр. Нэр нь gateway-ийн лавлахад (origination өөр schema уншихгүй) — нэг экспортод нэг л удаа авна.
+describe('ReportService.export: салбар/ЗЭЗ-ийн нэр (directory)', () => {
+  const columns = [col('contractNo', 'Гэрээ', 'string'), col('branchId', 'Салбар', 'string'), col('officerId', 'ЗЭЗ', 'string')];
+  const rows: ReportRow[] = [
+    { contractNo: 'C1', branchId: 'b1', officerId: 'u1' },
+    { contractNo: 'C2', branchId: 'b2', officerId: 'Систем' },
+    { contractNo: 'C3', branchId: 'b-gone', officerId: 'u-gone' },
+  ];
+  const known = async () => ({ branches: { b1: 'Төв салбар', b2: 'Баянзүрх салбар' }, users: { u1: 'Бат Болд' } });
+  const named = (directory: OrgDirectorySource['fetch'], data: ReportRow[] = rows) =>
+    fixture({ columns, filters: [F.branch, F.officer], directory, run: async () => ({ rows: data, total: data.length }) });
+
+  async function cells(buffer: Buffer): Promise<{ data: string[][]; filterLine: string }> {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as unknown as ArrayBuffer);
+    const ws = wb.worksheets[0]!;
+    const data: string[][] = [];
+    for (let r = EXPORT_HEADER_ROW + 1; r <= ws.rowCount; r++) data.push([1, 2, 3].map((c) => String(ws.getRow(r).getCell(c).value ?? '')));
+    return { data, filterLine: String(ws.getRow(3).getCell(1).value) };
+  }
+
+  it('мөрүүдэд салбарын нэр, ЗЭЗ-ийн бүтэн нэр гарна (UUID биш)', async () => {
+    const { service } = named(known);
+    const { data } = await cells((await service.export(ctx, 'overdue-loans', exportQuery)).buffer);
+    expect(data[0]).toEqual(['C1', 'Төв салбар', 'Бат Болд']);
+    expect(data[1]).toEqual(['C2', 'Баянзүрх салбар', 'Систем']);
+  });
+
+  it('"Шүүлт" мөрөнд ч салбар/ЗЭЗ-ийн id биш нэр гарна', async () => {
+    const { service } = named(known, [rows[0]!]);
+    const { filterLine } = await cells((await service.export(ctx, 'overdue-loans', { ...exportQuery, branchId: 'b1', officerId: 'u1' })).buffer);
+    expect(filterLine).toContain('Салбар = Төв салбар');
+    expect(filterLine).toContain('ЗЭЗ = Бат Болд');
+    expect(filterLine).not.toContain('b1');
+  });
+
+  it('лавлахад байхгүй id → id хэвээр (нэр дутсанаас экспорт унахгүй)', async () => {
+    const { service } = named(known);
+    const { data } = await cells((await service.export(ctx, 'overdue-loans', exportQuery)).buffer);
+    expect(data[2]).toEqual(['C3', 'b-gone', 'u-gone']);
+  });
+
+  it('лавлах унавал экспорт амжилттай (id-тай), warning лог бичигдэнэ', async () => {
+    const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { service, created } = named(async () => { throw new Error('gateway сервис руу холбогдож чадсангүй'); });
+    const file = await service.export(ctx, 'overdue-loans', exportQuery);
+    const { data } = await cells(file.buffer);
+    expect(file.rowCount).toBe(3);
+    expect(data[0]).toEqual(['C1', 'b1', 'u1']);
+    expect(created).toHaveLength(1); // report_run аудит хэвээр бичигдэнэ
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it('batch: N мөрт лавлахыг НЭГ л удаа дуудна (мөр тутамд биш)', async () => {
+    const many: ReportRow[] = Array.from({ length: 1200 }, (_, i) => ({ contractNo: `C${i}`, branchId: i % 2 ? 'b1' : 'b2', officerId: 'u1' }));
+    const { service, directory } = named(known, many);
+    const { data } = await cells((await service.export(ctx, 'overdue-loans', exportQuery)).buffer);
+    expect(data).toHaveLength(1200);
+    expect(data[1]).toEqual(['C1', 'Төв салбар', 'Бат Болд']);
+    expect(directory.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('id багана байхгүй тайланд, мөр байхгүй үед лавлах огт дуудагдахгүй', async () => {
+    const plain = fixture({ directory: known });
+    await plain.service.export(ctx, 'overdue-loans', exportQuery);
+    const empty = named(known, []);
+    await empty.service.export(ctx, 'overdue-loans', exportQuery);
+    expect(plain.directory.fetch).not.toHaveBeenCalled();
+    expect(empty.directory.fetch).not.toHaveBeenCalled();
+  });
+
+  it('JSON (run) нь хэвээр id-тай: UI өөрийн лавлахаар хөрвүүлнэ, лавлах дуудагдахгүй', async () => {
+    const { service, directory } = named(known);
+    const res = await service.run(ctx, 'overdue-loans', jsonQuery);
+    expect(res.rows[0]).toMatchObject({ branchId: 'b1', officerId: 'u1' });
+    expect(directory.fetch).not.toHaveBeenCalled();
   });
 });

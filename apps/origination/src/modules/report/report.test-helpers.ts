@@ -3,6 +3,7 @@ import type { ReportResult } from '@los/contracts';
 import { ReportResult as ReportResultSchema } from '@los/contracts';
 import { resetDb } from '../../test-utils/factories';
 import { createTestApp, TestApp } from '../../test-utils/test-app';
+import { ORG_DIRECTORY_SOURCE, type OrgDirectorySource } from '../../shared/org-directory';
 import { DASHBOARD_CACHE_TTL_MS } from './dashboard.service';
 import { ReportModule } from './report.module';
 import { seedWorld, type World } from './report.fixtures';
@@ -10,8 +11,11 @@ import { seedWorld, type World } from './report.fixtures';
 export interface ReportEnv { t: TestApp; http: () => ReturnType<typeof request> }
 
 /** Dashboard кэшийг тестэд анхдагчаар унтраана (тест бүр өгөгдлөө сольж дахин уншдаг); кэшийн тестүүд `dashboardCacheMs`-ийг өгнө. */
-export async function bootReport(o: { dashboardCacheMs?: number } = {}): Promise<ReportEnv> {
-  const t = await createTestApp([ReportModule], (b) => b.overrideProvider(DASHBOARD_CACHE_TTL_MS).useValue(o.dashboardCacheMs ?? 0));
+export async function bootReport(o: { dashboardCacheMs?: number; directory?: OrgDirectorySource } = {}): Promise<ReportEnv> {
+  const t = await createTestApp([ReportModule], (b) => {
+    const base = b.overrideProvider(DASHBOARD_CACHE_TTL_MS).useValue(o.dashboardCacheMs ?? 0);
+    return o.directory ? base.overrideProvider(ORG_DIRECTORY_SOURCE).useValue(o.directory) : base; // анхдагч: хоосон лавлах (id хэвээр)
+  });
   return { t, http: () => request(t.app.getHttpServer()) };
 }
 
