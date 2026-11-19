@@ -15,7 +15,7 @@ NotificationService (exports)     — notifyUsers / notifyCustomers / dispatch /
 TemplateService (exports)         — кодонд суулгасан монгол загвар + `notification_template` override, render, preview
 DeliveryProcessor                 — нэг хүргэлтийг gateway-ээр илгээнэ (claim → SENT / дахин оролдлого / FAILED / SKIPPED), sweep()
 ReminderService                   — төлөлт сануулах (cursor-оор багцлан), cron-д runAllOrgs()
-NotificationEventConsumer         — ApplicationApproved / ApplicationReturned / DisbursementApproved / PaymentReceived → мэдэгдэл
+NotificationEventConsumer         — ApplicationApproved / DisbursementApproved / PaymentReceived → мэдэгдэл (N1: ЗЭЗ-ийн APPROVED/RETURNED хонхыг ApprovalService шийдвэрийн транзакцид бичнэ; consumer зөвхөн зээлдэгчид явуулна)
 NotificationRuntime               — queue worker + cron + sweep() timer; унтрахад хаана
 PreferenceService / PushDeviceService / DeliveryAdminService
 notification.queue.ts             — NotificationQueue порт: InlineNotificationQueue | BullMqNotificationQueue

@@ -5,8 +5,9 @@ import { EVENT_BUS } from '@los/nest-common';
 import { PrismaService, type Tx } from '../../prisma.service';
 import { NotificationService, type CustomerNotifyContext, type NotifyPayload } from './notification.service';
 
-type Handled = Extract<DomainEvent, { type: 'ApplicationApproved' | 'ApplicationReturned' | 'DisbursementApproved' | 'PaymentReceived' }>;
-const HANDLED = ['ApplicationApproved', 'ApplicationReturned', 'DisbursementApproved', 'PaymentReceived'] as const;
+// N1: ApplicationReturned is not handled — the officer's RETURNED bell is written in the approval transaction (ApprovalService), nobody else is told.
+type Handled = Extract<DomainEvent, { type: 'ApplicationApproved' | 'DisbursementApproved' | 'PaymentReceived' }>;
+const HANDLED = ['ApplicationApproved', 'DisbursementApproved', 'PaymentReceived'] as const;
 
 /**
  * C1: өөрийн consumer group — 'origination' group-ийг contract subscriber-тэй хуваалцахад Redis мессеж бүрийг нэг л уншигчид өгч,
@@ -38,7 +39,7 @@ export class NotificationEventConsumer implements OnModuleInit {
     if (!(HANDLED as readonly string[]).includes(event.type)) return;
     let deliveryIds: string[] = [];
     // Тохиргоо/загварыг транзакцийн ГАДНА ачаална: транзакц дотроос pool-д хандвал зэрэг ирсэн event-үүд pool дүүрч гацна.
-    const prepared = event.type === 'ApplicationReturned' ? null : await this.notifications.prepareCustomerNotify(event.orgId);
+    const prepared = await this.notifications.prepareCustomerNotify(event.orgId);
     const ran = await consumeOnce(this.db, 'notification', event, async (tx) => { deliveryIds = await this.apply(tx, event as Handled, prepared); });
     if (ran) await this.notifications.dispatch(deliveryIds);
   }
@@ -52,19 +53,15 @@ export class NotificationEventConsumer implements OnModuleInit {
     const base: NotifyPayload = { applicationNo: app.appNo, currency: app.currency };
     const toCustomers = (type: 'APPROVED' | 'DISBURSEMENT_APPROVED' | 'PAYMENT_RECEIVED', payload: NotifyPayload) =>
       this.notifications.notifyCustomers({ orgId: event.orgId, customerIds, type, applicationId: app.id, payload, dedupeBase: `event:${event.eventId}`, channels: prepared?.channels, templates: prepared?.templates }, tx);
-    const toOfficer = (type: 'APPROVED' | 'RETURNED' | 'DISBURSEMENT_APPROVED', payload: NotifyPayload) =>
+    const toOfficer = (type: 'DISBURSEMENT_APPROVED', payload: NotifyPayload) =>
       this.notifications.notifyUsers({ orgId: event.orgId, userIds: [app.officerId], type, applicationId: app.id, payload }, tx); // officerId=null → "Систем" (BR-12): мэдэгдэх хүнгүй
 
     switch (event.type) {
       case 'ApplicationApproved': {
         const payload = { ...base, contractNo: event.contractNo, amount: num(app.amount) };
-        const res = await toCustomers('APPROVED', payload);
-        await toOfficer('APPROVED', payload);
-        return res.deliveryIds;
+        // N1: the officer's APPROVED bell is written in the approval transaction (ApprovalService); only the borrowers are notified here.
+        return (await toCustomers('APPROVED', payload)).deliveryIds;
       }
-      case 'ApplicationReturned':
-        await toOfficer('RETURNED', { ...base, comment: event.comment, levelNo: event.levelNo });
-        return [];
       case 'DisbursementApproved': {
         const payload = { ...base, contractNo: app.contractNo, amount: event.amount };
         const res = await toCustomers('DISBURSEMENT_APPROVED', payload);

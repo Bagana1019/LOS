@@ -301,7 +301,7 @@ describe.skipIf(!hasTestDb)('NotificationModule + Redis хүрэхгүй: дуу
     const r = await settleWithin(publish(env, { type: 'ApplicationApproved', applicationId: app.id, contractNo: 'BZ-1' }), 4_000);
     expect(r.state).toBe('resolved');
     expect(await env.t.prisma.notificationDelivery.count({ where: { status: 'QUEUED' } })).toBe(2);
-    expect(await env.t.prisma.notification.count()).toBe(1); // ЗЭЗ-ийн хонх үүссэн
+    expect(await env.t.prisma.notification.count()).toBe(0); // N1: ЗЭЗ-ийн хонхыг ApprovalService бичнэ, consumer биш
   });
 
   it('HTTP: POST /notifications/reminders/run гацахгүй (сануулгын хүргэлтийг DB-д бичээд буцна)', async () => {
