@@ -6,7 +6,7 @@ import { DEFAULT_CIB_POLICY, type CibPolicy } from './cib.mapper';
 
 type Env = Record<string, string | undefined>;
 
-/** Production + real үед БҮГД заавал (bootstrap-д шалгана). SAINSCORE_PRODUCT_NO = vendor-ийн лавлагааны хураамжийн бүтээгдэхүүний дугаар (Python: Polaris product id). */
+/** Production + real үед БҮГД заавал (bootstrap-д шалгана). SAINSCORE_PRODUCT_NO = vendor-д бүртгэлтэй МЕРЧАНТ код (API Inquire v1.7 productNo, жнь "PROD 02" хэлбэр); зээлийн бүтээгдэхүүний ID БИШ — Polaris ID илгээвэл vendor SR0010 буцаадаг (Python views.py, live-verified). Системд нэг утга. */
 export const SAINSCORE_REQUIRED_ENV = ['SAINSCORE_BASE_URL', 'SAINSCORE_USERNAME', 'SAINSCORE_PASSWORD_HASH', 'SAINSCORE_PRODUCT_NO'] as const;
 
 const POLICY_ENV: Record<keyof CibPolicy, string> = {
