@@ -17,7 +17,6 @@ export interface CibPolicy {
 export const DEFAULT_CIB_POLICY: CibPolicy = { assumedMonthlyRatePct: 2.5, largeLoanMonthlyRatePct: 1.6, largeLoanThresholdMnt: 50_000_000 };
 
 const ELIGIBLE = new Set(['LN', 'LS', 'LINE']);
-const SAVINGS_COLLATERAL = 'Банкин дахь хадгаламж';
 type Row = Record<string, unknown>;
 type RateSource = 'VENDOR' | 'ASSUMED' | 'UNKNOWN';
 
@@ -116,9 +115,10 @@ function mapRow(item: Row, today: Date, policy: CibPolicy, acc: Acc): void {
   let rateSource: RateSource | null = null;
 
   if (currency !== 'MNT') {
-    extra.excludedFromTotals = 'NON_MNT'; // MNT-ийн нийлбэрт хөрвүүлэхгүй
-  } else if (Array.isArray(item.colls) && item.colls.some((c) => isRow(c) && c.sub_coll_type === SAVINGS_COLLATERAL)) {
-    extra.excludedFromPayment = 'SAVINGS_COLLATERAL'; // өөрийн банкны хадгаламж барьцаатай — чадавхийн эрсдэлгүй
+    // FX хөрвүүлэлтгүй тул MNT нийлбэрт оруулж чадахгүй. Гэхдээ бодит үүрэг — чимээгүй орхихгүй: нийлбэр дутуу гэж тэмдэглэж, анхааруулна.
+    extra.excludedFromTotals = 'NON_MNT';
+    acc.paymentComplete = false;
+    acc.attention = true;
   } else if (isLine) {
     monthly = adv as number; // зээлийн шугам: лимит бүхлээрээ үүрэг
   } else {

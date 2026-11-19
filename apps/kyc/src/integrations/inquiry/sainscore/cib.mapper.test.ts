@@ -89,15 +89,21 @@ describe('mapCibRows — зээлийн шугам (LINE), хаагдсан, т�
 });
 
 describe('mapCibRows — бусад хоцрогдол', () => {
-  it('MNT биш идэвхтэй зээл: тоо, detail-д орно; MNT нийлбэрт ОРОХГҮЙ', () => {
+  it('MNT биш идэвхтэй зээл: тоо, detail-д орно; MNT нийлбэрт ОРОХГҮЙ ГЭХДЭЭ чимээгүй орхихгүй — payment_complete=false + WARNING (FX хөрвүүлэлтгүй)', () => {
     const r = map([open({ curr_code: 'USD', adv_amount: 15_000, balance: 8_000 }), open({ loancode: 'L-2' })]);
-    expect(r.summary).toMatchObject({ active_loan_count: 2, total_disbursed: 5_000_000, outstanding: 3_500_000 });
+    expect(r.summary).toMatchObject({ active_loan_count: 2, total_disbursed: 5_000_000, outstanding: 3_500_000, payment_complete: false });
     expect(loans(r)[0]).toMatchObject({ currency: 'USD', excludedFromTotals: 'NON_MNT' });
+    expect(r.warningLevel).toBe('WARNING');
   });
-  it('өөрийн банкны хадгаламж барьцаатай: идэвхтэй, нийлбэрт орно, сарын төлбөрөөс хасна', () => {
+  it('зөвхөн MNT идэвхтэй зээлтэй бол payment_complete=true (FX шалгалт буруу анхааруулахгүй)', () => {
+    expect(map([open()]).summary.payment_complete).toBe(true);
+  });
+  // Python лавлагаа хадгаламж барьцаатай зээлийг DTI-аас хасдаг боловч энэ нь бизнесийн батлагдаагүй политик; бодит үүрэг нь сарын төлбөр хэвээр → тоолно.
+  it('хадгаламж барьцаатай зээлийн сарын төлбөрийг ХАСАХГҮЙ (үүргийг дутуу тооцохгүй), ямар ч тусгай тэмдэглэгээгүй', () => {
     const r = map([open({ colls: [{ coll_regno: 'X', sub_coll_type: 'Банкин дахь хадгаламж' }] })]);
-    expect(r.summary).toMatchObject({ active_loan_count: 1, outstanding: 3_500_000, monthly_payment: 0 });
-    expect(loans(r)[0]).toMatchObject({ excludedFromPayment: 'SAVINGS_COLLATERAL' });
+    expect(r.summary).toMatchObject({ active_loan_count: 1, outstanding: 3_500_000, monthly_payment: annuityPayment(3_500_000, 5, 10) });
+    expect(loans(r)[0]).not.toHaveProperty('excludedFromPayment');
+    expect(r.warningLevel).toBe('NONE');
   });
   it('maturity_date задлах боломжгүй → төлбөр тооцоогүй, payment_complete=false, WARNING', () => {
     const r = map([open({ maturity_date: 'tomorrow' })]);
