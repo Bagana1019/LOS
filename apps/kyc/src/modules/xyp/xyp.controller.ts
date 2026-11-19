@@ -10,7 +10,7 @@ import {
 } from '@los/contracts';
 import { DomainError, Permissions, ZodValidationPipe } from '@los/nest-common';
 import { z } from 'zod';
-import { IntegrationNotImplementedError } from '../../integrations/errors';
+import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../../integrations/errors';
 import { XYP_CLIENT, XypUnavailableError, type XypClient } from '../../integrations/xyp/xyp.client';
 
 /** Регистрийн хэлбэрийг шалгана (иргэн УБ12345678, байгууллага 7 орон). */
@@ -25,6 +25,8 @@ async function mapXypErrors<T>(call: () => Promise<T>): Promise<T> {
   } catch (e) {
     if (e instanceof XypUnavailableError) throw new DomainError('XYP_UNAVAILABLE', 'ХУР түр ажиллахгүй байна. Хэсэг хугацааны дараа дахин оролдох эсвэл гараар бөглөнө үү', 503);
     if (e instanceof IntegrationNotImplementedError) throw new DomainError('INTEGRATION_NOT_IMPLEMENTED', 'ХУР-ын бодит холболт хараахан хийгдээгүй (INTEGRATION_MODE=mock)', 501);
+    // Тохиргоо дутуу: хэрэглэгчид «гараар бөглөнө» гэсэн ижил замыг (XYP_UNAVAILABLE) үзүүлнэ; env-ийн нэр, нууц гаргахгүй. origination-ийн кодын жагсаалт хаалттай.
+    if (e instanceof IntegrationNotConfiguredError) throw new DomainError('XYP_UNAVAILABLE', 'ХУР-ын холболт тохируулагдаагүй байна. Гараар бөглөнө үү (администраторт мэдэгдэнэ үү)', 503);
     throw e;
   }
 }

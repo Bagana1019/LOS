@@ -1,6 +1,6 @@
 import { XypCitizen } from '@los/contracts';
 import { describe, expect, it } from 'vitest';
-import { IntegrationNotImplementedError } from '../errors';
+import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../errors';
 import { MockXypClient } from './mock-xyp.client';
 import { RealXypClient } from './real-xyp.client';
 import { XypUnavailableError } from './xyp.client';
@@ -62,10 +62,18 @@ describe('MockXypClient (deterministic fixture)', () => {
 });
 
 describe('mode selection', () => {
-  it('mock by default, real when INTEGRATION_MODE=real (fails closed until implemented)', async () => {
+  it('mock by default, real when INTEGRATION_MODE=real (fails closed without config; assets stay not implemented)', async () => {
     expect(createXypClient({})).toBeInstanceOf(MockXypClient);
     const real = createXypClient({ INTEGRATION_MODE: 'real' });
     expect(real).toBeInstanceOf(RealXypClient);
-    await expect(real.getCitizen('УБ90010112')).rejects.toBeInstanceOf(IntegrationNotImplementedError);
+    await expect(real.getCitizen('УБ90010112')).rejects.toBeInstanceOf(IntegrationNotConfiguredError);
+    await expect(real.getAssets('УБ90010112')).rejects.toBeInstanceOf(IntegrationNotImplementedError);
+  });
+
+  it('production + real: refuses to start without XYP config (names only, never values)', () => {
+    const env = { NODE_ENV: 'production', INTEGRATION_MODE: 'real', XYP_ACCESS_TOKEN: 'token-secret-value' };
+    expect(() => createXypClient(env)).toThrow(IntegrationNotConfiguredError);
+    expect(() => createXypClient(env)).toThrow(/XYP_PRIVATE_KEY_PATH/);
+    expect(() => createXypClient(env)).not.toThrow(/token-secret-value/);
   });
 });

@@ -151,18 +151,29 @@ describe('kyc · xyp assets/property error mapping (no database)', () => {
   });
   const withClient = (client: XypClient) => createLightApp((b) => b.overrideProvider(XYP_CLIENT).useValue(client));
 
-  it('INTEGRATION_MODE=real → 501 INTEGRATION_NOT_IMPLEMENTED for assets and property (and citizen), no guessed data', async () => {
+  it('INTEGRATION_MODE=real → 501 INTEGRATION_NOT_IMPLEMENTED for assets and property (no reference exists), no guessed data', async () => {
     vi.stubEnv('INTEGRATION_MODE', 'real');
     app = await createLightApp();
     for (const [path, body, who] of [
       ['/api/xyp/assets', { registerNo: 'УБ90010112' }, 'officerA'],
       ['/api/xyp/property', { propertyId: 'MOCK-УБ90010112-1' }, 'officerA'],
-      ['/api/xyp/citizen', { registerNo: 'УБ90010112' }, 'officerA'],
     ] as const) {
       const res = await send(app, path, as(who), body);
       expect([path, res.status, res.body.code]).toEqual([path, 501, 'INTEGRATION_NOT_IMPLEMENTED']);
       expect(res.body.message).toMatch(/ХУР/);
     }
+  });
+
+  // Phase 5: citizen нь бодитоор хэрэгжсэн; тохиргоогүй (XYP_ACCESS_TOKEN, түлхүүр) бол «гараар бөглөнө» замаар 503 XYP_UNAVAILABLE (env-ийн нэр гарахгүй).
+  it('INTEGRATION_MODE=real without XYP config → 503 XYP_UNAVAILABLE for citizen, no env names in the message', async () => {
+    vi.stubEnv('INTEGRATION_MODE', 'real');
+    vi.stubEnv('XYP_ACCESS_TOKEN', '');
+    vi.stubEnv('XYP_PRIVATE_KEY_PATH', '');
+    app = await createLightApp();
+    const res = await send(app, '/api/xyp/citizen', as('officerA'), { registerNo: 'УБ90010112' });
+    expect([res.status, res.body.code]).toEqual([503, 'XYP_UNAVAILABLE']);
+    expect(res.body.message).toMatch(/ХУР/);
+    expect(res.body.message).not.toMatch(/XYP_/);
   });
 
   it('INTEGRATION_MODE=mock serves the fixtures without a database', async () => {
