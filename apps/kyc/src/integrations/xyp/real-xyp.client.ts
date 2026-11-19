@@ -5,7 +5,8 @@ import { mapCitizenResponse } from './xyp-citizen.mapper';
 import { signXypRequest } from './xyp-signer';
 import { XypSoapTransport } from './xyp-soap.transport';
 import { loadXypConfig, type ReadFile, type XypConfig } from './xyp.config';
-import { XypOtpRejectedError, XypUnavailableError, type XypClient } from './xyp.client';
+import { XypOtpNotSentError, XypOtpRejectedError, XypUnavailableError, type XypClient } from './xyp.client';
+import { classifyXypResultCode, parseXypResultCode, type XypResultOutcome } from './xyp-result-code';
 
 type Row = Record<string, unknown>;
 const isRow = (v: unknown): v is Row => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -13,10 +14,39 @@ const isRow = (v: unknown): v is Row => typeof v === 'object' && v !== null && !
 /** gsb-ийн жинхэнэ үйлдлийн нэр (иргэний үнэмлэхийн мэдээлэл). */
 const CITIZEN_OPERATION = 'WS100101_getCitizenIDCardInfo';
 /**
- * «Олдсонгүй»-г ялгах цорын ганц нотлогдсон арга — gsb-ийн алдааны текстээр таних (otp_approve.py:44-61, users.py:818-849). ХУР-ын resultCode-ийн ХҮСНЭГТ repo-д байхгүй.
- * Танигдаагүй алдаа → XypUnavailableError (хэрэглэгч дахин оролдоно / гараар бөглөнө), «олдсонгүй» гэж таамаглахгүй.
+ * resultCode-той хариуг `xyp-result-code.ts` (албан ёсны хүснэгт) ангилна. Энэ текстийн дүрэм зөвхөн (a) resultCode-гүй SOAP fault-д, (b) хүснэгтэд БАЙХГҮЙ кодод
+ * (gsb-ийн алдааны текстээр таних арга: otp_approve.py:44-61, users.py:818-849). Танигдаагүй алдаа → XypUnavailableError, «олдсонгүй» гэж таамаглахгүй.
  */
 const NOT_FOUND = /олдсонгүй|бүртгэлгүй|not found/i; // «алдаатай хүсэлт» зориуд ороогүй: буруу token / гарын үсэг ч ингэж харагдаж болно (review M3)
+
+/** Хариуны wrapper-ийн resultCode: байхгүй (undefined / null) бол `absent`; байгаа ч тоо биш (хоосон, текст) бол `code: undefined`. */
+function resultCodeOf(body: Row): { absent: boolean; code: number | undefined } {
+  const raw = body.resultCode;
+  return { absent: raw === undefined || raw === null, code: parseXypResultCode(raw) };
+}
+
+const outcomeOf = (code: number | undefined): XypResultOutcome => (code === undefined ? 'UNKNOWN' : classifyXypResultCode(code));
+
+/** WS100101 resultCode≠0: «олдсонгүй» → null; бусад → throw. Хүснэгтэд байгаа код текстээс давамгай. */
+function citizenFailure(code: number | undefined, message: string): null {
+  const outcome = outcomeOf(code);
+  if (outcome === 'NOT_FOUND') return null;
+  if (outcome === 'CODE_REJECTED') throw new XypOtpRejectedError({ resultCode: code }); // 1001 / 1002: ХУР хариулсан — код буруу / олдсонгүй
+  if (outcome === 'UNKNOWN') { // хүснэгтэд байхгүй код: текстийн дүрэм (ТААМАГЛАЛ)
+    if (NOT_FOUND.test(message)) return null;
+    if (isXypCodeRejection(message)) throw new XypOtpRejectedError({ resultCode: code });
+  }
+  throw new XypUnavailableError(undefined, { resultCode: code }); // кодтой холбоогүй (доголдол, token / гарын үсэг, код шалгах системийн алдаа): код буруу гэж хэлэхгүй
+}
+
+/** WS100008 resultCode≠0: «олдсонгүй» → false; 1005 / 1006 → XypOtpNotSentError; бусад → XypUnavailableError (SMS явсан эсэх тодорхойгүй). */
+function otpRequestFailure(code: number | undefined, message: string): false {
+  const outcome = outcomeOf(code);
+  if (outcome === 'NOT_FOUND') return false;
+  if (outcome === 'CODE_NOT_SENT') throw new XypOtpNotSentError({ resultCode: code });
+  if (outcome === 'UNKNOWN' && NOT_FOUND.test(message)) return false;
+  throw new XypUnavailableError(undefined, { resultCode: code });
+}
 
 /** «Иргэн олдсонгүй» гэж ЗӨВХӨН жинхэнэ SOAP fault-ийн faultstring таарвал үзнэ. Сүлжээ / HTTP / тодорхойгүй алдаа, ерөнхий «алдаатай хүсэлт» → false. */
 export function isXypNotFoundFault(e: unknown): boolean {
@@ -35,10 +65,19 @@ const otpAuth = (registerNo: string, otp: number) => ({
   citizen: { regnum: registerNo, otp, fingerprint: NO_ACCESS_FINGERPRINT },
   operator: { otp: 0, fingerprint: NO_ACCESS_FINGERPRINT },
 });
+/**
+ * WS100101-ийн иргэний баталгаажуулалтын төрөл: 1 = нэг удаагийн код (ХУР-ын албан ёсны "Сервис дуудах" жишээ). ЗӨВХӨН код өгөх үед: WS100008-д (otp=0) явуулбал
+ * ХУР «код олдсонгүй» (1001) гэж хариулна.
+ */
+const CITIZEN_AUTH_TYPE_OTP = 1;
+const verifyAuth = (registerNo: string, otp: number) => {
+  const base = otpAuth(registerNo, otp);
+  return { ...base, citizen: { authType: CITIZEN_AUTH_TYPE_OTP, ...base.citizen } };
+};
 
 /**
- * Код өгсний дараа ХУР-ын fault / resultMessage-ийг «код буруу / хугацаа дууссан» гэж ангилах цорын ганц дүрэм. Vendor-ийн алдааны текстийн хүснэгт repo-д байхгүй
- * (бодит текстийг VPN-ээр баталгаажуулна) тул ТААМАГЛАЛ. Танигдаагүй нь «код буруу» БИШ: ХУР-ын доголдол, `XYP_ACCESS_TOKEN` дууссан, гарын үсгийн алдааг «код буруу» гэвэл
+ * Код өгсний дараах SOAP fault (resultCode-гүй) эсвэл хүснэгтэд БАЙХГҮЙ resultCode-ийн мессежийг «код буруу / хугацаа дууссан» гэж ангилах дүрэм (resultCode 1001 / 1002 нь
+ * `xyp-result-code.ts`-аар шууд ангилагдана). fault-ийн бодит текст нь хүснэгтэд байхгүй (VPN-ээр баталгаажуулна) тул ТААМАГЛАЛ. Танигдаагүй нь «код буруу» БИШ: ХУР-ын доголдол, `XYP_ACCESS_TOKEN` дууссан, гарын үсгийн алдааг «код буруу» гэвэл
  * ажилтан иргэнд дахин SMS илгээлгэж, аудитад хуурамч «код татгалзсан» бичлэг үүсгэж, доголдлыг нууна.
  * «код» гэсэн ганц үг ("Алдааны код 500") оруулдаггүй: кодтой холбоотой үг (буруу, хугацаа, expired …)-тай ойр байх ёстой.
  */
@@ -98,7 +137,8 @@ export class RealXypClient implements XypClient {
   /**
    * Иргэний зөвшөөрөл (WS100008): ХУР иргэний БҮРТГЭЛТЭЙ утсанд (`phoneNum: 0`) SMS-ээр нэг удаагийн код илгээнэ; код зөвхөн WS100101-д хүчинтэй.
    * Утсыг дуудагч сонгохгүй: сонговол ажилтан кодыг өөрийн утсанд авч иргэний зөвшөөрлийг тойрно (gsb-д ингэж болдог — хуулбарлаагүй).
-   * НЭГ л хүсэлт, дахин оролдохгүй: давхар илгээвэл иргэнд хоёр SMS очно. Хариуны хэлбэр баталгаагүй: fault, resultCode≠0 биш бол «илгээгдсэн» (gsb-тэй ижил).
+   * НЭГ л хүсэлт, дахин оролдохгүй: давхар илгээвэл иргэнд хоёр SMS очно. fault, resultCode≠0 биш бол «илгээгдсэн» (gsb-тэй ижил); resultCode 1005 / 1006 → XypOtpNotSentError.
+   * Албан ёсны каталогт WS100008-ийн гаралт `status`, `resultMsg` (response доторх): ТЭДНИЙ утгыг ялгахгүй — амжилтын утга баталгаагүй, resultCode л шийднэ (docs/DECISIONS.md).
    */
   async requestCitizenOtp(registerNo: string): Promise<boolean> {
     if (customerTypeOfRegister(registerNo) !== 'INDIVIDUAL') throw new IntegrationNotImplementedError('xyp:legal-entity');
@@ -116,9 +156,9 @@ export class RealXypClient implements XypClient {
       throw new XypUnavailableError(); // SMS явсан эсэх тодорхойгүй: хэрэглэгч хүлээгээд дахин хүснэ
     }
     const body = isRow(raw) && isRow(raw.return) ? raw.return : raw;
-    if (isRow(body) && body.resultCode !== undefined && body.resultCode !== null && Number(body.resultCode) !== 0) {
-      if (NOT_FOUND.test(String(body.resultMessage ?? ''))) return false;
-      throw new XypUnavailableError();
+    if (isRow(body)) {
+      const { absent, code } = resultCodeOf(body);
+      if (!absent && code !== 0) return otpRequestFailure(code, String(body.resultMessage ?? ''));
     }
     return true;
   }
@@ -131,7 +171,7 @@ export class RealXypClient implements XypClient {
     const headers = this.headers(config);
     let raw: unknown;
     try {
-      raw = await citizen.call(CITIZEN_OPERATION, { request: { auth: otpAuth(registerNo, Number(otp)), regnum: registerNo } }, headers);
+      raw = await citizen.call(CITIZEN_OPERATION, { request: { auth: verifyAuth(registerNo, Number(otp)), regnum: registerNo } }, headers);
     } catch (e) {
       if (e instanceof IntegrationNotConfiguredError) throw e; // WSDL-ийн endpoint татгалзсан: тохиргооны алдаа, «олдсонгүй»/«түр ажиллахгүй» биш
       if (isXypNotFoundFault(e)) return null;
@@ -147,14 +187,8 @@ export class RealXypClient implements XypClient {
     const body = isRow(raw) && isRow(raw.return) ? raw.return : raw;
     // Хоосон / танигдахгүй бие (redirect, HTML, тасарсан хариу) «иргэн олдсонгүй» БИШ: ХУР-ын хариу ядаж response / resultCode / resultMessage-ийн аль нэгийг агуулна.
     if (!isRow(body) || !('response' in body || 'resultCode' in body || 'resultMessage' in body)) throw new XypUnavailableError('ХУР-ын хариуны хэлбэр буруу байна');
-    if (body.resultCode !== undefined && body.resultCode !== null && Number(body.resultCode) !== 0) {
-      const message = String(body.resultMessage ?? '');
-      if (NOT_FOUND.test(message)) return null;
-      const code = Number(body.resultCode);
-      const resultCode = Number.isInteger(code) ? code : undefined;
-      if (isXypCodeRejection(message)) throw new XypOtpRejectedError({ resultCode }); // ХУР хариулсан: код буруу / хугацаа дууссан
-      throw new XypUnavailableError(undefined, { resultCode }); // кодтой холбоогүй (доголдол, token / гарын үсэг): код буруу гэж хэлэхгүй
-    }
+    const { absent, code } = resultCodeOf(body);
+    if (!absent && code !== 0) return citizenFailure(code, String(body.resultMessage ?? ''));
     if (!isRow(body.response) || Object.keys(body.response).length === 0) return null;
     return mapCitizenResponse(registerNo, body.response, new Date((this.opts.now ?? Date.now)()));
   }

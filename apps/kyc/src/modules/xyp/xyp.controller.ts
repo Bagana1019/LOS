@@ -13,7 +13,7 @@ import {
 import { DomainError, Permissions, ZodValidationPipe } from '@los/nest-common';
 import { z } from 'zod';
 import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../../integrations/errors';
-import { XYP_CLIENT, XypOtpRejectedError, XypUnavailableError, type XypClient } from '../../integrations/xyp/xyp.client';
+import { XYP_CLIENT, XypOtpNotSentError, XypOtpRejectedError, XypUnavailableError, type XypClient } from '../../integrations/xyp/xyp.client';
 
 const log = new Logger('XypController');
 
@@ -31,6 +31,11 @@ async function mapXypErrors<T>(call: () => Promise<T>): Promise<T> {
       // Диагностик: зөвхөн SOAP faultcode / тоон resultCode (код, регистр, vendor-ийн текст биш).
       log.warn(`XYP did not accept the citizen code (faultCode=${e.faultCode ?? '-'}, resultCode=${e.resultCode ?? '-'})`);
       throw new DomainError('XYP_OTP_INVALID', 'Иргэний код буруу, хугацаа нь дууссан эсвэл ХУР хүлээн авсангүй. Шинэ код авна уу', 422);
+    }
+    if (e instanceof XypOtpNotSentError) {
+      // 1005 / 1006: ХУР код илгээж чадсангүй (иргэний утас нэр дээр нь бүртгэлгүй эсвэл илгээх боломжгүй) — «ХУР унасан» биш, дахин оролдох нь утгагүй.
+      log.warn(`XYP could not send the citizen code (resultCode=${e.resultCode ?? '-'})`);
+      throw new DomainError('XYP_OTP_NOT_SENT', 'ХУР иргэний бүртгэлтэй утсанд код илгээж чадсангүй (утас нь иргэний нэр дээр бүртгэлгүй эсвэл илгээх боломжгүй). Иргэнд утасны бүртгэлээ шалгуулах эсвэл гараар бөглөнө үү', 422);
     }
     if (e instanceof XypUnavailableError) {
       // ХУР fault-аар хариулсан ч «код буруу» биш (доголдол, token / гарын үсэг): оношлогоонд зөвхөн faultcode / resultCode.

@@ -5,7 +5,7 @@ import * as soap from 'soap';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../errors';
 import { isXypCodeRejection, isXypNotFoundFault, RealXypClient } from './real-xyp.client';
-import { XypOtpRejectedError, XypUnavailableError } from './xyp.client';
+import { XypOtpNotSentError, XypOtpRejectedError, XypUnavailableError } from './xyp.client';
 
 // Бодит `soap` номын сангаар локал SOAP серверт (127.0.0.1) хийсэн wire-level тест. Бодит ХУР-т хандаагүй.
 // АНХААР: WSDL нь ШИНЖИЛГЭЭНИЙ ЗОРИУЛАЛТТАЙ загвар. Нотлогдсон: үйлдлийн нэр WS100101_getCitizenIDCardInfo, хариуны response/resultCode/resultMessage,
@@ -25,7 +25,7 @@ const wsdl = (soapPort: number, host = '127.0.0.1'): string => `<?xml version="1
     <xsd:element name="WS100101_getCitizenIDCardInfoResponse"><xsd:complexType><xsd:sequence><xsd:element name="return" type="tns:CitizenResult"/></xsd:sequence></xsd:complexType></xsd:element>
     <xsd:complexType name="CitizenRequest"><xsd:sequence><xsd:element name="auth" type="tns:Auth" minOccurs="0"/><xsd:element name="regnum" type="xsd:string"/></xsd:sequence></xsd:complexType>
     <xsd:complexType name="Auth"><xsd:sequence><xsd:element name="citizen" type="tns:AuthParty" minOccurs="0"/><xsd:element name="operator" type="tns:AuthParty" minOccurs="0"/></xsd:sequence></xsd:complexType>
-    <xsd:complexType name="AuthParty"><xsd:sequence><xsd:element name="fingerprint" type="xsd:base64Binary" minOccurs="0"/><xsd:element name="otp" type="xsd:int" minOccurs="0"/><xsd:element name="regnum" type="xsd:string" minOccurs="0"/></xsd:sequence></xsd:complexType>
+    <xsd:complexType name="AuthParty"><xsd:sequence><xsd:element name="authType" type="xsd:int" minOccurs="0"/><xsd:element name="fingerprint" type="xsd:base64Binary" minOccurs="0"/><xsd:element name="otp" type="xsd:int" minOccurs="0"/><xsd:element name="regnum" type="xsd:string" minOccurs="0"/></xsd:sequence></xsd:complexType>
     <xsd:complexType name="CitizenResult"><xsd:sequence>
       <xsd:element name="response" type="tns:CitizenData" minOccurs="0"/><xsd:element name="resultCode" type="xsd:int" minOccurs="0"/><xsd:element name="resultMessage" type="xsd:string" minOccurs="0"/>
     </xsd:sequence></xsd:complexType>
@@ -50,7 +50,7 @@ const metaWsdl = (soapPort: number, host = '127.0.0.1'): string => `<?xml versio
       <xsd:element name="isSms" type="xsd:int"/><xsd:element name="isApp" type="xsd:int"/><xsd:element name="isEmail" type="xsd:int"/><xsd:element name="isKiosk" type="xsd:int"/><xsd:element name="phoneNum" type="xsd:long"/>
     </xsd:sequence></xsd:complexType>
     <xsd:complexType name="Auth"><xsd:sequence><xsd:element name="citizen" type="tns:AuthParty" minOccurs="0"/><xsd:element name="operator" type="tns:AuthParty" minOccurs="0"/></xsd:sequence></xsd:complexType>
-    <xsd:complexType name="AuthParty"><xsd:sequence><xsd:element name="fingerprint" type="xsd:base64Binary" minOccurs="0"/><xsd:element name="otp" type="xsd:int" minOccurs="0"/><xsd:element name="regnum" type="xsd:string" minOccurs="0"/></xsd:sequence></xsd:complexType>
+    <xsd:complexType name="AuthParty"><xsd:sequence><xsd:element name="authType" type="xsd:int" minOccurs="0"/><xsd:element name="fingerprint" type="xsd:base64Binary" minOccurs="0"/><xsd:element name="otp" type="xsd:int" minOccurs="0"/><xsd:element name="regnum" type="xsd:string" minOccurs="0"/></xsd:sequence></xsd:complexType>
     <xsd:complexType name="OtpResult"><xsd:sequence><xsd:element name="resultCode" type="xsd:int" minOccurs="0"/><xsd:element name="resultMessage" type="xsd:string" minOccurs="0"/></xsd:sequence></xsd:complexType>
   </xsd:schema></types>
   <message name="in"><part name="parameters" element="tns:WS100008_registerOTPRequest"/></message>
@@ -71,7 +71,7 @@ const citizen = (over: Record<string, unknown> = {}) => ({
 /** Сервер талд задарсан SOAP хүсэлтийн бие (шинжилгээний WSDL-ийн хэлбэр). */
 interface Wire {
   regnum: string; jsonWSList: string; isSms: number; isApp: number; isEmail: number; isKiosk: number; phoneNum: number;
-  auth: { citizen: { regnum?: string; otp: number; fingerprint?: unknown }; operator: { regnum?: string; otp: number } };
+  auth: { citizen: { authType?: number; regnum?: string; otp: number; fingerprint?: unknown }; operator: { regnum?: string; otp: number } };
 }
 interface Behavior { respond: (regnum: string) => unknown | Promise<unknown>; otpRespond: (regnum: string) => unknown | Promise<unknown>; wsdlStatus: number[] }
 const listen = (s: Server): Promise<number> => new Promise((r) => s.listen(0, '127.0.0.1', () => r((s.address() as AddressInfo).port)));
@@ -380,11 +380,12 @@ describe('RealXypClient — fail-closed', () => {
 describe('RealXypClient.getCitizen — иргэний код (auth.citizen.otp)', () => {
   const fingerprintOf = (fp: unknown): string => (Buffer.isBuffer(fp) ? fp.toString() : Buffer.from(String(fp), 'base64').toString());
 
-  it('WS100101-д auth.citizen.{regnum, otp, fingerprint}, auth.operator.otp=0 ба regnum явна', async () => {
+  it('WS100101-д auth.citizen.{authType=1 (OTP), regnum, otp, fingerprint}, auth.operator.otp=0 ба regnum явна', async () => {
     const h = await start();
     await h.client.getCitizen(REG, OTP);
     const r = h.seen[0]!.request;
     expect(r.regnum).toBe(REG);
+    expect(Number(r.auth.citizen.authType)).toBe(1); // ХУР-ын албан ёсны жишээ: authType 1 = нэг удаагийн код
     expect(r.auth.citizen.regnum).toBe(REG);
     expect(Number(r.auth.citizen.otp)).toBe(123456);
     expect(fingerprintOf(r.auth.citizen.fingerprint)).toBe('*** NO ACCESS ***'); // vendor demo (OTPApprove.py)-ийн хөрөнгө-оруулалтгүй placeholder
@@ -443,6 +444,7 @@ describe('RealXypClient.requestCitizenOtp (WS100008, meta WSDL)', () => {
     expect(r.regnum).toBe(REG);
     expect(r.auth.citizen.regnum).toBe(REG);
     expect(Number(r.auth.citizen.otp)).toBe(0);
+    expect(r.auth.citizen.authType).toBeUndefined(); // код хүсэх үед иргэнийг баталгаажуулахгүй: authType=1 + otp=0 нь ХУР-д «код олдсонгүй» (1001) болно
     expect(JSON.parse(r.jsonWSList)).toEqual([{ ws: 'WS100101_getCitizenIDCardInfo' }]); // хамгийн бага эрх: зөвхөн энэ үйлдэлд код хүчинтэй
     expect([r.isSms, r.isApp, r.isEmail, r.isKiosk, r.phoneNum].map(Number)).toEqual([1, 0, 0, 0, 0]);
     const hd = h.seenOtp[0]!.headers;
@@ -457,7 +459,7 @@ describe('RealXypClient.requestCitizenOtp (WS100008, meta WSDL)', () => {
     expect(await h.client.requestCitizenOtp(REG)).toBe(true);
   });
 
-  it.each([['SOAP fault «олдсонгүй»', () => fault('Иргэн олдсонгүй')], ['resultCode≠0 + «бүртгэлгүй»', () => ({ return: { resultCode: 2, resultMessage: 'Регистр бүртгэлгүй' } })]])('%s → false (иргэн олдсонгүй)', async (_l, respond) => {
+  it.each([['SOAP fault «олдсонгүй»', () => fault('Иргэн олдсонгүй')], ['resultCode 1 (NOT_FOUND) + «бүртгэлгүй»', () => ({ return: { resultCode: 1, resultMessage: 'Регистр бүртгэлгүй' } })]])('%s → false (иргэн олдсонгүй)', async (_l, respond) => {
     const h = await start();
     h.behavior.otpRespond = respond;
     expect(await h.client.requestCitizenOtp(REG)).toBe(false);
@@ -520,5 +522,56 @@ describe('RealXypClient.requestCitizenOtp (WS100008, meta WSDL)', () => {
     h.behavior.otpRespond = () => fault(`Internal error for ${REG} ${TOKEN}`);
     const err = (await h.client.requestCitizenOtp(REG).catch((e) => e)) as Error;
     for (const secret of [REG, TOKEN, 'Internal error']) expect(err.message).not.toContain(secret);
+  });
+});
+
+// ХУР-ын албан ёсны resultCode хүснэгт (developer.xyp.gov.mn/docs/result-code): код нь мессежийн текстээс найдвартай тул хүснэгтэд байгаа кодыг ЗӨВХӨН кодоор ангилна.
+describe('RealXypClient.getCitizen — албан ёсны resultCode хүснэгт', () => {
+  it('resultCode 1 (NOT_FOUND) нь мессежгүй ч, өөр текстэй ч → null', async () => {
+    const h = await start();
+    for (const resultMessage of [undefined, 'Ямар нэг мессеж']) {
+      h.behavior.respond = () => ({ return: { resultCode: 1, resultMessage } });
+      expect(await h.client.getCitizen(REG, OTP)).toBeNull();
+    }
+  });
+
+  it.each([[1001, 'OTP_NOT_FOUND'], [1002, 'OTP_NOT_MATCH']])('resultCode %i (%s) → XypOtpRejectedError (resultCode-той), мессеж ямар ч байсан', async (code) => {
+    const h = await start();
+    h.behavior.respond = () => ({ return: { resultCode: code, resultMessage: 'Системийн мэдэгдэл' } });
+    await expect(h.client.getCitizen(REG, OTP)).rejects.toMatchObject({ name: 'XypOtpRejectedError', resultCode: code });
+  });
+
+  it.each([2, 3, 200, 201, 202, 203, 301, 302, 303, 304, 401, 402, 501, 601, 602, 603, 604, 605, 801, 802, 1003, 1004, 1005, 1006])(
+    'resultCode %i → XypUnavailableError (resultCode-той); мессеж «олдсонгүй» / «код буруу» гэсэн ч null / XypOtpRejectedError БОЛГОХГҮЙ', async (code) => {
+      const h = await start();
+      h.behavior.respond = () => ({ return: { resultCode: code, resultMessage: 'Регистр олдсонгүй, код буруу' } });
+      const err = await h.client.getCitizen(REG, OTP).catch((e) => e);
+      expect(err).toBeInstanceOf(XypUnavailableError);
+      expect(err).toMatchObject({ resultCode: code });
+    });
+});
+
+describe('RealXypClient.requestCitizenOtp — албан ёсны resultCode хүснэгт', () => {
+  it.each([[1005, 'OTP_NOT_SENT'], [1006, 'REG_PHONE_NOT_MATCH']])('resultCode %i (%s) → XypOtpNotSentError (resultCode-той), «түр ажиллахгүй» БИШ; мессеж регистр, token, vendor текстийг агуулахгүй', async (code) => {
+    const h = await start();
+    h.behavior.otpRespond = () => ({ return: { resultCode: code, resultMessage: `vendor text ${REG} ${TOKEN}` } });
+    const err = (await h.client.requestCitizenOtp(REG).catch((e) => e)) as XypOtpNotSentError;
+    expect(err).toBeInstanceOf(XypOtpNotSentError);
+    expect(err).not.toBeInstanceOf(XypUnavailableError);
+    expect(err.resultCode).toBe(code);
+    for (const secret of [REG, TOKEN, 'vendor text']) expect(err.message).not.toContain(secret);
+    expect(h.seenOtp).toHaveLength(1); // дахин оролдохгүй
+  });
+
+  it('resultCode 2 (INTERNAL_ERROR) + «бүртгэлгүй» мессеж → XypUnavailableError: хүснэгтэд байгаа код текстээс давамгай (иргэн «олдсонгүй» гэж таамаглахгүй)', async () => {
+    const h = await start();
+    h.behavior.otpRespond = () => ({ return: { resultCode: 2, resultMessage: 'Регистр бүртгэлгүй' } });
+    await expect(h.client.requestCitizenOtp(REG)).rejects.toMatchObject({ name: 'XypUnavailableError', resultCode: 2 });
+  });
+
+  it.each([3, 200, 203, 601, 801, 802, 1001, 1002, 1003, 1004])('resultCode %i → XypUnavailableError (resultCode-той)', async (code) => {
+    const h = await start();
+    h.behavior.otpRespond = () => ({ return: { resultCode: code, resultMessage: 'x' } });
+    await expect(h.client.requestCitizenOtp(REG)).rejects.toMatchObject({ name: 'XypUnavailableError', resultCode: code });
   });
 });

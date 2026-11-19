@@ -1,7 +1,7 @@
 import { DomainError } from '@los/nest-common';
 import { describe, expect, it } from 'vitest';
 import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../../integrations/errors';
-import { XypOtpRejectedError, XypUnavailableError, type XypClient } from '../../integrations/xyp/xyp.client';
+import { XypOtpNotSentError, XypOtpRejectedError, XypUnavailableError, type XypClient } from '../../integrations/xyp/xyp.client';
 import { XypController } from './xyp.controller';
 
 // ХУР-ын клиентийн алдааг HTTP болгох: хэрэглэгчид зориулсан тогтвортой (Монгол) кодууд. origination-ийн жагсаалт хаалттай тул шинэ код нэмэхгүй.
@@ -22,6 +22,12 @@ describe('XypController · иргэний код (OTP)', () => {
   it('citizenOtp: регистр олдохгүй → 404 XYP_NOT_FOUND', async () => {
     const e = await errorOf(new XypController(ok({ requestCitizenOtp: async () => false })).citizenOtp({ registerNo: REG }));
     expect([e.code, e.getStatus()]).toEqual(['XYP_NOT_FOUND', 404]);
+  });
+
+  it('citizenOtp: ХУР код илгээж чадаагүй / иргэний утас нэр дээр нь бүртгэлгүй (XypOtpNotSentError) → 422 XYP_OTP_NOT_SENT («ХУР унасан» биш); мессеж код, регистрийг агуулахгүй', async () => {
+    const e = await errorOf(new XypController(failing(new XypOtpNotSentError({ resultCode: 1006 }))).citizenOtp({ registerNo: REG }));
+    expect([e.code, e.getStatus()]).toEqual(['XYP_OTP_NOT_SENT', 422]);
+    expect(e.message).not.toContain(REG);
   });
 
   it('citizenOtp: регистрийн хэлбэр буруу → 400 INVALID_REGISTER_NO, ХУР-д хүрэхгүй', async () => {

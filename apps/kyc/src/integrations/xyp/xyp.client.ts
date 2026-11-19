@@ -6,7 +6,7 @@ import type { XypAssetsResponse, XypCitizen, XypPropertyAsset } from '@los/contr
 export interface XypClient {
   /**
    * Иргэний зөвшөөрөл: иргэний ХУР-д БҮРТГЭЛТЭЙ утсанд нэг удаагийн код (OTP) илгээнэ (WS100008). Утсыг дуудагч СОНГОХГҮЙ — ажилтан өөр утас руу чиглүүлж болохгүй.
-   * @returns `false` — регистр ХУР-д олдсонгүй. Код явсан эсэх тодорхойгүй алдаа → XypUnavailableError (иргэнд SMS давхар явахаас сэргийлж дахин оролдохгүй).
+   * @returns `false` — регистр ХУР-д олдсонгүй. ХУР код илгээж чадсангүй (1005 / 1006) → XypOtpNotSentError. Код явсан эсэх тодорхойгүй алдаа → XypUnavailableError (иргэнд SMS давхар явахаас сэргийлж дахин оролдохгүй).
    */
   requestCitizenOtp(registerNo: string): Promise<boolean>;
   /**
@@ -39,6 +39,20 @@ export class XypOtpRejectedError extends Error {
     super('ХУР иргэний кодыг хүлээн авсангүй');
     this.name = 'XypOtpRejectedError';
     this.faultCode = detail.faultCode;
+    this.resultCode = detail.resultCode;
+  }
+}
+
+/**
+ * WS100008: ХУР иргэний утсанд код илгээж ЧАДСАНГҮЙ — албан ёсны resultCode 1005 OTP_NOT_SENT (илгээлт амжилтгүй / иргэн рүү илгээх боломжгүй),
+ * 1006 REG_PHONE_NOT_MATCH (иргэний утас операторын бүртгэлд түүний нэр дээр бүртгэлгүй). ХУР-ын доголдол БИШ: дахин оролдоход ижил үр дүн гарна,
+ * иргэн утасны бүртгэлээ засуулах эсвэл ажилтан гараар бөглөнө. `resultCode` нь зөвхөн оношлогоонд (нууц, PII биш).
+ */
+export class XypOtpNotSentError extends Error {
+  readonly resultCode?: number;
+  constructor(detail: { resultCode?: number } = {}) {
+    super('ХУР иргэний утсанд код илгээж чадсангүй');
+    this.name = 'XypOtpNotSentError';
     this.resultCode = detail.resultCode;
   }
 }

@@ -46,6 +46,14 @@ describe('KycXypLookup.fetchCitizen — иргэний код', () => {
   });
 });
 
+describe('KycXypLookup.requestOtp — код илгээгдээгүй', () => {
+  it('kyc 422 XYP_OTP_NOT_SENT (ХУР 1005 / 1006) passes through with its code and message — not rewritten into "ХУР unavailable", so the officer is told the citizen phone problem', async () => {
+    const notSent = (async () => json(422, { code: 'XYP_OTP_NOT_SENT', message: 'ХУР код илгээж чадсангүй' })) as unknown as typeof fetch;
+    const err = await lookup(notSent).requestOtp(ctx, 'УБ90010112').then(() => { throw new Error('expected a rejection'); }, (e: Error) => e);
+    expect(err).toMatchObject({ code: 'XYP_OTP_NOT_SENT', status: 422 });
+  });
+});
+
 describe('KycXypLookup (origination → kyc)', () => {
   it('POSTs the register and the citizen\'s one-time code to kyc with the identity headers and a 15s timeout, and validates the reply', async () => {
     const fetchFn = vi.fn(async () => json(200, citizen)) as unknown as typeof fetch;
