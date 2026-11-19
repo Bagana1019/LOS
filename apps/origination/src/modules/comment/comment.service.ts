@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { CommentListResponse, CommentView, CreateCommentRequest, RequestContext } from '@los/contracts';
+import { insertAuditRow } from '@los/database';
 import { Clock } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
@@ -28,7 +29,7 @@ export class CommentService {
     const mentions = [...new Set(input.mentions)].filter((u) => u !== ctx.userId);
     const row = await this.prisma.$transaction(async (tx) => {
       const c = await tx.comment.create({ data: { orgId: ctx.orgId, applicationId, authorId: ctx.userId ?? 'unknown', body: input.body, mentions, createdAt: this.clock.now(), createdBy: ctx.userId ?? null } });
-      await tx.auditLog.create({ data: { orgId: ctx.orgId, entity: 'COMMENT', entityId: c.id, action: 'COMMENT_ADDED', actorId: ctx.userId ?? null, applicationId, correlationId: ctx.correlationId ?? null, afterJson: { mentions, length: input.body.length } } });
+      await insertAuditRow(tx, { orgId: ctx.orgId, entity: 'COMMENT', entityId: c.id, action: 'COMMENT_ADDED', actorId: ctx.userId ?? null, applicationId, correlationId: ctx.correlationId ?? null, afterJson: { mentions, length: input.body.length } });
       // Таныг дурдсан ажилтны хонх (FR-13.2 MENTION)
       await this.notifications.notifyUsers({ orgId: ctx.orgId, userIds: mentions, type: 'MENTION', applicationId, payload: { applicationNo: app.appNo, comment: input.body.slice(0, PREVIEW) } }, tx);
       return c;

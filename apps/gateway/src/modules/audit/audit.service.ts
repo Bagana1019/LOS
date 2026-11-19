@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit, Optional, ServiceUnavailableException } from '@nestjs/common';
-import { sanitizeForAudit } from '@los/database';
+import { insertAuditRow, insertAuditRows, sanitizeForAudit } from '@los/database';
 import { PrismaService } from '../../prisma.service';
 import { auditErrorClass, isTransientAuditError } from './audit-errors';
 import { cleanJson, cleanText, cleanTextOpt } from './audit-sanitize';
@@ -73,7 +73,7 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     await this.queue.close?.();
   }
 
-  /** Ариутгасан (sanitizeForAudit), хязгаарласан, id/at-тай мөр — өөр транзакц дотор (`tx.auditLog.create({ data })`) бичихэд ч хэрэглэнэ. */
+  /** Ариутгасан (sanitizeForAudit), хязгаарласан, id/at-тай мөр — өөр транзакц дотор (`insertAuditRow(tx, row)`) бичихэд ч хэрэглэнэ. */
   toRow(r: AuditRecord): AuditRow {
     return {
       id: randomUUID(), at: new Date(), orgId: cleanTextOpt(r.orgId, MAX.id), entity: cleanText(r.entity, MAX.id), entityId: cleanText(r.entityId, MAX.entityId),
@@ -136,7 +136,7 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
     const rows = items.map((i) => i.row);
     if (rows.every((r): r is AuditRow => r !== null)) {
       try {
-        await this.db.auditLog.createMany({ data: rows, skipDuplicates: true });
+        await insertAuditRows(this.db, rows, { skipDuplicates: true });
         return { done: items.length, persisted: rows.length };
       } catch (e) {
         if (isTransientAuditError(e)) { this.log.warn(`audit drain batch failed (transient, kept): ${msg(e)}`); return { done: 0, persisted: 0 }; }
@@ -194,7 +194,7 @@ export class AuditService implements OnModuleInit, OnModuleDestroy {
 
   private async insertOnce(row: AuditRow): Promise<WriteResult> {
     try {
-      await this.db.auditLog.create({ data: row });
+      await insertAuditRow(this.db, row);
       return 'ok';
     } catch (e) {
       if (isDuplicateId(e)) return 'ok'; // өмнөх оролдлого commit болсон (хариу л алдагдсан)

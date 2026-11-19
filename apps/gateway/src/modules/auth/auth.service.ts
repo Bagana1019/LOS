@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
 import { type AccessTokenClaims, type AuthResponse, menuFor, permissionsFor, type SessionUser } from '@los/contracts';
+import { insertAuditRow } from '@los/database';
 import { Clock } from '@los/nest-common';
 import { Prisma } from '.prisma/client-gateway';
 import { normalizeUsername } from './login-limiter';
@@ -120,7 +121,7 @@ export class AuthService {
       this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, failedLoginCount: 0, lockedUntil: null, updatedBy: userId } }),
       this.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: this.clock.now() } }),
       // M10: аудит өөрчлөлттэй НЭГ транзакцид (аудитгүй нууц үг солигдохгүй)
-      this.prisma.auditLog.create({ data: this.audit.toRow({ orgId: user.orgId, entity: 'USER', entityId: userId, action: 'PASSWORD_CHANGED', actorId: userId, correlationId: meta.correlationId, ip: meta.ip, userAgent: meta.userAgent }) as never }),
+      insertAuditRow(this.prisma, this.audit.toRow({ orgId: user.orgId, entity: 'USER', entityId: userId, action: 'PASSWORD_CHANGED', actorId: userId, correlationId: meta.correlationId, ip: meta.ip, userAgent: meta.userAgent })),
     ]);
   }
 

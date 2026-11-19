@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { AmlSubjectType } from '@los/contracts';
-import { enqueueOutbox } from '@los/database';
+import { enqueueOutbox, insertAuditRow } from '@los/database';
 import { BLACKLIST_PRISMA } from './blacklist.prisma';
 import {
   DuplicateBlacklistEntryError, StaleBlacklistEntryError,
@@ -89,11 +89,9 @@ export class PrismaBlacklistRepository implements BlacklistRepository {
         await enqueueOutbox(tx, event);
         // FR-13.5: аудит мөр нэг транзакцид (хэн, хэзээ, юуг). PII-гүй.
         if (audit) {
-          await tx.auditLog.create({
-            data: {
-              orgId: row.orgId, entity: 'blacklist', entityId: row.id, action: audit.action, actorId: audit.actorId,
-              ...(audit.before && { beforeJson: audit.before }), afterJson: audit.after, correlationId: audit.correlationId,
-            },
+          await insertAuditRow(tx, {
+            orgId: row.orgId, entity: 'blacklist', entityId: row.id, action: audit.action, actorId: audit.actorId,
+            ...(audit.before && { beforeJson: audit.before }), afterJson: audit.after, correlationId: audit.correlationId,
           });
         }
       });
