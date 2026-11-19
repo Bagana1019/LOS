@@ -32,7 +32,11 @@ async function mapXypErrors<T>(call: () => Promise<T>): Promise<T> {
       log.warn(`XYP did not accept the citizen code (faultCode=${e.faultCode ?? '-'}, resultCode=${e.resultCode ?? '-'})`);
       throw new DomainError('XYP_OTP_INVALID', 'Иргэний код буруу, хугацаа нь дууссан эсвэл ХУР хүлээн авсангүй. Шинэ код авна уу', 422);
     }
-    if (e instanceof XypUnavailableError) throw new DomainError('XYP_UNAVAILABLE', 'ХУР түр ажиллахгүй байна. Хэсэг хугацааны дараа дахин оролдох эсвэл гараар бөглөнө үү', 503);
+    if (e instanceof XypUnavailableError) {
+      // ХУР fault-аар хариулсан ч «код буруу» биш (доголдол, token / гарын үсэг): оношлогоонд зөвхөн faultcode / resultCode.
+      if (e.faultCode !== undefined || e.resultCode !== undefined) log.warn(`XYP answered with an unclassified fault (faultCode=${e.faultCode ?? '-'}, resultCode=${e.resultCode ?? '-'})`);
+      throw new DomainError('XYP_UNAVAILABLE', 'ХУР түр ажиллахгүй байна. Хэсэг хугацааны дараа дахин оролдох эсвэл гараар бөглөнө үү', 503);
+    }
     if (e instanceof IntegrationNotImplementedError) throw new DomainError('INTEGRATION_NOT_IMPLEMENTED', 'ХУР-ын бодит холболт хараахан хийгдээгүй (INTEGRATION_MODE=mock)', 501);
     // Тохиргоо дутуу: хэрэглэгчид «гараар бөглөнө» гэсэн ижил замыг (XYP_UNAVAILABLE) үзүүлнэ; env-ийн нэр, нууц гаргахгүй. origination-ийн кодын жагсаалт хаалттай.
     if (e instanceof IntegrationNotConfiguredError) throw new DomainError('XYP_UNAVAILABLE', 'ХУР-ын холболт тохируулагдаагүй байна. Гараар бөглөнө үү (администраторт мэдэгдэнэ үү)', 503);

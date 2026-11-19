@@ -45,8 +45,13 @@ export class XypOtpRejectedError extends Error {
 
 /** ХУР түр ажиллахгүй/хугацаа хэтэрсэн (дахин оролдож болно). Зохиомол алдааг mock мөн гаргана. */
 export class XypUnavailableError extends Error {
-  constructor(message = 'ХУР-ын сервис түр ажиллахгүй байна') {
+  /** Зөвхөн оношлогоонд (SOAP faultcode, тоон resultCode — нууц, PII биш): ХУР fault-аар ХАРИУЛСАН ч «код буруу» биш (доголдол, token / гарын үсгийн алдаа гэх мэт). */
+  readonly faultCode?: string;
+  readonly resultCode?: number;
+  constructor(message = 'ХУР-ын сервис түр ажиллахгүй байна', detail: { faultCode?: string; resultCode?: number } = {}) {
     super(message);
     this.name = 'XypUnavailableError';
+    this.faultCode = detail.faultCode;
+    this.resultCode = detail.resultCode;
   }
 }

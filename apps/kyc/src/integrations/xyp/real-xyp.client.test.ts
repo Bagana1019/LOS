@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import * as soap from 'soap';
 import { afterEach, describe, expect, it } from 'vitest';
 import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../errors';
-import { isXypNotFoundFault, RealXypClient } from './real-xyp.client';
+import { isXypCodeRejection, isXypNotFoundFault, RealXypClient } from './real-xyp.client';
 import { XypOtpRejectedError, XypUnavailableError } from './xyp.client';
 
 // Бодит `soap` номын сангаар локал SOAP серверт (127.0.0.1) хийсэн wire-level тест. Бодит ХУР-т хандаагүй.
@@ -201,13 +201,27 @@ describe('RealXypClient.getCitizen — олдсонгүй / алдаа', () => {
     expect(await h.client.getCitizen(REG, OTP)).toBeNull();
   });
 
-  it('танигдаагүй fault / resultCode≠0 → XypOtpRejectedError (ХУР хариулсан: код буруу / хугацаа дууссан / татгалзсан; «олдсонгүй» гэж таамаглахгүй)', async () => {
+  it('мессеж нь КОДТОЙ холбоотой fault / resultCode≠0 (OTP код буруу, код хугацаа дууссан) → XypOtpRejectedError', async () => {
     const h = await start();
-    h.behavior.respond = () => fault('Internal server error');
+    h.behavior.respond = () => fault('OTP код буруу байна');
     await expect(h.client.getCitizen(REG, OTP)).rejects.toBeInstanceOf(XypOtpRejectedError);
-    h.behavior.respond = () => ({ return: { resultCode: 500, resultMessage: 'Системийн алдаа' } });
-    await expect(h.client.getCitizen(REG, OTP)).rejects.toBeInstanceOf(XypOtpRejectedError);
+    h.behavior.respond = () => ({ return: { resultCode: 5, resultMessage: 'Нэг удаагийн код хугацаа дууссан' } });
+    await expect(h.client.getCitizen(REG, OTP)).rejects.toMatchObject({ name: 'XypOtpRejectedError', resultCode: 5 });
   });
+
+  it.each([['Internal server error'], ['Invalid signature'], ['Алдаатай хүсэлт'], ['Access token expired'], ['Алдааны код 500: Системийн алдаа']])(
+    'кодтой холбоогүй fault %j (ХУР-ын доголдол, token / гарын үсгийн алдаа) → XypUnavailableError (faultCode-той), код буруу гэж ХЭЛЭХГҮЙ', async (text) => {
+      const h = await start();
+      h.behavior.respond = () => fault(text);
+      const err = (await h.client.getCitizen(REG, OTP).catch((e) => e)) as XypUnavailableError & { faultCode?: string };
+      expect(err).toBeInstanceOf(XypUnavailableError);
+      expect(err).not.toBeInstanceOf(XypOtpRejectedError);
+      expect(err.faultCode).toMatch(/Server/);
+      h.behavior.respond = () => ({ return: { resultCode: 500, resultMessage: text } });
+      const byCode = (await h.client.getCitizen(REG, OTP).catch((e) => e)) as XypUnavailableError & { resultCode?: number };
+      expect(byCode).toBeInstanceOf(XypUnavailableError);
+      expect(byCode.resultCode).toBe(500);
+    });
 
   it('хоосон / танигдахгүй хариу (resultCode, resultMessage, response ямар ч талбаргүй) → XypUnavailableError, «олдсонгүй» БИШ', async () => {
     const h = await start();
@@ -316,16 +330,27 @@ describe('isXypNotFoundFault', () => {
   });
 });
 
+// Код өгсний дараа ХУР-ын fault / resultMessage-ийг «код буруу» гэж ангилах цорын ганц дүрэм. Vendor-ийн алдааны текстийн хүснэгт repo-д байхгүй (VPN-ээр баталгаажуулна);
+// ТАНИГДААГҮЙ нь «код буруу» БИШ: ХУР-ын доголдол, token / гарын үсгийн алдаа нь иргэнд дахин SMS илгээлгэж, аудитад хуурамч «код татгалзсан» бичлэг үүсгэх ёсгүй.
+describe('isXypCodeRejection', () => {
+  it.each([['OTP код буруу байна'], ['Invalid OTP'], ['Нэг удаагийн код хугацаа дууссан'], ['Код буруу'], ['verification code expired'], ['The code is wrong'], ['Буруу код оруулсан байна']])('%j → true', (text) => {
+    expect(isXypCodeRejection(text)).toBe(true);
+  });
+  it.each([['Internal server error'], ['Invalid signature'], ['Access token expired'], ['Алдаатай хүсэлт'], ['Алдааны код 500: Системийн алдаа'], ['Service unavailable'], ['']])('%j → false', (text) => {
+    expect(isXypCodeRejection(text)).toBe(false);
+  });
+});
+
 describe('RealXypClient — ерөнхий «алдаатай хүсэлт» fault', () => {
-  it('«Алдаатай хүсэлт» SOAP fault → XypOtpRejectedError (null/404 БИШ)', async () => {
+  it('«Алдаатай хүсэлт» SOAP fault → XypUnavailableError (null/404 БИШ; кодыг буруу гэж ч үзэхгүй — буруу token / гарын үсэг байж болно)', async () => {
     const h = await start();
     h.behavior.respond = () => fault('Алдаатай хүсэлт');
-    await expect(h.client.getCitizen(REG, OTP)).rejects.toBeInstanceOf(XypOtpRejectedError);
+    await expect(h.client.getCitizen(REG, OTP)).rejects.toBeInstanceOf(XypUnavailableError);
   });
-  it('resultCode≠0 + «Алдаатай хүсэлт» → XypOtpRejectedError', async () => {
+  it('resultCode≠0 + «Алдаатай хүсэлт» → XypUnavailableError', async () => {
     const h = await start();
     h.behavior.respond = () => ({ return: { resultCode: 3, resultMessage: 'Алдаатай хүсэлт' } });
-    await expect(h.client.getCitizen(REG, OTP)).rejects.toBeInstanceOf(XypOtpRejectedError);
+    await expect(h.client.getCitizen(REG, OTP)).rejects.toBeInstanceOf(XypUnavailableError);
   });
 });
 

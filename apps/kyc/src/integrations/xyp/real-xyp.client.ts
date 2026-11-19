@@ -36,6 +36,22 @@ const otpAuth = (registerNo: string, otp: number) => ({
   operator: { otp: 0, fingerprint: NO_ACCESS_FINGERPRINT },
 });
 
+/**
+ * Код өгсний дараа ХУР-ын fault / resultMessage-ийг «код буруу / хугацаа дууссан» гэж ангилах цорын ганц дүрэм. Vendor-ийн алдааны текстийн хүснэгт repo-д байхгүй
+ * (бодит текстийг VPN-ээр баталгаажуулна) тул ТААМАГЛАЛ. Танигдаагүй нь «код буруу» БИШ: ХУР-ын доголдол, `XYP_ACCESS_TOKEN` дууссан, гарын үсгийн алдааг «код буруу» гэвэл
+ * ажилтан иргэнд дахин SMS илгээлгэж, аудитад хуурамч «код татгалзсан» бичлэг үүсгэж, доголдлыг нууна.
+ * «код» гэсэн ганц үг ("Алдааны код 500") оруулдаггүй: кодтой холбоотой үг (буруу, хугацаа, expired …)-тай ойр байх ёстой.
+ */
+const CODE_WORD = '(?:код|code)';
+const CODE_PROBLEM = '(?:буруу|алдаатай|хугацаа|дууссан|таарахгүй|invalid|expired|wrong|incorrect)';
+const CODE_REJECTION = new RegExp(`otp|нэг удаагийн|passcode|verification|${CODE_WORD}.{0,24}${CODE_PROBLEM}|${CODE_PROBLEM}.{0,24}${CODE_WORD}`, 'i');
+export const isXypCodeRejection = (text: string): boolean => CODE_REJECTION.test(text);
+
+const faultString = (e: unknown): string => {
+  const fault = (e as { root?: { Envelope?: { Body?: { Fault?: { faultstring?: unknown } } } } } | null | undefined)?.root?.Envelope?.Body?.Fault;
+  return typeof fault?.faultstring === 'string' ? fault.faultstring : '';
+};
+
 /** ХУР SOAP fault-аар ХАРИУЛСАН бол faultcode-ийг (зөвхөн аюулгүй тэмдэгт, ≤40) буцаана; сүлжээ / HTTP / timeout (fault бүтэцгүй) → undefined. */
 function soapFaultCode(e: unknown): string | undefined {
   const fault = (e as { root?: { Envelope?: { Body?: { Fault?: unknown } } } } | null | undefined)?.root?.Envelope?.Body?.Fault;
@@ -120,7 +136,11 @@ export class RealXypClient implements XypClient {
       if (e instanceof IntegrationNotConfiguredError) throw e; // WSDL-ийн endpoint татгалзсан: тохиргооны алдаа, «олдсонгүй»/«түр ажиллахгүй» биш
       if (isXypNotFoundFault(e)) return null;
       const faultCode = soapFaultCode(e);
-      if (faultCode !== undefined) throw new XypOtpRejectedError({ faultCode }); // ХУР fault-аар ХАРИУЛСАН: код буруу / хугацаа дууссан / татгалзсан
+      if (faultCode !== undefined) {
+        // ХУР fault-аар ХАРИУЛСАН: мессеж нь КОДТОЙ холбоотой бол «код буруу / хугацаа дууссан»; үгүй бол (доголдол, token / гарын үсгийн алдаа) «түр ажиллахгүй».
+        if (isXypCodeRejection(faultString(e))) throw new XypOtpRejectedError({ faultCode });
+        throw new XypUnavailableError(undefined, { faultCode });
+      }
       throw new XypUnavailableError(); // сүлжээ, timeout, HTTP: код буруу гэж хэлэхгүй
     }
     // Хариуны wrapper (`return`) нь WSDL-ээс хамаарна — хоёр хэлбэрийг зөвшөөрнө.
@@ -128,9 +148,12 @@ export class RealXypClient implements XypClient {
     // Хоосон / танигдахгүй бие (redirect, HTML, тасарсан хариу) «иргэн олдсонгүй» БИШ: ХУР-ын хариу ядаж response / resultCode / resultMessage-ийн аль нэгийг агуулна.
     if (!isRow(body) || !('response' in body || 'resultCode' in body || 'resultMessage' in body)) throw new XypUnavailableError('ХУР-ын хариуны хэлбэр буруу байна');
     if (body.resultCode !== undefined && body.resultCode !== null && Number(body.resultCode) !== 0) {
-      if (NOT_FOUND.test(String(body.resultMessage ?? ''))) return null;
+      const message = String(body.resultMessage ?? '');
+      if (NOT_FOUND.test(message)) return null;
       const code = Number(body.resultCode);
-      throw new XypOtpRejectedError({ resultCode: Number.isInteger(code) ? code : undefined }); // ХУР хариулсан боловч мэдээлэл өгөөгүй
+      const resultCode = Number.isInteger(code) ? code : undefined;
+      if (isXypCodeRejection(message)) throw new XypOtpRejectedError({ resultCode }); // ХУР хариулсан: код буруу / хугацаа дууссан
+      throw new XypUnavailableError(undefined, { resultCode }); // кодтой холбоогүй (доголдол, token / гарын үсэг): код буруу гэж хэлэхгүй
     }
     if (!isRow(body.response) || Object.keys(body.response).length === 0) return null;
     return mapCitizenResponse(registerNo, body.response, new Date((this.opts.now ?? Date.now)()));
