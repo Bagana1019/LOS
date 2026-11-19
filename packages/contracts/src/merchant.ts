@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { CTX_HEADERS } from './auth';
+import { MerchantRole } from './enums';
 // Мерчант POS портал (B2B2C) — docs/05-merchant-pos.md. Web ↔ gateway ↔ origination ↔ kyc-ийн цорын ганц гэрээ.
 // Мөнгө: MNT, хувь: бутархай (0.2399 = 23.99%) — docs/03 "numeric(7,4)" дүрэм.
 
@@ -7,9 +8,7 @@ import { CTX_HEADERS } from './auth';
 export const MerchantStatus = ['PENDING', 'ACTIVE', 'SUSPENDED', 'TERMINATED'] as const;
 export type MerchantStatus = (typeof MerchantStatus)[number];
 
-/** Мерчантын хэрэглэгчийн дүр — gateway `X-Roles`-д лизингийн байгууллагын дүрүүдтэй (UserRole) хамт ирнэ. */
-export const MerchantRole = ['MERCHANT_ADMIN', 'MERCHANT_STAFF'] as const;
-export type MerchantRole = (typeof MerchantRole)[number];
+// MerchantRole нь ./enums-д (auth.ts ↔ merchant.ts тойрог импортоос сэргийлнэ); багцын index-ээс ижил нэрээр экспортлогдоно.
 
 export const GoodsCategory = ['COMPUTER', 'PHONE_TABLET', 'HOME_APPLIANCE', 'ELECTRONICS', 'FURNITURE', 'GAMES', 'SPORT_OUTDOOR', 'OTHER'] as const;
 export type GoodsCategory = (typeof GoodsCategory)[number];

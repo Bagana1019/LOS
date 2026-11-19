@@ -1,6 +1,6 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { AccessTokenClaims, type UserRole } from '@los/contracts';
+import { AccessTokenClaims, type AccountRole } from '@los/contracts';
 import { createHash, randomBytes } from 'node:crypto';
 import { AUTH_CONFIG, type AuthConfig } from './auth.config';
 
@@ -11,7 +11,7 @@ export class TokenService {
     this.jwt = new JwtService({ secret: cfg.jwtSecret, signOptions: { algorithm: 'HS256' }, verifyOptions: { algorithms: ['HS256'] } });
   }
 
-  signAccess(u: { id: string; orgId: string; branchId: string | null; roles: UserRole[] }, sessionId: string): string {
+  signAccess(u: { id: string; orgId: string; branchId: string | null; roles: AccountRole[] }, sessionId: string): string {
     return this.jwt.sign({ org: u.orgId, br: u.branchId, roles: u.roles, sid: sessionId }, { subject: u.id, expiresIn: this.cfg.accessTtlSeconds });
   }
 

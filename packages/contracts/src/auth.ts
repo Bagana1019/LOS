@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserRole } from './enums';
+import { AccountRole, UserRole } from './enums';
 
 // ── Gateway → дотоод сервис: итгэмжлэгдсэн толгойнууд (CLAUDE.md §3.2.9; X-Org-Id, X-Customer-Id нэмэгдсэн — DECISIONS.md) ──
 export const CTX_HEADERS = {
@@ -106,7 +106,9 @@ const MenuItemSchema: z.ZodType<MenuItem> = z.lazy(() => z.object({
 export const LoginRequest = z.object({ username: z.string().min(1).max(100), password: z.string().min(1).max(200) });
 export type LoginRequest = z.infer<typeof LoginRequest>;
 export const SessionUser = z.object({
-  id: z.string(), orgId: z.string(), branchId: z.string().nullable(), username: z.string(), fullName: z.string(), roles: z.array(z.enum(UserRole)),
+  id: z.string(), orgId: z.string(), branchId: z.string().nullable(), username: z.string(), fullName: z.string(), roles: z.array(z.enum(AccountRole)),
+  /** Мерчант POS (docs/05-merchant-pos.md §2): зөвхөн MERCHANT_* дүртэй хэрэглэгчид; gateway X-Merchant-Id / X-Store-Id-г эндээс тавина. */
+  merchantId: z.string().nullable().optional(), storeId: z.string().nullable().optional(),
 });
 export type SessionUser = z.infer<typeof SessionUser>;
 /** Refresh token нь httpOnly cookie-д (`los_rt`); body-д зөвхөн access token. */
@@ -116,7 +118,7 @@ export const MeResponse = AuthResponse.omit({ accessToken: true, expiresIn: true
 export type MeResponse = z.infer<typeof MeResponse>;
 /** Access token (JWT) claim. */
 export const AccessTokenClaims = z.object({
-  sub: z.string(), org: z.string(), br: z.string().nullable(), roles: z.array(z.enum(UserRole)), sid: z.string(), iat: z.number(), exp: z.number(),
+  sub: z.string(), org: z.string(), br: z.string().nullable(), roles: z.array(z.enum(AccountRole)), sid: z.string(), iat: z.number(), exp: z.number(),
 });
 export type AccessTokenClaims = z.infer<typeof AccessTokenClaims>;
 

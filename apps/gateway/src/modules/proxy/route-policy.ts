@@ -29,6 +29,16 @@ export const ROUTE_POLICIES: readonly RoutePolicy[] = [
 ];
 const READ = new Set(['GET', 'HEAD', 'OPTIONS']);
 
+/**
+ * docs/05-merchant-pos.md §8, §13: мерчант principal (MERCHANT_ADMIN / MERCHANT_STAFF) зөвхөн мерчант порталыг дуудна.
+ * Лизингийн байгууллагын API (`/pos-leases`, `/merchants`, `/applications` …), бусад сервис, gateway admin/directory → 403 (JwtAuthGuard).
+ */
+export const MERCHANT_PORTAL_PREFIX = '/api/origination/merchant-portal';
+export function isMerchantPortalPath(path: string): boolean {
+  const p = path.toLowerCase();
+  return p === MERCHANT_PORTAL_PREFIX || p.startsWith(`${MERCHANT_PORTAL_PREFIX}/`);
+}
+
 export function requiredPermission(method: string, path: string): Permission | null {
   const p = path.toLowerCase();
   for (const r of ROUTE_POLICIES) {

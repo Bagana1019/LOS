@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, UnauthorizedException, UnprocessableEntityException } from '@nestjs/common';
-import { type AccessTokenClaims, type AuthResponse, menuFor, permissionsFor, type SessionUser, type UserRole, UserRole as UserRoles } from '@los/contracts';
+import { type AccessTokenClaims, type AuthResponse, menuFor, permissionsFor, type SessionUser } from '@los/contracts';
 import { Clock } from '@los/nest-common';
 import { Prisma } from '.prisma/client-gateway';
 import { normalizeUsername } from './login-limiter';
@@ -9,14 +9,15 @@ import { AuditService } from '../audit/audit.service';
 import { AUTH_CONFIG, type AuthConfig } from './auth.config';
 import { dummyHash, hashPassword, needsRehash, verifyPassword } from './password';
 import { TokenService } from './token.service';
+import { resolvePrincipal } from './merchant-principal';
 
 export interface ClientMeta { ip: string | null; userAgent: string | null; correlationId: string }
 export interface Issued { response: AuthResponse; refreshToken: string; refreshExpiresAt: Date }
+type DbUser = { id: string; orgId: string; branchId: string | null; username: string; fullName: string; roles: string[]; merchantId?: string | null; storeId?: string | null };
 export interface Authenticated { claims: AccessTokenClaims; user: SessionUser; mustChangePassword: boolean }
 
 const BAD_CREDENTIALS = () => new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Нэвтрэх нэр эсвэл нууц үг буруу' });
 const BAD_REFRESH = () => new UnauthorizedException({ code: 'INVALID_REFRESH_TOKEN', message: 'Дахин нэвтэрнэ үү' });
-const knownRoles = (roles: string[]): UserRole[] => roles.filter((r): r is UserRole => (UserRoles as readonly string[]).includes(r));
 
 @Injectable()
 export class AuthService {
@@ -144,11 +145,13 @@ export class AuthService {
     });
   }
 
-  private toSessionUser(u: { id: string; orgId: string; branchId: string | null; username: string; fullName: string; roles: string[]; [k: string]: unknown }): SessionUser {
-    return { id: u.id, orgId: u.orgId, branchId: u.branchId, username: u.username, fullName: u.fullName, roles: knownRoles(u.roles) };
+  private toSessionUser(u: DbUser): SessionUser {
+    // docs/05-merchant-pos.md §2: мерчантын хүрээ DB-ээс; буруу тохиргоо → дүргүй (merchant-principal.ts)
+    const p = resolvePrincipal({ roles: u.roles, merchantId: u.merchantId ?? null, storeId: u.storeId ?? null });
+    return { id: u.id, orgId: u.orgId, branchId: u.branchId, username: u.username, fullName: u.fullName, roles: p.roles, merchantId: p.merchantId, storeId: p.storeId };
   }
 
-  private async issue(u: { id: string; orgId: string; branchId: string | null; username: string; fullName: string; roles: string[]; mustChangePassword?: boolean }, familyId: string, meta: ClientMeta): Promise<Issued> {
+  private async issue(u: DbUser & { mustChangePassword?: boolean }, familyId: string, meta: ClientMeta): Promise<Issued> {
     const now = this.clock.now();
     const refresh = this.tokens.newRefreshToken();
     const expiresAt = new Date(now.getTime() + this.cfg.refreshTtlSeconds * 1000);

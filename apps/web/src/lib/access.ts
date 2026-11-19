@@ -1,4 +1,4 @@
-import { MENU, type MenuItem, type Permission } from '@los/contracts';
+import { MENU, MerchantRole, type MenuItem, type Permission } from '@los/contracts';
 
 const matchesPrefix = (pathname: string, prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
 
@@ -35,6 +35,22 @@ export function safeNext(raw: string | null | undefined): string {
   } catch {
     return '/';
   }
+}
+
+/** docs/05-merchant-pos.md §8, §12: мерчант хэрэглэгч зөвхөн `/merchant/*` shell-д ажиллана (gateway мерчант порталаас өөр API-г 403-аар хаадаг). */
+const MERCHANT_HOME = '/merchant';
+const isMerchantUser = (roles: readonly string[]) => roles.some((r) => (MerchantRole as readonly string[]).includes(r));
+
+/** Нэвтэрсний дараах зам: мерчант хэрэглэгч `next` нь мерчантын shell-д биш бол `/merchant`. */
+export function landingFor(roles: readonly string[], next: string | null | undefined): string {
+  const target = safeNext(next);
+  if (!isMerchantUser(roles)) return target;
+  return hasOwnShell(target.split(/[?#]/)[0] ?? '') ? target : MERCHANT_HOME;
+}
+
+/** Мерчант хэрэглэгч ажилтны хуудсанд орвол чиглүүлэх зам; бусад тохиолдолд null. */
+export function merchantRedirect(roles: readonly string[], pathname: string): string | null {
+  return isMerchantUser(roles) && !hasOwnShell(pathname) ? MERCHANT_HOME : null;
 }
 
 export function flattenMenu(menu: readonly MenuItem[]): MenuItem[] {

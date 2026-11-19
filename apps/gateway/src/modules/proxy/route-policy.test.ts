@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { PUBLIC_PAYMENT_CALLBACKS, isAmbiguousPath, isInternalOnly, requiredPermission } from './route-policy';
+import { PUBLIC_PAYMENT_CALLBACKS, isAmbiguousPath, isInternalOnly, isMerchantPortalPath, requiredPermission } from './route-policy';
+
+describe('isMerchantPortalPath (docs/05-merchant-pos.md §8: merchant principals reach ONLY the merchant portal)', () => {
+  it.each([
+    '/api/origination/merchant-portal/me',
+    '/api/origination/merchant-portal/leases/abc/submit',
+    '/api/origination/merchant-portal',
+    '/API/Origination/Merchant-Portal/me',
+  ])('%s is a merchant portal path', (p) => expect(isMerchantPortalPath(p)).toBe(true));
+
+  it.each([
+    '/api/origination/applications',
+    '/api/origination/pos-leases',
+    '/api/origination/merchants',
+    '/api/origination/pos-plans',
+    '/api/origination/merchant-portalx/me',
+    '/api/kyc/merchant-portal/me',
+    '/api/origination/settings',
+    '/api/admin/users',
+  ])('%s is not', (p) => expect(isMerchantPortalPath(p)).toBe(false));
+});
 
 describe('requiredPermission (FR-5.5 pricing tiers)', () => {
   const tiers = '/api/origination/loan-terms/pricing/tiers';
