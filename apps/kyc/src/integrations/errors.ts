@@ -13,3 +13,12 @@ export class IntegrationNotImplementedError extends Error {
     this.name = 'IntegrationNotImplementedError';
   }
 }
+
+// Гадаад жагсаалтыг (UN, FATF) татах / задлахад алдаа гарлаа. Мессеж нь зөвхөн шалтгаан: URL (SAS sig), зам, бичлэгийн агуулгыг оруулахгүй.
+// WatchlistService үүнийг барьж cache (≤72ц) руу буцна, байхгүй бол 503 (fail closed).
+export class ExternalListError extends Error {
+  constructor(readonly integration: string, readonly reason: string) {
+    super(`Integration "${integration}": ${reason}`);
+    this.name = 'ExternalListError';
+  }
+}

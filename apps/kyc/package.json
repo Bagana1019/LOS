@@ -25,7 +25,8 @@
     "@prisma/client": "^5.20.0",
     "@los/nest-common": "workspace:*",
     "@los/calc": "workspace:*",
-    "soap": "^1.14.1"
+    "soap": "^1.14.1",
+    "fast-xml-parser": "^5.12.1"
   },
   "devDependencies": {
     "@los/config": "workspace:*",

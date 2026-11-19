@@ -1,28 +1,20 @@
-import { IntegrationNotImplementedError } from '../errors';
+// RealFatfClient: FATF-ийн өндөр эрсдэлтэй юрисдикцийн жагсаалтыг FATF_LIST_FILE-аас уншина (FATF-д machine-readable API байхгүй).
+// Файлыг үйл ажиллагааны баг бүрэн хуралдаан бүрийн дараа шинэчилнэ — формат, журам: ./README.md. Хатуу шалгалт: ./fatf-list.ts.
+import { ExternalListError } from '../errors';
 import type { FatfClient, FatfSnapshot } from './fatf.client';
+import { parseFatfList, readFatfListFile } from './fatf-list';
+import { loadFatfConfig } from './fatf.config';
 
-export interface RealFatfConfig {
-  /** Dataset эсвэл гараар байршуулсан файлын хаяг (FATF-д machine-readable API байхгүй). */
-  url?: string;
-}
+type Env = Record<string, string | undefined>;
 
-/**
- * TODO(human): FATF-ийн өндөр эрсдэлтэй юрисдикцийн жагсаалтыг бодитоор авах.
- *  FATF нь machine-readable API өгдөггүй тул хоёрын нэгийг сонгоно:
- *   (a) найдвартай засвар үйлчилгээтэй dataset-ээс татах (config.url), эсвэл
- *   (b) FATF-ийн бүрэн хуралдаан (plenary) бүрийн дараа жагсаалтыг гараар байршуулах (admin upload).
- *  Аль ч тохиолдолд: category (CALL_FOR_ACTION | INCREASED_MONITORING), улсын код ISO alpha-2 том үсгээр,
- *  version = plenary сар (жнь '2026-10'). Хоосон жагсаалтыг WatchlistService татгалзана.
- *  Урьдчилсан нөхцөл: сүлжээний allow-list болон хууль зүйн хяналт.
- */
+export interface RealFatfOptions { env?: Env }
+
 export class RealFatfClient implements FatfClient {
-  readonly url?: string;
+  constructor(private readonly options: RealFatfOptions = {}) {}
 
-  constructor(config: RealFatfConfig = {}) {
-    this.url = config.url;
-  }
-
-  async fetchSnapshot(): Promise<FatfSnapshot> {
-    throw new IntegrationNotImplementedError('fatf');
+  async fetchSnapshot(signal?: AbortSignal): Promise<FatfSnapshot> {
+    const { listFile } = loadFatfConfig(this.options.env ?? process.env); // тохируулаагүй бол IntegrationNotConfiguredError (fail closed)
+    if (signal?.aborted) throw new ExternalListError('fatf', 'read aborted');
+    return parseFatfList(readFatfListFile(listFile));
   }
 }
