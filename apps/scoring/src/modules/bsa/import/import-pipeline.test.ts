@@ -85,6 +85,13 @@ describe('ImportPipelineService: happy path', () => {
     expect(imported.map((e) => [e.status, e.rows]).sort()).toEqual([['COMPLETED', 18], ['COMPLETED', 9]]);
     expect(imported.every((e) => e.analysisId === analysis.id && e.applicationId === 'app-1')).toBe(true);
     expect(h.publisher.pending).toHaveLength(0);
+    // N4: each COMPLETED event carries the INT-4 snapshot of its own recalculation; the last one equals the final summary. No PII.
+    expect(imported.every((e) => e.customerId === analysis.customerId && e.dtiLevel !== undefined && e.periodMonths !== undefined)).toBe(true);
+    const s = report.summary!;
+    expect(imported.at(-1)).toMatchObject({
+      periodMonths: s.periodMonths, monthlyIncome: s.totalMonthlyIncome, netCashFlowMonthly: s.netCashFlowMonthly, dtiPercent: s.dtiPercent, dtiLevel: s.dtiLevel, pendingSuspiciousCount: s.pendingSuspiciousCount,
+    });
+    expect(JSON.stringify(imported)).not.toMatch(new RegExp(`${ACCOUNT_A}|${ACCOUNT_B}|Bold`, 'i'));
 
     const events = await h.analysis.listEvents(OFFICER, analysis.id);
     const actions = events.items.map((e) => e.action);
@@ -466,6 +473,7 @@ describe('ImportPipelineService: retries (attempt-aware)', () => {
     expect(JSON.stringify(job.errors)).not.toMatch(/socket|zxq|Bold|5011223344/i);
     expect(h.queue.getJob(job.id)?.state).toBe('failed');
     expect(h.publisher.eventsOfType('StatementImported').map((e) => [e.status, e.rows])).toEqual([['FAILED', 0]]);
+    expect(h.publisher.eventsOfType('StatementImported')[0]).not.toHaveProperty('dtiLevel'); // N4: FAILED carries no metrics
     expect(await h.memory.transactions.loadAll(analysis.id)).toHaveLength(0);
 
     // Хэрэглэгч «Дахин оролдох»-ыг дарна: ажил PENDING болж, дараалалд дахин орно

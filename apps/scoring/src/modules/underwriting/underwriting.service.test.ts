@@ -76,6 +76,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('UnderwritingService (PostgreSQL
       expect(record.result.autoSelected).toBe('A_SALARY'); // автомат санал хэвээр
       const [event] = await outboxEvents(db, 'ScoringCompleted');
       expect(event).toMatchObject({ selectedMethod: 'C_COMBINED', dtiPercent: record.result.methods[2]!.burdenPercent });
+      // N4: C is a DSCR method → the event carries its ratio; LTV = the calculation's collateral verdict
+      expect(record.result.methods[2]!.ratioKind).toBe('DSCR');
+      expect(event).toMatchObject({ dscr: record.result.methods[2]!.ratio, ltv: record.result.collateral.ltv });
     });
 
     it('a requested method without an income base → 422 METHOD_NOT_APPLICABLE and NOTHING is stored (FR-8.6)', async () => {
@@ -103,6 +106,9 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('UnderwritingService (PostgreSQL
         applicationId: 'app-m8-1', selectedMethod: 'A_SALARY', soscoScore: null, dtiPercent: 41.7, orgId: ORG, actorId: officer.userId, correlationId: 'corr-test-1', version: 1,
       });
       expect(record.result.methods[0]!.burdenPercent).toBe(41.7); // (200 000 + 1 050 000) ÷ 3 000 000 × 100, дээш 1 орон
+      // N4: A is a DTI method → dscr null (never the DTI ratio); ltv from the collateral verdict (key present even when null)
+      expect(event).toHaveProperty('dscr', null);
+      expect(event).toHaveProperty('ltv', record.result.collateral.ltv);
     });
 
     it('soscoScore = the NEWEST sosco_result of (org, application, customer); other customers, applications and organisations are ignored', async () => {

@@ -1,7 +1,7 @@
 // CLAUDE.md §3.2(4): domain event-ийг бизнес бичилттэй НЭГ транзакцид `scoring.outbox`-д бичнэ; relay worker (M00) Redis Streams руу гаргана.
 // Шууд publish хийхгүй. DomainEventPublisher port-ийн adapter-ууд: PrismaEventPublisher (бодит) · InMemoryEventPublisher (тест).
 // Event-д зөвхөн id/тоо/төлөв орно — PII (нэр, регистр, данс, гүйлгээний утга) ХЭЗЭЭ Ч оруулахгүй.
-import { DomainEvent, StatementImported } from '@los/contracts';
+import { type BsaSummary, DomainEvent, StatementImported } from '@los/contracts';
 import { randomUUID } from 'node:crypto';
 import type { DomainEventPublisher, RequestContext } from './infra.ports';
 
@@ -204,7 +204,19 @@ export interface StatementImportedInput {
   rows: number;
   status: StatementImportedEvent['status'];
   ctx: EventContext;
+  /** N4 (DWH): COMPLETED only — analysis customer id + INT-4 summary of this import's recalculation (null: nothing to summarise). No PII. */
+  snapshot?: { customerId: string; summary: BsaSummary | null };
 }
+
+const snapshotFields = (s: StatementImportedInput['snapshot']) => {
+  if (!s) return {};
+  if (!s.summary) return { customerId: s.customerId };
+  const m = s.summary;
+  return {
+    customerId: s.customerId, periodMonths: m.periodMonths, monthlyIncome: m.totalMonthlyIncome, netCashFlowMonthly: m.netCashFlowMonthly,
+    dtiPercent: m.dtiPercent, dtiLevel: m.dtiLevel, pendingSuspiciousCount: m.pendingSuspiciousCount,
+  };
+};
 
 /** `StatementImported` (CLAUDE.md §3.3) event үүсгэнэ. Схемд нийцэхгүй бол InvalidDomainEventError */
 export function buildStatementImportedEvent(input: StatementImportedInput, deps: EventBuildDeps = {}): StatementImportedEvent {
@@ -225,6 +237,7 @@ export function buildStatementImportedEvent(input: StatementImportedInput, deps:
     applicationId: input.applicationId,
     rows: input.rows,
     status: input.status,
+    ...(input.status === 'COMPLETED' ? snapshotFields(input.snapshot) : {}),
   };
   const parsed = StatementImported.safeParse(candidate);
   if (!parsed.success) throw new InvalidDomainEventError(parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.code}`));
