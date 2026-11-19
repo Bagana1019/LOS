@@ -100,6 +100,34 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · харилцаг
     });
   });
 
+  describe('M5: official address through the change request', () => {
+    it('an official-address edit is applied on approval and stored encrypted in the request (no silent drop)', async () => {
+      const c = await owned();
+      const moved = { province: 'Дархан-Уул', district: 'Дархан', khoroo: '3-р баг', detail: 'Нууц-байр 77' };
+      const sub = await submit(c.id, { officialAddress: moved, residenceSameAsOfficial: false, residenceAddress: ADDRESS });
+      expect(sub.status).toBe(202);
+      const rid = sub.body.request.id;
+      const row = await db.changeRequest.findUniqueOrThrow({ where: { id: rid } });
+      expect(JSON.stringify([row.payload, row.before])).not.toContain('Нууц-байр 77');
+      expect(row.payload).toMatchObject({ summary: { fields: ['officialAddress', 'residenceAddress', 'residenceSameAsOfficial'] } });
+      expect((await approve(rid)).status).toBe(200);
+      const after = await customer(c.id);
+      expect(after.officialAddressJson).toEqual(moved);
+      expect(after.residenceAddressJson).toEqual(ADDRESS);
+    });
+
+    it('unknown or read-only fields in `changes` are refused with 400, not dropped', async () => {
+      const c = await owned();
+      const unknown = await submit(c.id, { phone: NEW_PHONE, registeredAddress: ADDRESS });
+      expect(unknown.status).toBe(400);
+      expect(unknown.body).toMatchObject({ code: 'UNKNOWN_FIELD', details: { fields: ['registeredAddress'] } });
+      const ro = await submit(c.id, { registerNo: 'УБ00000001' });
+      expect(ro.status).toBe(400);
+      expect(ro.body).toMatchObject({ code: 'READONLY_FIELD', details: { fields: ['registerNo'] } });
+      expect(await db.changeRequest.count({ where: { targetId: c.id } })).toBe(0);
+    });
+  });
+
   describe('PII: nothing readable in the immutable rows, history, outbox or audit', () => {
     it('stores payload and before encrypted; only changed field names are readable', async () => {
       const c = await owned();

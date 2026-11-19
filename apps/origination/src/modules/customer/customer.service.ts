@@ -11,7 +11,7 @@ import { PrismaService } from '../../prisma.service';
 import { BlacklistLookupService } from '../blacklist/blacklist-lookup.service';
 import { auditSnapshot, toRawInput, toSummary, toView } from './customer.mapper';
 import { XYP_LOOKUP, type XypLookup } from './xyp-lookup';
-import { citizenPrefill, leafPaths, mergeXyp } from './xyp-mapper';
+import { citizenPrefill, leafPaths, mergeXyp, xypConflicts } from './xyp-mapper';
 
 export interface ListQuery { q?: string; registerNo?: string; customerType?: 'INDIVIDUAL' | 'LEGAL_ENTITY'; page: number; pageSize: number }
 
@@ -113,6 +113,10 @@ export class CustomerService {
     let xypFetchedAt: Date | null = null;
     if (source === 'XYP') {
       const citizen = await this.xyp.fetchCitizen(ctx, registerNo);
+      const conflicts = xypConflicts(raw as Omit<CreateCustomerRequest, 'source'>, citizen);
+      if (conflicts.length) {
+        throw new DomainError('XYP_FIELD_READONLY', 'ХУР-аас татсан талбарыг (албан ёсны хаяг, овог нэр, төрсөн огноо г.м.) өөрчлөх боломжгүй. ХУР-ын утгыг хэвээр үлдээнэ үү', 400, { fields: conflicts });
+      }
       raw = mergeXyp(raw as Omit<CreateCustomerRequest, 'source'>, citizen);
       xypFetchedAt = new Date(citizen.fetchedAt);
     }

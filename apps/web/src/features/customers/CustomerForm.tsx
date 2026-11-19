@@ -4,7 +4,7 @@ import { App as AntApp, AutoComplete, Button, Card, Checkbox, Divider, Flex, For
 import { CustomerContactRelation, Gender, MaritalStatus, type CustomerType, type CustomerInputRaw } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { uploadDmsFile } from '../documents/shared/files';
-import { buildPayload, validateCustomer } from './customers.utils';
+import { buildPayload, validateCustomer, xypLockedFields } from './customers.utils';
 
 type Values = Record<string, unknown>;
 interface Props {
@@ -32,12 +32,12 @@ function FieldGrid({ children, min = 240 }: { children: React.ReactNode; min?: n
 }
 
 /** 4 түвшинт хаяг (аймаг/хот → сум/дүүрэг → баг/хороо → дэлгэрэнгүй). Албан ёсны, оршин суугаа, холбоо барих хүний гэрийн хаягт нэг бүтэц. */
-function AddressFields({ name, disabled, required = true }: { name: Path; disabled?: boolean; required?: boolean }) {
+function AddressFields({ name, disabled, readOnly, required = true }: { name: Path; disabled?: boolean; readOnly?: boolean; required?: boolean }) {
   return (
     <FieldGrid min={180}>
       {ADDRESS_KEYS.map((k) => (
         <Form.Item key={k} name={[...name, k]} label={L(`address.${k}`)} rules={required ? [req] : undefined}>
-          <Input maxLength={k === 'detail' ? 300 : 100} disabled={disabled} />
+          <Input maxLength={k === 'detail' ? 300 : 100} disabled={disabled} readOnly={readOnly} />
         </Form.Item>
       ))}
     </FieldGrid>
@@ -121,22 +121,28 @@ export function CustomerForm({ customerType, registerNo, initial, prefilled, ser
     }
   };
 
-  const marked = (name: string) => (prefilled.includes(name) ? { extra: <Typography.Text type="secondary">{t('customer.xyp.prefilled')}</Typography.Text> } : {});
+  // M5: ХУР-ын эзэмшдэг талбар (албан ёсны хаяг, овог нэр, төрсөн огноо) зөвхөн унших — сервер өөр утгыг 400-аар татгалзана
+  const locked = xypLockedFields(prefilled);
+  const marked = (name: string) => {
+    if (locked.has(name)) return { extra: <Typography.Text type="secondary">{t('customer.xyp.locked')}</Typography.Text> };
+    return prefilled.includes(name) ? { extra: <Typography.Text type="secondary">{t('customer.xyp.prefilled')}</Typography.Text> } : {};
+  };
+  const ro = (name: string) => (locked.has(name) ? { readOnly: true, 'aria-readonly': true } : {});
 
   return (
     <Form<Values> form={form} layout="vertical" onFinish={submit} requiredMark="optional" scrollToFirstError>
       <Card size="small" title={t('customer.group.personal')} style={{ marginBottom: 16 }}>
         <Flex gap={12} wrap>
-          {individual ? <Form.Item name="clanName" label={L('clanName')} style={{ flex: '1 1 200px' }} {...marked('clanName')}><Input maxLength={100} /></Form.Item> : null}
-          {individual ? <Form.Item name="lastName" label={L('lastName')} rules={[req]} style={{ flex: '1 1 200px' }} {...marked('lastName')}><Input maxLength={100} /></Form.Item> : null}
-          <Form.Item name="firstName" label={L('firstName')} rules={[req]} style={{ flex: '1 1 200px' }} {...marked('firstName')}><Input maxLength={100} /></Form.Item>
+          {individual ? <Form.Item name="clanName" label={L('clanName')} style={{ flex: '1 1 200px' }} {...marked('clanName')}><Input maxLength={100} {...ro('clanName')} /></Form.Item> : null}
+          {individual ? <Form.Item name="lastName" label={L('lastName')} rules={[req]} style={{ flex: '1 1 200px' }} {...marked('lastName')}><Input maxLength={100} {...ro('lastName')} /></Form.Item> : null}
+          <Form.Item name="firstName" label={L('firstName')} rules={[req]} style={{ flex: '1 1 200px' }} {...marked('firstName')}><Input maxLength={100} {...ro('firstName')} /></Form.Item>
           {individual ? (
             <Form.Item name="gender" label={L('gender')} rules={[req]} style={{ flex: '1 1 160px' }} {...marked('gender')}>
               <Select placeholder={t('customer.gender.select')} options={Gender.map((v) => ({ value: v, label: t(`customer.gender.${v}`) }))} />
             </Form.Item>
           ) : null}
-          {individual ? <Form.Item name="civilId" label={L('civilId')} style={{ flex: '1 1 200px' }} {...marked('civilId')}><Input maxLength={30} /></Form.Item> : null}
-          {individual ? <Form.Item name="birthDate" label={L('birthDate')} rules={[req]} style={{ flex: '1 1 160px' }} {...marked('birthDate')}><Input type="date" /></Form.Item> : null}
+          {individual ? <Form.Item name="civilId" label={L('civilId')} style={{ flex: '1 1 200px' }} {...marked('civilId')}><Input maxLength={30} {...ro('civilId')} /></Form.Item> : null}
+          {individual ? <Form.Item name="birthDate" label={L('birthDate')} rules={[req]} style={{ flex: '1 1 160px' }} {...marked('birthDate')}><Input type="date" {...ro('birthDate')} /></Form.Item> : null}
         </Flex>
         <Flex gap={12} wrap>
           <Form.Item name="phone" label={L('phone')} rules={[req]} style={{ flex: '1 1 200px' }}><Input maxLength={20} placeholder="99112233" inputMode="tel" /></Form.Item>
@@ -163,7 +169,8 @@ export function CustomerForm({ customerType, registerNo, initial, prefilled, ser
 
       <Card size="small" title={t('customer.group.address')} style={{ marginBottom: 16 }}>
         <Typography.Text strong>{L('officialAddress')}</Typography.Text>
-        <div style={{ marginTop: 8 }}><AddressFields name={['officialAddress']} /></div>
+        {locked.has('officialAddress') ? <div><Typography.Text type="secondary" data-testid="official-address-locked">{t('customer.xyp.locked')}</Typography.Text></div> : null}
+        <div style={{ marginTop: 8 }}><AddressFields name={['officialAddress']} readOnly={locked.has('officialAddress')} /></div>
         <Form.Item name="residenceSameAsOfficial" valuePropName="checked"><Checkbox>{L('residenceSameAsOfficial')}</Checkbox></Form.Item>
         {!same ? (<><Typography.Text strong>{L('residenceAddress')}</Typography.Text><div style={{ marginTop: 8 }}><AddressFields name={['residenceAddress']} /></div></>) : null}
       </Card>
