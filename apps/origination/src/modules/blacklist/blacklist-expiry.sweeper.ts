@@ -1,5 +1,10 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { runExclusive } from '@los/database';
+import { PrismaService } from '../../prisma.service';
 import { BlacklistService } from './blacklist.service';
+
+/** M9: DB-only idempotent UPDATE — the lock only stops every pod repeating the same sweep. */
+export const BLACKLIST_EXPIRY_LOCK = 'origination:blacklist-expiry-sweeper';
 
 const DEFAULT_SECONDS = 3600;
 const MAX_SECONDS = 86_400;
@@ -20,7 +25,7 @@ export class BlacklistExpirySweeper implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private running = false;
 
-  constructor(@Inject(BlacklistService) private readonly svc: BlacklistService) {}
+  constructor(@Inject(BlacklistService) private readonly svc: BlacklistService, @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService) {}
 
   onModuleInit() {
     const seconds = parseExpirySeconds(process.env.BLACKLIST_EXPIRY_SWEEP_SECONDS);
@@ -35,9 +40,10 @@ export class BlacklistExpirySweeper implements OnModuleInit, OnModuleDestroy {
     if (this.running) return 0;
     this.running = true;
     try {
-      let total = 0;
-      for (let n = 100; n === 100;) { n = await this.svc.expireDue(100); total += n; }
-      return total;
+      const sweep = async () => { let total = 0; for (let n = 100; n === 100;) { n = await this.svc.expireDue(100); total += n; } return total; };
+      if (!this.prisma) return await sweep(); // DB-гүй (нэг процесс) горим
+      const r = await runExclusive(this.prisma, BLACKLIST_EXPIRY_LOCK, sweep);
+      return r.ran ? r.value : 0;
     } catch (e) {
       this.log.error(`blacklist expiry sweep failed: ${e instanceof Error ? e.name : typeof e}`);
       return 0;

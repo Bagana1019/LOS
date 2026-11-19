@@ -1,10 +1,17 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Clock } from '@los/nest-common';
+import { runExclusive } from '@los/database';
 import { PrismaService } from '../../prisma.service';
 import { BankReconciliationService } from './bank-reconciliation.service';
 import { EXPIRED_RECHECK_WINDOW_MS, InvoiceService } from './invoice.service';
 import { safeLogText } from './payment.errors';
 import { Actor, systemActor } from './payment.service';
+
+// M9: each job polls an external provider (QPay/SocialPay/bank); rows are idempotent, but one pod per job avoids N× duplicate provider calls.
+// Distinct keys so a long sweep never delays reconciliation.
+export const PAYMENT_SWEEP_LOCK = 'origination:payment-invoice-sweep';
+export const PAYMENT_RECHECK_LOCK = 'origination:payment-expired-recheck';
+export const PAYMENT_RECONCILE_LOCK = 'origination:payment-bank-reconcile';
 
 const describeError = (e: unknown): string => (e instanceof Error ? safeLogText(e.message, 120) : 'үл мэдэгдэх');
 
@@ -12,7 +19,7 @@ const describeError = (e: unknown): string => (e instanceof Error ? safeLogText(
  * Брифийн дүрэм 3: PENDING+хугацаа дууссан invoice-ийг EXPIRED болгох, алдагдсан callback-ийг (poll) нөхөх, BANK_TRANSFER тулгалт.
  * `PAYMENT_MAINTENANCE=off` бол ажиллахгүй. Интервал: `PAYMENT_MAINTENANCE_INTERVAL_SEC` (60), `PAYMENT_RECONCILE_INTERVAL_MIN` (10),
  * EXPIRED invoice-ийн дахин шалгалт `PAYMENT_EXPIRED_RECHECK_INTERVAL_MIN` (10).
- * Олон instance зэрэг ажиллахад аюулгүй — бүх үйлдэл idempotent.
+ * Олон instance зэрэг ажиллахад аюулгүй — бүх үйлдэл idempotent; ажил тус бүр advisory lock-оор нэг pod-д л гүйнэ (M9).
  * Фоны timer-ийн алдаа ХЭЗЭЭ Ч unhandled rejection болохгүй (Node 15+ процессыг зогсооно): метод бүр өөрийн алдааг барьж логлоно,
  * timer callback нь нэмж `.catch`-тэй.
  */
@@ -58,14 +65,16 @@ export class PaymentMaintenance implements OnModuleInit, OnModuleDestroy {
     let checked = 0;
     let expired = 0;
     try {
-      const pending = await this.prisma.paymentInvoice.findMany({ where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: 200 });
-      checked = pending.length;
-      for (const invoice of pending) {
-        try {
-          const fresh = await this.invoices.refresh(invoice, systemActor(invoice.orgId));
-          if (fresh.status === 'EXPIRED') expired++;
-        } catch (e) { this.logger.error(`Invoice шинэчлэхэд алдаа: ${describeError(e)}`); }
-      }
+      await runExclusive(this.prisma, PAYMENT_SWEEP_LOCK, async () => {
+        const pending = await this.prisma.paymentInvoice.findMany({ where: { status: 'PENDING' }, orderBy: { createdAt: 'asc' }, take: 200 });
+        checked = pending.length;
+        for (const invoice of pending) {
+          try {
+            const fresh = await this.invoices.refresh(invoice, systemActor(invoice.orgId));
+            if (fresh.status === 'EXPIRED') expired++;
+          } catch (e) { this.logger.error(`Invoice шинэчлэхэд алдаа: ${describeError(e)}`); }
+        }
+      });
     } catch (e) {
       this.logger.error(`Invoice-ийн sweep амжилтгүй: ${describeError(e)}`);
     } finally { this.sweeping = false; }
@@ -82,18 +91,20 @@ export class PaymentMaintenance implements OnModuleInit, OnModuleDestroy {
     let checked = 0;
     let recovered = 0;
     try {
-      const since = new Date(this.clock.now().getTime() - EXPIRED_RECHECK_WINDOW_MS);
-      const expired = await this.prisma.paymentInvoice.findMany({
-        where: { status: 'EXPIRED', provider: { in: ['QPAY', 'SOCIALPAY'] }, providerInvoiceId: { not: null }, expiresAt: { gte: since } },
-        orderBy: { expiresAt: 'desc' }, take: 200,
+      await runExclusive(this.prisma, PAYMENT_RECHECK_LOCK, async () => {
+        const since = new Date(this.clock.now().getTime() - EXPIRED_RECHECK_WINDOW_MS);
+        const expired = await this.prisma.paymentInvoice.findMany({
+          where: { status: 'EXPIRED', provider: { in: ['QPAY', 'SOCIALPAY'] }, providerInvoiceId: { not: null }, expiresAt: { gte: since } },
+          orderBy: { expiresAt: 'desc' }, take: 200,
+        });
+        checked = expired.length;
+        for (const invoice of expired) {
+          try {
+            const fresh = await this.invoices.syncWithProvider(invoice, systemActor(invoice.orgId), { includeClosed: true, swallowErrors: true });
+            if (fresh.status === 'PAID') recovered++;
+          } catch (e) { this.logger.error(`EXPIRED invoice дахин шалгахад алдаа: ${describeError(e)}`); }
+        }
       });
-      checked = expired.length;
-      for (const invoice of expired) {
-        try {
-          const fresh = await this.invoices.syncWithProvider(invoice, systemActor(invoice.orgId), { includeClosed: true, swallowErrors: true });
-          if (fresh.status === 'PAID') recovered++;
-        } catch (e) { this.logger.error(`EXPIRED invoice дахин шалгахад алдаа: ${describeError(e)}`); }
-      }
     } catch (e) {
       this.logger.error(`EXPIRED invoice-ийн дахин шалгалт амжилтгүй: ${describeError(e)}`);
     } finally { this.rechecking = false; }
@@ -106,19 +117,25 @@ export class PaymentMaintenance implements OnModuleInit, OnModuleDestroy {
     this.reconciling = true;
     let ran = 0;
     try {
-      const orgs = new Set<string>();
-      for (const r of await this.prisma.paymentInvoice.findMany({ where: { provider: 'BANK_TRANSFER' }, distinct: ['orgId'], select: { orgId: true } })) orgs.add(r.orgId);
-      // Module 0-ийн seed бүх байгууллагад хоосон `payment.collection_account` мөр үүсгэдэг — зөвхөн данс нь тохируулагдсан байгууллагыг тулгана.
-      for (const r of await this.prisma.setting.findMany({ where: { key: 'payment.collection_account' }, select: { orgId: true, valueJson: true } })) {
-        if (String((r.valueJson as { accountNo?: unknown } | null)?.accountNo ?? '').trim()) orgs.add(r.orgId);
-      }
-      for (const orgId of orgs) {
-        const actor: Actor = systemActor(orgId);
-        try { await this.reconciliation.reconcile(actor); ran++; } catch (e) { this.logger.warn(`Банкны тулгалт (${safeLogText(orgId)}) амжилтгүй: ${describeError(e)}`); }
-      }
+      await runExclusive(this.prisma, PAYMENT_RECONCILE_LOCK, async () => { ran = await this.reconcileOrgs(); });
     } catch (e) {
       this.logger.error(`Банкны тулгалтын байгууллагуудыг олж чадсангүй: ${describeError(e)}`);
     } finally { this.reconciling = false; }
+    return ran;
+  }
+
+  private async reconcileOrgs(): Promise<number> {
+    let ran = 0;
+    const orgs = new Set<string>();
+    for (const r of await this.prisma.paymentInvoice.findMany({ where: { provider: 'BANK_TRANSFER' }, distinct: ['orgId'], select: { orgId: true } })) orgs.add(r.orgId);
+    // Module 0-ийн seed бүх байгууллагад хоосон `payment.collection_account` мөр үүсгэдэг — зөвхөн данс нь тохируулагдсан байгууллагыг тулгана.
+    for (const r of await this.prisma.setting.findMany({ where: { key: 'payment.collection_account' }, select: { orgId: true, valueJson: true } })) {
+      if (String((r.valueJson as { accountNo?: unknown } | null)?.accountNo ?? '').trim()) orgs.add(r.orgId);
+    }
+    for (const orgId of orgs) {
+      const actor: Actor = systemActor(orgId);
+      try { await this.reconciliation.reconcile(actor); ran++; } catch (e) { this.logger.warn(`Банкны тулгалт (${safeLogText(orgId)}) амжилтгүй: ${describeError(e)}`); }
+    }
     return ran;
   }
 }

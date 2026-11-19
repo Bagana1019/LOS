@@ -77,5 +77,5 @@ export function counterScopeKey(scope: string, branchId: string, yyyymmdd: strin
   return scope === 'DAY' ? yyyymmdd : scope === 'BRANCH' ? branchId : 'ALL';
 }
 
-/** Салбарын кодыг загварт оруулах: DEMO — branchId-ийн үсэг/тооноос бусдыг хасна (iam.branch код origination-д байхгүй). */
-export const branchCodeOf = (branchId: string): string => branchId.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+/** Загварт `{BRANCH}` хэсэг байгаа эсэх (байвал салбарын тохируулсан код заавал). */
+export const hasBranchToken = (pattern: string): boolean => pattern.includes('{BRANCH}');

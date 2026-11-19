@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { branchCodeOf, counterScopeKey, dueAt, evaluateLevel, formatContractNo, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, ubDate } from './approval.rules';
+import { counterScopeKey, hasBranchToken, dueAt, evaluateLevel, formatContractNo, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, ubDate } from './approval.rules';
 
 // FR-1.5: санал өгөгчийн харсан түвшин / хувилбар одоогийн төлөвтэй зөрвөл хоцрогдсон. Өгөөгүй талбарыг шалгахгүй.
 describe('isVoteTargetStale', () => {
@@ -73,6 +73,9 @@ describe('SLA, гэрээний дугаар (BR-11)', () => {
     expect(counterScopeKey('DAY', 'b1', '20260215')).toBe('20260215');
     expect(counterScopeKey('BRANCH', 'b1', '20260215')).toBe('b1');
     expect(counterScopeKey('GLOBAL', 'b1', '20260215')).toBe('ALL');
-    expect(branchCodeOf('branch-1')).toBe('BRANCH1');
+  });
+  it('{BRANCH} хэсэгтэй загвар салбарын код шаардана', () => {
+    expect(hasBranchToken('{PREFIX}{BRANCH}{YYMMDD}{SEQ:2}')).toBe(true);
+    expect(hasBranchToken('{PREFIX}-{YYMMDD}-{SEQ:3}')).toBe(false);
   });
 });

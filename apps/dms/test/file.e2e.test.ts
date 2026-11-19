@@ -80,6 +80,43 @@ describe.skipIf(!HAS_DB)('dms files (Module 0: MinIO file upload)', () => {
     expect((await api().get('/api/files/not-an-id').set(as('admin'))).status).toBe(404);
   });
 
+  describe('content access (security: beyond the internal token)', () => {
+    const svc = (org: string = SEED.org.id) => ({ 'x-user-id': 'svc:origination-portal', 'x-roles': '', 'x-org-id': org });
+    const upload = async () => (await api().post('/api/files').set(as('officerA')).attach('file', PDF, { filename: 'c.pdf', contentType: 'application/pdf' })).body.id as string;
+
+    it('same org but no document permission → 403 FILE_ACCESS_DENIED', async () => {
+      const id = await upload();
+      const res = await api().get(`/api/files/${id}/content`).set({ 'x-user-id': 'u-no-perm', 'x-roles': '', 'x-org-id': SEED.org.id });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FILE_ACCESS_DENIED');
+      const merchant = await api().get(`/api/files/${id}/content`).set({ 'x-user-id': 'u-merchant', 'x-roles': 'MERCHANT_CASHIER', 'x-org-id': SEED.org.id });
+      expect(merchant.status).toBe(403);
+    });
+
+    it('other org is 404 even without permission (no enumeration via 403)', async () => {
+      const id = await upload();
+      expect((await api().get(`/api/files/${id}/content`).set({ 'x-user-id': 'u-no-perm', 'x-roles': '', 'x-org-id': 'other-org' })).status).toBe(404);
+      expect((await api().get(`/api/files/${id}/content`).set(svc('other-org'))).status).toBe(404);
+    });
+
+    it('origination portal service user (svc:, no customer) → 200 with the bytes', async () => {
+      const id = await upload();
+      const res = await api().get(`/api/files/${id}/content`).set(svc()).buffer(true).parse((r, cb) => { const c: Buffer[] = []; r.on('data', (d: Buffer) => c.push(d)); r.on('end', () => cb(null, Buffer.concat(c))); });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(PDF);
+    });
+
+    it('a customer context (even with an svc: user) cannot download', async () => {
+      const id = await upload();
+      expect((await api().get(`/api/files/${id}/content`).set({ ...svc(), 'x-customer-id': 'cust-1' })).status).toBe(403);
+    });
+
+    it('every staff role that reads applications can still download', async () => {
+      const id = await upload();
+      for (const u of ['officerA', 'manager', 'admin'] as const) expect((await api().get(`/api/files/${id}/content`).set(as(u))).status, u).toBe(200);
+    });
+  });
+
   it('needs the gateway identity', async () => {
     expect((await api().post('/api/files').attach('file', PDF, { filename: 'a.pdf', contentType: 'application/pdf' })).status).toBe(401);
   });

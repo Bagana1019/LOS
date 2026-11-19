@@ -5,7 +5,9 @@
 //    олдохгүй. Object store-ийн prefix sweep (bsa/<org>/<analysis>/) шаардлагатай — README-д open issue.
 //  - Лог: зөвхөн тоо. Объектын түлхүүр, шинжилгээний id-г бичихгүй.
 //  - Org бүрийн retentionYears өөр байж болно: нээлтийн тасалбар = now − retentionDiscoveryMinYears, дараа нь org-ийн өөрийн тохиргоогоор шүүнэ.
-import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import { isAdvisoryLockClient, runExclusive } from '@los/database';
+import { PrismaService } from '../../../prisma.service';
 import { describeError } from '../common/import-queue';
 import { BSA_SETTINGS, OBJECT_STORE, type BsaSettingsProvider, type ObjectStore } from '../common/infra.ports';
 import { BSA_REPOSITORY, BsaNotFoundError, type BsaRepository, type ExpiredAnalysisRef } from '../common/persistence';
@@ -21,6 +23,9 @@ export interface RetentionReport {
   /** Устгаж чадаагүй файл (өнчин үлдсэн; дахин оролдохгүй) */
   objectFailures: number;
 }
+
+/** M9: purge is idempotent (BsaNotFoundError skip), but one pod per tick avoids N× discovery scans and object-store deletes. */
+export const BSA_RETENTION_LOCK = 'scoring:bsa-retention';
 
 /** Нээлтийн дуудлагын дээд өргөтгөл: org-ийн хугацаа өөр тул шүүгдсэн мөр хоосон болохоос сэргийлж limit-ийг ихэсгэх дээд үржвэр */
 const MAX_PROBE_MULTIPLIER = 16;
@@ -48,6 +53,7 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
     @Inject(OBJECT_STORE) private readonly store: ObjectStore,
     @Inject(BSA_IMPORT_OPTIONS) private readonly options: ImportOptions,
     @Inject(BSA_CLOCK) private readonly clock: Clock,
+    @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService,
   ) {}
 
   /** Env BSA_RETENTION_INTERVAL_MS > 0 үед тогтмол хугацаанд ажиллана. 0 = унтраалттай (гаднаас purgeExpired дуудна) */
@@ -62,19 +68,29 @@ export class RetentionService implements OnModuleInit, OnModuleDestroy {
     this.timer = null;
   }
 
-  private async tick(): Promise<void> {
-    if (this.running) return; // өмнөх гүйлт дуусаагүй
+  /** Timer-ийн нэг гүйлт. Өөр pod түгжээг барьж байвал эсвэл өмнөх гүйлт дуусаагүй бол null. Хэзээ ч reject хийхгүй */
+  async tick(): Promise<RetentionReport | null> {
+    if (this.running) return null; // өмнөх гүйлт дуусаагүй
     this.running = true;
     try {
-      const report = await this.purgeExpired();
-      if (report.purged > 0 || report.objectFailures > 0) {
+      const report = await this.purgeExclusive();
+      if (report && (report.purged > 0 || report.objectFailures > 0)) {
         this.log.log(`retention: purged=${report.purged} objectsDeleted=${report.objectsDeleted} objectFailures=${report.objectFailures}`);
       }
+      return report;
     } catch (e) {
       this.log.error(`retention run failed (${describeError(e)})`);
+      return null;
     } finally {
       this.running = false;
     }
+  }
+
+  /** DB-гүй (санах ойн repository) горимд pod хоорондын түгжээ шаардлагагүй */
+  private async purgeExclusive(): Promise<RetentionReport | null> {
+    if (!isAdvisoryLockClient(this.prisma)) return this.purgeExpired(); // e2e PRISMA_STUB ч энд
+    const r = await runExclusive(this.prisma, BSA_RETENTION_LOCK, () => this.purgeExpired());
+    return r.ran ? r.value : null;
   }
 
   /** Хугацаа нь дууссан шинжилгээнүүдийг (хамгийн ихдээ `limit`) устгана. Системийн ажил: хэрэглэгчийн контекстгүй */

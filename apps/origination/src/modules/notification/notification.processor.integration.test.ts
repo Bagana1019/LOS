@@ -271,6 +271,7 @@ describe.skipIf(!hasTestDb)('notification: DeliveryProcessor', () => {
       vi.spyOn(env.processor, 'sweep').mockImplementationOnce(() => new Promise<number>((resolve) => { release = () => resolve(7); }));
       const first = runtime.sweepOnce();
       expect(await runtime.sweepOnce()).toBe(0); // өмнөх нь дуусаагүй
+      await vi.waitFor(() => expect(release).toBeDefined()); // M9: sweep нь advisory lock авсны дараа (асинхрон) дуудагдана
       release();
       expect(await first).toBe(7);
     });

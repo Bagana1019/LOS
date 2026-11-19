@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import type { RequestContext } from '@los/contracts';
+import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { hasPermission, type RequestContext } from '@los/contracts';
 import { DomainError } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
 import { findAllowedType } from './file-type';
@@ -11,6 +11,19 @@ export interface FileView { id: string; name: string; mime: string; size: number
 
 export const DEFAULT_MAX_BYTES = 20 * 1024 * 1024;
 export const maxFileBytes = (env: NodeJS.ProcessEnv = process.env) => Number(env.FILE_MAX_BYTES ?? DEFAULT_MAX_BYTES);
+
+/** Сервисийн нэрээр (харилцагчийн эзэмшлийг дуудагч өөрөө шалгасан) хандах дотоод хэрэглэгч, жишээ нь `svc:origination-portal`. */
+const SERVICE_USER_PREFIX = 'svc:';
+
+/**
+ * Файлын агуулга татах эрх (security): дотоод сервис (`svc:` хэрэглэгч, харилцагчийн контекстгүй) эсвэл баримт харах эрхтэй ажилтан —
+ * dms-ийн баримтын замуудтай ижил `application:read`. Байгууллагын хязгаарлалтыг `find` өмнө нь шалгасан (өөр org → 404).
+ */
+export function canReadFileContent(ctx: Pick<RequestContext, 'userId' | 'roles' | 'customerId'>): boolean {
+  if (ctx.customerId) return false;
+  if (ctx.userId?.startsWith(SERVICE_USER_PREFIX)) return true;
+  return hasPermission(ctx.roles, 'application:read');
+}
 
 /** Нэр: зам, удирдлагын тэмдэгт, `..`-гүй; multer UTF-8 нэрийг latin1 гэж задалдаг тул буцаан засна (монгол нэр). */
 export function cleanFileName(original: string): string {
@@ -52,7 +65,8 @@ export class FileService {
   }
 
   async open(ctx: RequestContext, id: string) {
-    const row = await this.find(ctx, id);
+    const row = await this.find(ctx, id); // эхлээд org (404) — эрхгүй ч гэсэн өөр байгууллагын id-г 403-аар илрүүлэхгүй
+    if (!canReadFileContent(ctx)) throw new ForbiddenException({ code: 'FILE_ACCESS_DENIED', message: 'Энэ файлыг татах эрх хүрэхгүй' });
     return { row, stream: await this.storage.get(row.storageKey) };
   }
 
