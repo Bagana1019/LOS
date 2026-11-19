@@ -15,7 +15,7 @@ const KNOWN_DRIFT: readonly string[] = [];
 
 /** "Нэвтэрсэн ажилтан бол хэн ч" — өгөгдлийн хүрээг сервис өөрөө шалгадаг, хянагдсан маршрутууд. Шинэ мөр нэмэх = security review. */
 const AUTHENTICATED_ONLY: readonly string[] = [
-  // files: org-оор хязгаарлагдсан (өөр org → 404), контент татах нь canReadFileContent дүрийн шалгалттай (FileService)
+  // files: org-оор хязгаарлагдсан (өөр org → 404); контент татах нь зөвхөн `svc:` дотоод хэрэглэгчид (canReadFileContent) — ажилтан origination-оор (хүсэлтийн хүрээ + файлын холбоос)
   'GET /api/files/:id',
   'GET /api/files/:id/content',
   'POST /api/files',

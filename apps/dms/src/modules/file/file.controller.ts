@@ -20,7 +20,7 @@ export class FileController {
 
   @Get(':id/content')
   async content(@Ctx() ctx: RequestContext, @Param('id') id: string, @Res() res: Response) {
-    const { row, stream } = await this.files.open(ctx, id);
+    const { row, stream } = await this.files.download(ctx, id);
     res.setHeader('Content-Type', row.mime);
     res.setHeader('Content-Length', String(row.size));
     res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(row.name)}`);

@@ -7,7 +7,7 @@ import { t } from '../../lib/i18n';
 import { describeApiError } from '../documents/shared/api-error';
 import { ApiErrorAlert } from '../documents/shared/ApiErrorAlert';
 import { FileUploadButton } from '../documents/shared/FileUploadButton';
-import { downloadDmsFile, formatBytes, uploadDmsFile } from '../documents/shared/files';
+import { downloadApplicationFile, formatBytes, uploadDmsFile } from '../documents/shared/files';
 import type { TabProps } from './TabProps';
 import { useAttachCollateralDocument, useDetachCollateralDocument } from './useCollateral';
 import { contentGate } from './write-gates';
@@ -50,7 +50,7 @@ export function DocumentsTab({ applicationId, item, write, onChanged }: TabProps
     }
   };
   const download = (doc: CollateralDocumentView) =>
-    downloadDmsFile(doc.fileId, doc.fileName ?? t('collateral.documents.fileFallback')).catch((e: unknown) => void message.error(describeApiError(e, 'collateral').message));
+    downloadApplicationFile(applicationId, doc.fileId, doc.fileName ?? t('collateral.documents.fileFallback')).catch((e: unknown) => void message.error(describeApiError(e, 'collateral').message));
 
   const renderDocs = (docs: readonly CollateralDocumentView[]) =>
     docs.length === 0 ? (

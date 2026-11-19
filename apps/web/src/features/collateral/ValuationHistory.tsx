@@ -5,7 +5,7 @@ import { EMPTY_VALUE, formatDate, formatDateTime, formatMnt, formatPercent } fro
 import { t } from '../../lib/i18n';
 import { describeApiError } from '../documents/shared/api-error';
 import { ApiErrorAlert } from '../documents/shared/ApiErrorAlert';
-import { downloadDmsFile } from '../documents/shared/files';
+import { downloadApplicationFile } from '../documents/shared/files';
 import type { TabProps } from './TabProps';
 import { useValuationHistory } from './useCollateral';
 
@@ -17,7 +17,7 @@ export function ValuationHistory({ applicationId, item }: Pick<TabProps, 'applic
   if (q.isError) return <ApiErrorAlert error={q.error} scope="collateral" onRetry={() => void q.refetch()} />;
   if (q.data.items.length === 0) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('collateral.valuation.historyEmpty')} />;
   const download = (r: CollateralValuationRecord) => {
-    if (r.reportFileId) downloadDmsFile(r.reportFileId, t('collateral.valuation.reportFileName')).catch((e: unknown) => void message.error(describeApiError(e, 'collateral').message));
+    if (r.reportFileId) downloadApplicationFile(applicationId, r.reportFileId, t('collateral.valuation.reportFileName')).catch((e: unknown) => void message.error(describeApiError(e, 'collateral').message));
   };
   return (
     <List
