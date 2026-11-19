@@ -377,6 +377,37 @@ describe('ImportPipelineService: statement currency (M12)', () => {
     expect(await h.memory.transactions.loadAll(analysis.id)).toHaveLength(9);
   });
 
+  it('security: a currency label with unreadable text is refused (fail closed), never defaulted to MNT', async () => {
+    for (const garbled of ['???', '—', '##']) {
+      const h = await createHarness();
+      const analysis = await h.createAnalysis();
+      await h.uploadFiles(analysis.id, [await fileIn(garbled, 'garbled.csv')]);
+      const [job] = await h.jobs(analysis.id);
+      expect(job.status, garbled).toBe('FAILED');
+      expect(codes(job.errors), garbled).toEqual(['UNSUPPORTED_CURRENCY']);
+      expect(job.errors[0].message).toMatch(/уншиж чадсангүй/);
+      expect(await h.memory.transactions.loadAll(analysis.id)).toHaveLength(0);
+    }
+  });
+
+  it('no currency label at all → MNT is assumed as before, with a CURRENCY_ASSUMED warning', async () => {
+    const h = await createHarness();
+    const analysis = await h.createAnalysis();
+    await h.uploadFiles(analysis.id, [await fileIn('', 'nolabel.csv')]);
+    const [job] = await h.jobs(analysis.id);
+    expect(job).toMatchObject({ status: 'COMPLETED', rowsDone: 9 });
+    expect(codes(job.warnings)).toContain('CURRENCY_ASSUMED');
+  });
+
+  it('"MNT/USD" in one label is refused as mixed', async () => {
+    const h = await createHarness();
+    const analysis = await h.createAnalysis();
+    await h.uploadFiles(analysis.id, [await fileIn('MNT/USD', 'slash.csv')]);
+    const [job] = await h.jobs(analysis.id);
+    expect(job.status).toBe('FAILED');
+    expect(codes(job.errors)).toEqual(['UNSUPPORTED_CURRENCY']);
+  });
+
   it('a statement printing two different currencies (mixed) is refused', async () => {
     const h = await createHarness();
     const analysis = await h.createAnalysis();

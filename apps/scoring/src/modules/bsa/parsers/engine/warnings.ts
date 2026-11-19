@@ -20,6 +20,8 @@ export const PARSE_WARNING = {
   CURRENCY_ASSUMED: 'CURRENCY_ASSUMED',
   /** Хуулгад өөр өөр валют хэвлэгдсэн (M12) — импорт UNSUPPORTED_CURRENCY-оор зогсоно */
   CURRENCY_MIXED: 'CURRENCY_MIXED',
+  /** Валютын шошго хэвлэгдсэн ч утгыг уншиж чадаагүй — MNT гэж ТААМАГЛАХГҮЙ, импорт UNSUPPORTED_CURRENCY-оор зогсоно (fail closed) */
+  CURRENCY_UNREADABLE: 'CURRENCY_UNREADABLE',
   TIME_MISSING: 'TIME_MISSING',
   TIME_UNEXPECTED: 'TIME_UNEXPECTED',
   CONTINUATION_DROPPED: 'CONTINUATION_DROPPED',

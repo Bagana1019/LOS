@@ -78,6 +78,7 @@ export const PARSE_WARNING_MESSAGES: Readonly<Record<string, string>> = {
   PERIOD_DERIVED: 'Хуулгын хугацааг гүйлгээний огнооноос тодорхойлов.',
   CURRENCY_ASSUMED: 'Валют хэвлэгдээгүй тул төгрөг гэж үзэв.',
   CURRENCY_MIXED: 'Хуулгад өөр өөр валют хэвлэгдсэн байна.',
+  CURRENCY_UNREADABLE: 'Хуулгын валютыг уншиж чадсангүй.',
   TIME_MISSING: 'Зарим гүйлгээнд цаг байхгүй.',
   TIME_UNEXPECTED: 'Зарим гүйлгээний цаг хүлээгдэж байснаас өөр хэлбэртэй.',
   CONTINUATION_DROPPED: 'Үргэлжилсэн мөрийн зарим хэсгийг орхисон.',
@@ -171,7 +172,9 @@ export const UPLOAD_REJECT_MESSAGES: Readonly<Record<UploadRejectCode, string>> 
 };
 
 /** M12: төгрөгөөс өөр (эсвэл холимог) валюттай хуулга. Валютын код (3 латин үсэг) PII биш. */
-export function unsupportedCurrencyIssue(currency: string, mixed: boolean): ImportIssue {
-  const what = mixed ? 'Хуулгад өөр өөр валют хэвлэгдсэн байна' : `Хуулгын валют ${/^[A-Z]{3}$/.test(currency) ? currency : 'тодорхойгүй'}`;
+export function unsupportedCurrencyIssue(currency: string, reason: 'MIXED' | 'UNREADABLE' | 'FOREIGN'): ImportIssue {
+  const what = reason === 'MIXED' ? 'Хуулгад өөр өөр валют хэвлэгдсэн байна'
+    : reason === 'UNREADABLE' ? 'Хуулгын валютыг уншиж чадсангүй'
+    : `Хуулгын валют ${/^[A-Z]{3}$/.test(currency) ? currency : 'тодорхойгүй'}`;
   return issue('UNSUPPORTED_CURRENCY', `${what}. ${PIPELINE_MESSAGES.UNSUPPORTED_CURRENCY}`, { severity: 'ERROR' });
 }

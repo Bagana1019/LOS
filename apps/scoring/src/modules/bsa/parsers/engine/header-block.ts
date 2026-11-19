@@ -237,6 +237,7 @@ export function compileHeaderExtractor(cfg: EngineConfig, profile: Pick<BankProf
           warnings.add(PARSE_WARNING.CURRENCY_MIXED, 'Statement prints more than one currency', where.page, where.line);
         }
         if (codes[0] !== undefined) set('currency', codes[0]);
+        else warnings.add(PARSE_WARNING.CURRENCY_UNREADABLE, 'Currency label is printed but its value could not be read', where.page, where.line);
         break;
       }
       case 'openingBalance':

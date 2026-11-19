@@ -182,3 +182,26 @@ describe('currencyCodes (M12: валютыг хэзээ ч чимээгүй MNT 
     expect(currencyCodes('—')).toEqual([]);
   });
 });
+
+describe('currency label (M12 security: fail closed)', () => {
+  const codesOf = (w: { code: string }[]) => w.map((x) => x.code);
+  it('label with unreadable text → no currency and CURRENCY_UNREADABLE (never MNT)', () => {
+    const { fields, warnings } = run(zone(['Валют: ???']));
+    expect(fields.currency).toBeNull();
+    expect(codesOf(warnings)).toContain('CURRENCY_UNREADABLE');
+  });
+  it('label with MNT → MNT, no warning; USD → USD', () => {
+    const mnt = run(zone(['Валют: MNT']));
+    expect(mnt.fields.currency).toBe('MNT');
+    expect(codesOf(mnt.warnings)).not.toContain('CURRENCY_UNREADABLE');
+    expect(run(zone(['Currency: USD'])).fields.currency).toBe('USD');
+  });
+  it('"MNT/USD" → CURRENCY_MIXED', () => {
+    expect(codesOf(run(zone(['Валют: MNT/USD'])).warnings)).toContain('CURRENCY_MIXED');
+  });
+  it('no currency label → nothing set here (the engine applies the default)', () => {
+    const { fields, warnings } = run(zone(['Дансны дугаар: 5011223344']));
+    expect(fields.currency).toBeNull();
+    expect(codesOf(warnings)).not.toContain('CURRENCY_UNREADABLE');
+  });
+});

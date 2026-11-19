@@ -40,6 +40,14 @@ import { Deadline, ImportTimeoutError, withTimeout } from './timeout';
 /** BSA-ийн бүх дүн (DTI, орлого) төгрөгөөр — өөр валютын хуулгыг хүлээж авахгүй (M12, DECISIONS 2026-11-19) */
 const BASE_CURRENCY = 'MNT';
 
+/** null = төгрөгийн хуулга (зөвшөөрнө); бусад үед татгалзах шалтгаан. */
+function currencyBlockReason(parsed: Pick<ParsedStatement, 'currency' | 'warnings'>): 'MIXED' | 'UNREADABLE' | 'FOREIGN' | null {
+  const has = (code: string) => parsed.warnings.some((w) => w.code === code);
+  if (has(PARSE_WARNING.CURRENCY_MIXED)) return 'MIXED';
+  if (has(PARSE_WARNING.CURRENCY_UNREADABLE)) return 'UNREADABLE';
+  return parsed.currency === BASE_CURRENCY ? null : 'FOREIGN';
+}
+
 /** Queue-ийн оролдлогын мэдээлэл (common/import-queue.ts-ийн ImportJobAttempt-тэй ижил хэлбэр) */
 export interface AttemptInfo {
   attempt: number;
@@ -164,8 +172,9 @@ export class ImportPipelineService {
     };
     if (rowCount > this.options.maxRowsPerFile) throw new DeterministicFailure([tooManyRowsIssue(this.options.maxRowsPerFile)], base);
     // M12: ханшийн эх сурвалж (docs/02, docs/03) тодорхойлогдоогүй — төгрөгөөс өөр/холимог валютыг хөрвүүлэхгүй, импортыг зогсооно (мөр хадгалахгүй)
-    const mixedCurrency = parsed.warnings.some((w) => w.code === PARSE_WARNING.CURRENCY_MIXED);
-    if (parsed.currency !== BASE_CURRENCY || mixedCurrency) throw new DeterministicFailure([unsupportedCurrencyIssue(parsed.currency, mixedCurrency)], base);
+    // Уншигдаагүй валютын шошго ч мөн татгалзана (fail closed — parser 'XXX' өгнө, гэхдээ анхааруулгаар ч давхар шалгана)
+    const currencyBlock = currencyBlockReason(parsed);
+    if (currencyBlock) throw new DeterministicFailure([unsupportedCurrencyIssue(parsed.currency, currencyBlock)], base);
 
     const verification = await this.verifier.verify(parsed, text.meta, {
       balanceTolerance: settings.balanceTolerance,
