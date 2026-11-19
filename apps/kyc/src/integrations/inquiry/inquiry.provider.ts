@@ -13,11 +13,24 @@ export interface ProviderResult {
   warningLevel: InquiryWarningLevel;
 }
 
+/** Дуудлагын нэмэлт контекст. ЗМС (SainScore) харилцагчийн утас, имэйлийг заавал шаарддаг (origination дамжуулна). */
+export interface InquiryContext {
+  contact?: { phone?: string | null; email?: string | null };
+}
+
 export interface InquiryProvider {
-  /** @param registerNo нормчилсон регистр. Эх сурвалж түр ажиллахгүй бол `InquiryUnavailableError`. */
-  fetch(source: ExternalInquirySource, registerNo: string): Promise<ProviderResult>;
+  /** @param registerNo нормчилсон регистр. Эх сурвалж түр ажиллахгүй бол `InquiryUnavailableError`, vendor татгалзвал `InquiryRejectedError`. */
+  fetch(source: ExternalInquirySource, registerNo: string, ctx?: InquiryContext): Promise<ProviderResult>;
 }
 export const INQUIRY_PROVIDER = Symbol('INQUIRY_PROVIDER');
+
+/** Vendor лавлагааг бизнесийн шалтгаанаар татгалзсан (терминал; дахин оролдохгүй). vendorCode: vendor-ийн код (SR0260…) эсвэл дотоод (CONTACT_REQUIRED, LOGIN_REJECTED). */
+export class InquiryRejectedError extends Error {
+  constructor(readonly source: string, readonly vendorCode: string, message: string) {
+    super(message);
+    this.name = 'InquiryRejectedError';
+  }
+}
 
 export class InquiryUnavailableError extends Error {
   constructor(readonly source: string, message = `${source} лавлагааны сервис түр ажиллахгүй байна`) {

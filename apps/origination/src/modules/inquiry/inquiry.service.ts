@@ -63,6 +63,7 @@ export class InquiryService {
       try {
         const res = await this.kyc.fetch(ctx, {
           applicationId: app.id, customerId: t.view.customerId, registerNo: customerRegisterNo(t.customer), staleDays, sources: body.sources,
+          contact: { phone: t.customer.phone, email: t.customer.email }, // ЗМС (SainScore) утас, имэйлийг заавал шаарддаг; аудитад бичигдэхгүй
           blacklist: { hit: customerHits.length > 0, reasons: customerHits.map((h) => ({ reasonCode: h.reasonCode, listType: h.listType })) },
         });
         for (const f of res.failures) failures.push({ customerId: t.view.customerId, source: f.source, code: f.code, message: f.message });

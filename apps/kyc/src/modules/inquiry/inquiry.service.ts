@@ -6,11 +6,10 @@ import {
 import { encryptedField } from '@los/database';
 import { Clock, DomainError } from '@los/nest-common';
 import type { Prisma } from '.prisma/client-kyc';
-import { IntegrationNotImplementedError } from '../../integrations/errors';
-import { INQUIRY_PROVIDER, InquiryUnavailableError, type ExternalInquirySource, type InquiryProvider, type ProviderResult } from '../../integrations/inquiry/inquiry.provider';
+import { INQUIRY_PROVIDER, type ExternalInquirySource, type InquiryProvider, type ProviderResult } from '../../integrations/inquiry/inquiry.provider';
 import { PrismaService } from '../../prisma.service';
 import { INQUIRY_RAW_AAD, toLoan, toRecord } from './inquiry.mapper';
-import { blacklistInquiry, creditHistoryFrom, expiresAt, latestPerSource } from './inquiry.rules';
+import { blacklistInquiry, creditHistoryFrom, expiresAt, inquiryFailureFrom, latestPerSource } from './inquiry.rules';
 
 /**
  * FR-3 · Лавлагаа (kyc.inquiry). Дуудагч: origination (хүсэлтийн эрхийг тэнд шалгасан). Регистр хадгалагдахгүй, лог-д бичигдэхгүй.
@@ -33,11 +32,11 @@ export class InquiryService {
     const external = sources.filter((s): s is ExternalInquirySource => s !== 'BLACKLIST');
     await Promise.all(external.map(async (source) => {
       try {
-        results.push({ source, result: await this.provider.fetch(source, req.registerNo) });
+        results.push({ source, result: await this.provider.fetch(source, req.registerNo, { contact: req.contact }) });
       } catch (e) {
-        if (e instanceof InquiryUnavailableError) failures.push({ source, code: 'INQUIRY_UNAVAILABLE', message: e.message });
-        else if (e instanceof IntegrationNotImplementedError) failures.push({ source, code: 'INTEGRATION_NOT_IMPLEMENTED', message: 'Бодит холболт хараахан хийгдээгүй (INTEGRATION_MODE=mock)' });
-        else throw e;
+        const failure = inquiryFailureFrom(source, e);
+        if (!failure) throw e;
+        failures.push(failure);
       }
     }));
     if (sources.includes('BLACKLIST')) {

@@ -1,8 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import { INQUIRY_SOURCES } from '@los/contracts';
-import { blacklistInquiry, creditHistoryFrom, expiresAt, latestPerSource } from './inquiry.rules';
+import { IntegrationNotConfiguredError, IntegrationNotImplementedError } from '../../integrations/errors';
+import { InquiryRejectedError, InquiryUnavailableError } from '../../integrations/inquiry/inquiry.provider';
+import { blacklistInquiry, creditHistoryFrom, expiresAt, inquiryFailureFrom, latestPerSource } from './inquiry.rules';
 
 const rec = (customerId: string, source: (typeof INQUIRY_SOURCES)[number], fetchedAt: string, summary: Record<string, unknown> = {}) => ({ customerId, source, fetchedAt, summary });
+
+// Provider-ийн алдаа → эх сурвалж тус бүрийн failure (бусад эх сурвалжийг үргэлжлүүлнэ); танигдаагүй алдаа → null (дуудагч шиднэ).
+describe('inquiryFailureFrom', () => {
+  it('түр ажиллахгүй → INQUIRY_UNAVAILABLE (мессежийг хадгална)', () => {
+    expect(inquiryFailureFrom('CIB', new InquiryUnavailableError('CIB', 'CIB түр ажиллахгүй'))).toEqual({ source: 'CIB', code: 'INQUIRY_UNAVAILABLE', message: 'CIB түр ажиллахгүй' });
+  });
+  it('vendor татгалзсан → INQUIRY_REJECTED', () => {
+    expect(inquiryFailureFrom('CIB', new InquiryRejectedError('CIB', 'SR0260', 'CIB: vendor татгалзлаа [SR0260]'))).toEqual({ source: 'CIB', code: 'INQUIRY_REJECTED', message: 'CIB: vendor татгалзлаа [SR0260]' });
+  });
+  it('холбоо барих мэдээлэл дутуу → CONTACT_REQUIRED (хэрэглэгч засах боломжтой тул тусдаа код)', () => {
+    expect(inquiryFailureFrom('CIB', new InquiryRejectedError('CIB', 'CONTACT_REQUIRED', 'утас, имэйл шаардлагатай'))).toMatchObject({ code: 'CONTACT_REQUIRED' });
+  });
+  it('бодит холболт хэрэгжээгүй → INTEGRATION_NOT_IMPLEMENTED', () => {
+    expect(inquiryFailureFrom('FICO', new IntegrationNotImplementedError('inquiry:FICO'))).toEqual({ source: 'FICO', code: 'INTEGRATION_NOT_IMPLEMENTED', message: 'Бодит холболт хараахан хийгдээгүй (INTEGRATION_MODE=mock)' });
+  });
+  it('тохиргоо дутуу → INTEGRATION_NOT_CONFIGURED; мессежэд env-ийн нэр гарахгүй', () => {
+    const f = inquiryFailureFrom('CIB', new IntegrationNotConfiguredError('sainscore', ['SAINSCORE_PASSWORD_HASH']));
+    expect(f).toMatchObject({ source: 'CIB', code: 'INTEGRATION_NOT_CONFIGURED' });
+    expect(f!.message).not.toContain('SAINSCORE');
+  });
+  it.each([[new Error('boom')], [null], ['x']])('танигдаагүй алдаа %j → null', (e) => {
+    expect(inquiryFailureFrom('CIB', e)).toBeNull();
+  });
+});
 
 describe('expiresAt (FR-3.5)', () => {
   it('adds stale days', () => {

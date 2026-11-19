@@ -35,6 +35,8 @@ export const InquiryFetchRequest = z.object({
   /** Өгөхгүй бол 11-ийг бүгдийг */
   sources: z.array(z.enum(InquirySource)).min(1).optional(),
   blacklist: InquiryBlacklistResult.optional(),
+  /** ЗМС (SainScore) лавлагаа харилцагчийн утас, имэйлийг ЗААВАЛ шаарддаг (vendor SR0260/0261/0270/0271). origination харилцагчаас дамжуулна; хоосон/null = байхгүй. */
+  contact: z.object({ phone: z.string().trim().max(32).nullish(), email: z.string().trim().max(254).nullish() }).optional(),
 });
 export type InquiryFetchRequest = z.infer<typeof InquiryFetchRequest>;
 
