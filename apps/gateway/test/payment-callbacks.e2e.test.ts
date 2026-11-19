@@ -1,5 +1,6 @@
 // H9 — QPay/SocialPay callbacks reach origination through the gateway without a staff JWT; nothing else opens.
 import { randomUUID } from 'node:crypto';
+import { purgeAuditLogForTests } from '@los/database';
 import { type INestApplication } from '@nestjs/common';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -39,7 +40,7 @@ describe.skipIf(!HAS_DB)('payment provider callbacks through the gateway (H9)', 
     await new Promise((r) => upstream.close(r));
     process.env.ORIGINATION_URL = savedUrl;
   });
-  beforeEach(async () => { seen = []; await prisma.auditLog.deleteMany({ where: { entity: 'PAYMENT_CALLBACK' } }); });
+  beforeEach(async () => { seen = []; await purgeAuditLogForTests(prisma, (tx) => tx.auditLog.deleteMany({ where: { entity: 'PAYMENT_CALLBACK' } })); });
 
   it('QPay GET callback without JWT is forwarded to origination with its query string', async () => {
     const res = await api().get('/api/origination/payments/callbacks/qpay?invoice=INV-123');

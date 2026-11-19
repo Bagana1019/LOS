@@ -119,8 +119,9 @@ export class AuthService {
     await this.prisma.$transaction([
       this.prisma.user.update({ where: { id: userId }, data: { passwordHash, mustChangePassword: false, failedLoginCount: 0, lockedUntil: null, updatedBy: userId } }),
       this.prisma.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: this.clock.now() } }),
+      // M10: аудит өөрчлөлттэй НЭГ транзакцид (аудитгүй нууц үг солигдохгүй)
+      this.prisma.auditLog.create({ data: this.audit.toRow({ orgId: user.orgId, entity: 'USER', entityId: userId, action: 'PASSWORD_CHANGED', actorId: userId, correlationId: meta.correlationId, ip: meta.ip, userAgent: meta.userAgent }) as never }),
     ]);
-    await this.audit.record({ orgId: user.orgId, entity: 'USER', entityId: userId, action: 'PASSWORD_CHANGED', actorId: userId, correlationId: meta.correlationId, ip: meta.ip, userAgent: meta.userAgent });
   }
 
   /** Нэг оролдлого нөөцлөөд шинэ тоог буцаана; түгжээтэй эсвэл босго дүүрсэн бол null. Postgres UPDATE … WHERE нь мөрийн түгжээгээр атомар. */

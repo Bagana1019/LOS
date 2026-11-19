@@ -5,6 +5,7 @@ export * from './auth/scope';
 export * from './auth/file-ownership';
 export * from './auth/route-inventory';
 export * from './http/errors';
+export * from './http/db-errors';
 export * from './http/zod.pipe';
 export * from './logging/json-logger';
 export * from './health/health.module';

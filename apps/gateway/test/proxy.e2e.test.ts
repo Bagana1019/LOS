@@ -1,5 +1,5 @@
 import { type INestApplication } from '@nestjs/common';
-import { SEED } from '@los/database';
+import { SEED, purgeAuditLogForTests } from '@los/database';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
@@ -183,7 +183,7 @@ describe.skipIf(!HAS_DB)('gateway proxy (web → gateway → service)', () => {
   });
 
   it('audits every mutating request (who/what/status) but never the body', async () => {
-    await prisma.auditLog.deleteMany({ where: { entity: 'HTTP' } });
+    await purgeAuditLogForTests(prisma, (tx) => tx.auditLog.deleteMany({ where: { entity: 'HTTP' } }));
     await api().post('/api/origination/applications/00000000-0000-4000-8000-0000000000aa/submit').set(bearer('officer.a')).send({ secret: 'do-not-log-me' });
     await api().get('/api/origination/applications').set(bearer('officer.a'));
     await new Promise((r) => setTimeout(r, 200)); // finish event → recordSafe

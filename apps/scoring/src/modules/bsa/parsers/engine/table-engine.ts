@@ -19,6 +19,8 @@ const BARE_PAGE_NUMBER_RE = /^[-–—\s]*\d{1,4}[-–—\s]*$/;
 const PAGE_FRACTION_RE = /^\d{1,4}\s*\/\s*\d{1,4}$/;
 
 const opposite = (d: TxnDirection): TxnDirection => (d === 'INCOME' ? 'EXPENSE' : 'INCOME');
+/** ISO 4217 «валютгүй» код — шошго хэвлэгдсэн ч утга уншигдаагүй (M12 security: MNT гэж таамаглахгүй) */
+export const UNREADABLE_CURRENCY = 'XXX';
 const sameLayout = (a: TableHeader, b: TableHeader): boolean => a.roles.join('|') === b.roles.join('|');
 const firstNonNull = <T>(...values: Array<T | null>): T | null => values.find((v) => v !== null) ?? null;
 
@@ -230,7 +232,9 @@ export function parseTableStatement(text: StatementText, profile: BankProfile, o
     periodTo = periodTo ?? transactions[transactions.length - 1].txnDate;
     warnings.add(PARSE_WARNING.PERIOD_DERIVED, 'Statement period is not printed; taken from the first/last transaction dates');
   }
-  if (fields.currency === null) warnings.add(PARSE_WARNING.CURRENCY_ASSUMED, `Currency is not printed; assumed ${cfg.defaultCurrency}`);
+  // Анхдагч валютыг ЗӨВХӨН шошго огт хэвлэгдээгүй үед; шошго байгаа ч уншигдаагүй бол 'XXX' (ISO 4217 «валютгүй») → pipeline татгалзана
+  const currencyUnreadable = fields.currency === null && warnings.count(PARSE_WARNING.CURRENCY_UNREADABLE) > 0;
+  if (fields.currency === null && !currencyUnreadable) warnings.add(PARSE_WARNING.CURRENCY_ASSUMED, `Currency is not printed; assumed ${cfg.defaultCurrency}`);
   if (transactions.length > 0) {
     if (profile.hasTime && transactions.every((t) => t.txnTime === null)) {
       warnings.add(PARSE_WARNING.TIME_MISSING, 'Profile expects a time of day but no row has one');
@@ -247,7 +251,7 @@ export function parseTableStatement(text: StatementText, profile: BankProfile, o
     iban: fields.iban,
     holderName: fields.holderName,
     holderRegisterNo: fields.registerNo,
-    currency: fields.currency ?? cfg.defaultCurrency,
+    currency: fields.currency ?? (currencyUnreadable ? UNREADABLE_CURRENCY : cfg.defaultCurrency),
     periodFrom,
     periodTo,
     openingBalance,

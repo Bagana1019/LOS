@@ -49,6 +49,18 @@ describe.skipIf(!REDIS_URL)('event bus: delivery counting and dead-letter', () =
     expect(await dlq(stream)).toEqual([]);
   });
 
+  it('M8: a DB-unavailable handler error (Prisma P1001) never consumes a delivery attempt, even without a custom classifier', async () => {
+    const { bus, stream } = mk();
+    let calls = 0; const done: string[] = [];
+    const e = settings();
+    const dbDown = () => Object.assign(new Error("Can't reach database server"), { name: 'PrismaClientInitializationError', errorCode: 'P1001' });
+    await bus.subscribe('g-dbdown', ['SettingsChanged'], async (ev) => { calls++; if (calls <= 4) throw dbDown(); done.push(ev.eventId); }, { ...FAST, maxDeliveries: 2 });
+    await bus.publish(e);
+    await until(() => done.length === 1);
+    expect(calls).toBe(5);
+    expect(await dlq(stream)).toEqual([]);
+  });
+
   it('isTransientError: only deterministic failures count — DLQ after exactly maxDeliveries of them, however many transient ones came first', async () => {
     const { bus, stream } = mk();
     const kinds: string[] = [];

@@ -1,5 +1,5 @@
 import { type INestApplication } from '@nestjs/common';
-import { SEED } from '@los/database';
+import { SEED, purgeAuditLogForTests } from '@los/database';
 import { menuFor, permissionsFor } from '@los/contracts';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -22,7 +22,7 @@ describe.skipIf(!HAS_DB)('gateway auth (AC: 5 хэрэглэгчээр нэвт�
   beforeEach(async () => {
     await prisma.session.deleteMany();
     await prisma.user.updateMany({ data: { failedLoginCount: 0, lockedUntil: null, isActive: true } });
-    await prisma.auditLog.deleteMany();
+    await purgeAuditLogForTests(prisma, (tx) => tx.auditLog.deleteMany());
   });
 
   it.each(Object.values(SEED.users))('logs in $username and returns the role-specific menu', async (u) => {
