@@ -4,7 +4,7 @@
 
 | Endpoint | Эрх | Тайлбар |
 | --- | --- | --- |
-| `POST /api/xyp/citizen/otp` `{registerNo}` | `customer:write` | Иргэний зөвшөөрөл, 1-р алхам: ХУР иргэний БҮРТГЭЛТЭЙ утсанд нэг удаагийн код илгээнэ (WS100008) → `{sent: true, requestedAt}`. Утасны дугаар хүлээн авахгүй (400). 404 `XYP_NOT_FOUND`, 503 `XYP_UNAVAILABLE` |
+| `POST /api/xyp/citizen/otp` `{registerNo}` | `customer:write` | Иргэний зөвшөөрөл, 1-р алхам: ХУР иргэний БҮРТГЭЛТЭЙ утсанд нэг удаагийн код илгээнэ (WS100008) → `{sent: true, requestedAt}`. Утасны дугаар хүлээн авахгүй (400). 404 `XYP_NOT_FOUND`, 422 `XYP_OTP_NOT_SENT` (ХУР 1005 / 1006: код илгээж чадсангүй, утас иргэний нэр дээр бүртгэлгүй), 503 `XYP_UNAVAILABLE` |
 | `POST /api/xyp/citizen` `{registerNo, otp}` | `customer:write` | 2-р алхам: иргэний утсанд ирсэн кодоор (WS100101 `auth.citizen.otp`) → `XypCitizen` (`@los/contracts`). 404 `XYP_NOT_FOUND`, 422 `XYP_OTP_INVALID` (код буруу / хугацаа дууссан / ХУР татгалзсан), 503 `XYP_UNAVAILABLE`, 501 `INTEGRATION_NOT_IMPLEMENTED` (real горим) |
 | `POST /api/xyp/assets` `{registerNo}` | `customer:read` | → `XypAssetsResponse` (үл хөдлөх + тээврийн хэрэгсэл). Нэмэлт алдаа: 400 `INVALID_REGISTER_NO` |
 | `POST /api/xyp/property` `{propertyId}` | `customer:read` | → `XypPropertyAsset` бүх өмчлөгчтэй нь. Олдохгүй бол 404 `XYP_NOT_FOUND` |

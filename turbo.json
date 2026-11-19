@@ -31,6 +31,7 @@
     "QPAY_*",
     "SAINSCORE_*",
     "XYP_*",
+    "NODE_EXTRA_CA_CERTS",
     "UN_SC_*",
     "FATF_*",
     "ESIGN_*",
