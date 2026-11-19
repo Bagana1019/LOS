@@ -27,7 +27,7 @@ import { RetentionService } from './retention.service';
 import { UploadService } from './upload.service';
 import { CUSTOMER_REGISTER, MutableClock, OFFICER, ORG } from './testing/harness';
 import {
-  ACCOUNT_A, ACCOUNT_B, EXPECTED_HAPPY, HOLDER, OPENING_A, OPENING_B, PII_MARKERS, accountATxns, accountBTxns, balanceBefore, happyFiles, withoutRandomIds,
+  ACCOUNT_A, ACCOUNT_B, EXPECTED_HAPPY, HOLDER, OPENING_A, OPENING_B, PII_MARKERS, accountATxns, accountBTxns, balanceBefore, happyFiles, withoutCiphertext, withoutRandomIds,
 } from './testing/scenario';
 import { generateTransactions, type SynTxn } from '../parsers/engine/testing/synthetic-statement';
 import { buildStatementFile, type SynFile } from './testing/statement-files';
@@ -151,9 +151,14 @@ describe.skipIf(!URL_)('import pipeline on real PostgreSQL (TEST_DATABASE_URL)',
       )
     ).map((r) => r.j).join('\n');
     expect(dump.length).toBeGreaterThan(0);
-    // Мөнгөн дүн (numeric) '5011' мэт богино цифртэй давхцаж болох тул дангаараа утга учиртай (>= 7 тэмдэгт) тэмдгүүдийг шалгана
+    // Мөнгөн дүн (numeric) '5011' мэт богино цифртэй давхцаж болох тул 1-6 оронтой цифр тэмдгийг шалгахгүй.
+    // Урт (>= 7) тэмдэг шифртекстэд санамсаргүй давхцах магадлал ~0 → бүх dump (шифрлэгдсэн баганад ил хадгалагдсан ч баригдана);
+    // богино ('ZXQ', 'Bold') тэмдэг шифртекстэд ~5% давхцдаг тул зөвхөн шифртекстгүй (ил) хэсэгт шалгана.
     const scanned = withoutRandomIds(dump);
-    for (const secret of [ACCOUNT_A, ACCOUNT_B, 'Bat-Erdene', CUSTOMER_REGISTER, ...PII_MARKERS.filter((m) => !/^\d{1,6}$/.test(m))]) expect(scanned, secret).not.toContain(secret);
+    const plaintextOnly = withoutRandomIds(withoutCiphertext(dump));
+    expect(plaintextOnly.length, 'шифртекст хасагдаагүй бол богино тэмдгийн шалгалт худал дохио өгнө').toBeLessThan(scanned.length);
+    const secrets = [ACCOUNT_A, ACCOUNT_B, 'Bat-Erdene', CUSTOMER_REGISTER, ...PII_MARKERS.filter((m) => !/^\d{1,6}$/.test(m))];
+    for (const secret of secrets) expect(secret.length >= 7 ? scanned : plaintextOnly, secret).not.toContain(secret);
     expect(scanned).toContain('IMPORT_COMPLETED'); // шалгалт хоосон текст дээр ажиллаагүйг батлана
 
     const events = await outbox();
