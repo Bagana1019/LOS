@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { type XypCitizen } from '@los/contracts';
 import { SEED, blindIndex, decryptedField, isEncryptedField } from '@los/database';
+import { normalizeRegisterNo } from '@los/contracts';
 import { DomainError } from '@los/nest-common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AppModule } from '../src/app.module';
@@ -68,7 +69,17 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
   });
 
   const xypOtp = (body: unknown = { registerNo: REGISTER }, who: Parameters<typeof as>[0] = 'officerA') => http().post('/api/customers/xyp-otp').set(as(who)).send(body as object);
-  const xypFetch = (who: Parameters<typeof as>[0] = 'officerA', registerNo = REGISTER, otp = OTP) => http().post('/api/customers/xyp-fetch').set(as(who)).send({ registerNo, otp });
+  /** Сервер «код хүсэгдсэн» (15 мин дотор) байхыг шаарддаг: энэ helper нь тэр урьдчилсан нөхцөлийг (2 минутын өмнөх `XYP_OTP_REQUESTED`) тавьж, дараа нь татна. */
+  const ensureCodeRequested = async (registerNo: string) => {
+    const entityId = blindIndex(normalizeRegisterNo(registerNo));
+    const recent = await db.auditLog.findFirst({ where: { orgId: SEED.org.id, entity: 'XYP_CONSENT', entityId, action: 'XYP_OTP_REQUESTED', at: { gte: new Date(Date.now() - 14 * 60_000) } } });
+    if (!recent) await db.auditLog.create({ data: { orgId: SEED.org.id, entity: 'XYP_CONSENT', entityId, action: 'XYP_OTP_REQUESTED', actorId: SEED.users.officerA.id, at: new Date(Date.now() - 2 * 60_000) } });
+  };
+  const xypFetch = async (who: Parameters<typeof as>[0] = 'officerA', registerNo = REGISTER, otp = OTP) => {
+    await ensureCodeRequested(registerNo);
+    return http().post('/api/customers/xyp-fetch').set(as(who)).send({ registerNo, otp });
+  };
+  const xypFetchRaw = (registerNo = REGISTER, otp = OTP) => http().post('/api/customers/xyp-fetch').set(as('officerA')).send({ registerNo, otp });
   const create = (body: unknown, who: Parameters<typeof as>[0] = 'officerA') => http().post('/api/customers').set(as(who)).send(body as object);
   const blacklist = (registerNo: string, over: Record<string, unknown> = {}) => db.blacklist.create({
     data: { orgId: SEED.org.id, registerNoHash: blindIndex(registerNo), registerNoEncrypted: 'x', customerType: 'INDIVIDUAL', name: 'Хар', listType: 'INTERNAL', reasonCode: 'FRAUD', reasonText: 'Залилан', ...over },
@@ -264,14 +275,33 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       expect(await consentRows()).toHaveLength(0);
     });
 
+    it('xyp-otp: ижил регистрт хоёр хүсэлтийн хооронд сервер дээр 1 минут (UI-ийн «дахин авах» хүлээлттэй ижил): шууд давтавал 429, ХУР-д хүрэхгүй', async () => {
+      expect((await xypOtp()).status).toBe(200);
+      const tooSoon = await xypOtp();
+      expect([tooSoon.status, tooSoon.body.code]).toEqual([429, 'XYP_OTP_RATE_LIMITED']);
+      expect(tooSoon.body.message).toContain('1 минут');
+      expect(otpCalls).toHaveLength(1);
+    });
+
     it('xyp-otp: ижил регистрт 15 минутад 3 хүртэл; 4-р нь 429 XYP_OTP_RATE_LIMITED (ХУР-д хүрэхгүй); өөр регистр чөлөөтэй; 15 минут өнгөрвөл дахин боломжтой', async () => {
-      for (let i = 0; i < 3; i++) expect((await xypOtp()).status).toBe(200);
+      for (let i = 0; i < 3; i++) { expect((await xypOtp()).status).toBe(200); await ageConsentRows(2); } // 1 минутын зайг давуулна
       const blocked = await xypOtp();
       expect([blocked.status, blocked.body.code]).toEqual([429, 'XYP_OTP_RATE_LIMITED']);
       expect(blocked.body.message).toContain('15');
       expect(otpCalls).toHaveLength(3);
       expect((await xypOtp({ registerNo: 'УБ95010512' }, 'officerB')).status).toBe(200); // регистр тус бүрээр (ажилтнаар биш)
       await ageConsentRows(16);
+      expect((await xypOtp()).status).toBe(200);
+    });
+
+    it('xyp-otp: нэг регистрт 24 цагт 6 хүртэл (өдрийн дээд хязгаар: нэг иргэнд өдөр бүр SMS бөмбөгдөх, кодыг өдөр дамжин таах хориг); цонх өнгөрвөл үргэлжилнэ', async () => {
+      const entityId = blindIndex(REGISTER);
+      await db.auditLog.createMany({ data: Array.from({ length: 6 }, (_, i) => ({ orgId: SEED.org.id, entity: 'XYP_CONSENT', entityId, action: 'XYP_OTP_REQUESTED', actorId: SEED.users.officerB.id, at: new Date(Date.now() - (2 + i) * 3_600_000) })) });
+      const blocked = await xypOtp();
+      expect([blocked.status, blocked.body.code]).toEqual([429, 'XYP_OTP_RATE_LIMITED']);
+      expect(blocked.body.message).toContain('24');
+      expect(otpCalls).toEqual([]);
+      await ageConsentRows(25 * 60);
       expect((await xypOtp()).status).toBe(200);
     });
 
@@ -287,32 +317,46 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('origination · Модуль 1 �
       expect((await xypOtp({ registerNo: regs[20] })).status).toBe(200);
     });
 
-    it('xyp-otp: зэрэг 6 хүсэлт → яг 3 нь амжилттай (хязгаар атомар, зэрэгцээгээр тойрогдохгүй)', async () => {
+    it('xyp-otp: зэрэг 6 хүсэлт → яг 1 нь амжилттай (хязгаар атомар: түгжээгүй бол бүгд «хоосон» харж тэнцэх байсан)', async () => {
       const statuses = (await Promise.all(Array.from({ length: 6 }, () => xypOtp()))).map((r) => r.status).sort();
-      expect(statuses).toEqual([200, 200, 200, 429, 429, 429]);
-      expect(otpCalls).toHaveLength(3);
+      expect(statuses).toEqual([200, 429, 429, 429, 429, 429]);
+      expect(otpCalls).toHaveLength(1);
     });
 
-    it('xyp-otp: ХУР алдаа (олдсонгүй) ч хязгаарт тоологдоно — SMS явсан эсэх тодорхойгүй үед хөөцөлдөж болохгүй', async () => {
-      for (let i = 0; i < 3; i++) expect((await xypOtp({ registerNo: 'УБ00000000' })).body.code).toBe('XYP_NOT_FOUND');
+    it('xyp-otp: ХУР алдаа (олдсонгүй) ч хязгаарт тоологдоно — SMS явсан эсэх тодорхойгүй үед шууд давтаж болохгүй', async () => {
+      expect((await xypOtp({ registerNo: 'УБ00000000' })).body.code).toBe('XYP_NOT_FOUND');
       expect((await xypOtp({ registerNo: 'УБ00000000' })).body.code).toBe('XYP_OTP_RATE_LIMITED');
+      expect(otpCalls).toHaveLength(1);
     });
 
     it('xyp-fetch: код буруу → 422 XYP_OTP_INVALID (тэмдэггүй), аудитад XYP_OTP_REJECTED; зөв код → XYP_CITIZEN_FETCHED + тэмдэг', async () => {
+      expect((await xypOtp()).status).toBe(200);
       const wrong = await xypFetch('officerA', REGISTER, '000000');
       expect([wrong.status, wrong.body.code, wrong.body.snapshotToken]).toEqual([422, 'XYP_OTP_INVALID', undefined]);
       const right = await xypFetch();
       expect([right.status, typeof right.body.snapshotToken]).toEqual([200, 'string']);
-      expect((await consentRows()).map((r) => r.action).sort()).toEqual(['XYP_CITIZEN_FETCHED', 'XYP_OTP_REJECTED', 'XYP_OTP_VERIFY_ATTEMPTED', 'XYP_OTP_VERIFY_ATTEMPTED']); // нэг мс-д бичигдэх тул дарааллыг шалгахгүй
+      expect((await consentRows()).map((r) => r.action).sort()).toEqual(['XYP_CITIZEN_FETCHED', 'XYP_OTP_REJECTED', 'XYP_OTP_REQUESTED', 'XYP_OTP_VERIFY_ATTEMPTED', 'XYP_OTP_VERIFY_ATTEMPTED']); // нэг мс-д бичигдэх тул дарааллыг шалгахгүй
     });
 
-    it('xyp-fetch: ижил регистрт 15 минутад 5 оролдлого; дараа нь зөв код ч 429 (кодыг таах хориг), ХУР-д хүрэхгүй; цонх өнгөрвөл үргэлжилнэ', async () => {
-      for (let i = 0; i < 5; i++) expect((await xypFetch('officerA', REGISTER, `00000${i}`)).status).toBe(422);
+    it('xyp-fetch: илгээсэн код тус бүрт 3 оролдлого; дараа нь зөв код ч 429 XYP_OTP_ATTEMPTS_EXHAUSTED (ХУР-д хүрэхгүй); шинэ код илгээвэл дахин 3 оролдлого', async () => {
+      expect((await xypOtp()).status).toBe(200);
+      await ageConsentRows(2); // 1 минутын зайг давуулна
+      for (let i = 0; i < 3; i++) expect((await xypFetch('officerA', REGISTER, `00000${i}`)).status).toBe(422);
       const blocked = await xypFetch();
-      expect([blocked.status, blocked.body.code]).toEqual([429, 'XYP_OTP_RATE_LIMITED']);
-      expect(xypCalls).toHaveLength(5);
-      await ageConsentRows(16);
+      expect([blocked.status, blocked.body.code]).toEqual([429, 'XYP_OTP_ATTEMPTS_EXHAUSTED']);
+      expect(xypCalls).toHaveLength(3);
+      await ageConsentRows(2);
+      expect((await xypOtp()).status).toBe(200); // шинэ код → өмнөх оролдлого тоологдохгүй
       expect((await xypFetch()).status).toBe(200);
+    });
+
+    it('xyp-fetch: код ХҮСЭЭГҮЙ (эсвэл 15 минутаас өмнө хүссэн) бол 409 XYP_OTP_NOT_REQUESTED — ХУР дуудагдахгүй, оролдлого тоологдохгүй (кодгүйгээр таах боломжгүй)', async () => {
+      const never = await xypFetchRaw();
+      expect([never.status, never.body.code]).toEqual([409, 'XYP_OTP_NOT_REQUESTED']);
+      await db.auditLog.create({ data: { orgId: SEED.org.id, entity: 'XYP_CONSENT', entityId: blindIndex(REGISTER), action: 'XYP_OTP_REQUESTED', actorId: SEED.users.officerA.id, at: new Date(Date.now() - 16 * 60_000) } });
+      expect((await xypFetchRaw()).body.code).toBe('XYP_OTP_NOT_REQUESTED');
+      expect(xypCalls).toEqual([]);
+      expect((await consentRows()).filter((r) => r.action === 'XYP_OTP_VERIFY_ATTEMPTED')).toHaveLength(0);
     });
 
     it('аудитад иргэний код, түүхий регистр хэзээ ч орохгүй', async () => {
