@@ -180,6 +180,7 @@
   "admin.password.submit": "Нууц үг солих",
   "admin.password.done": "Нууц үг солигдлоо. Шинэ нууц үгээрээ дахин нэвтэрнэ үү.",
   "admin.password.error.current": "Одоогийн нууц үг буруу",
+  "admin.password.error.currentWrong": "Одоогийн (түр) нууц үг буруу байна. Түр нууц үгээ анхааралтай дахин оруулна уу",
   "admin.password.error.same": "Шинэ нууц үг одоогийнхоос өөр байх ёстой",
   "admin.nav.products": "Зээлийн бүтээгдэхүүн",
   "admin.nav.products.hint": "Дүн, хугацаа, хүү, барьцаа, LTV/ӨОХ, баримтын жагсаалт — өөрчлөлт 4 нүдээр (BR-6)",
