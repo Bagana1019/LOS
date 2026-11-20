@@ -19,7 +19,33 @@ export function sanitizeForAudit(v: unknown, depth = 0): unknown {
 }
 
 export async function recordAudit(tx: AuditTx, e: AuditInput): Promise<void> {
-  await tx.auditLog.create({ data: { ...e, beforeJson: sanitizeForAudit(e.beforeJson ?? null), afterJson: sanitizeForAudit(e.afterJson ?? null), applicationId: e.applicationId ?? null, correlationId: e.correlationId ?? null } });
+  await insertAuditRow(tx, { ...e, beforeJson: sanitizeForAudit(e.beforeJson ?? null), afterJson: sanitizeForAudit(e.afterJson ?? null), applicationId: e.applicationId ?? null, correlationId: e.correlationId ?? null });
+}
+
+/**
+ * `audit_log`-ийн мөр (сервисийн бүх баганын нэгдэл: gateway `ip`/`userAgent`, `orgId` nullable; `id`/`at` өгөөгүй бол DB/Prisma үүсгэнэ).
+ * `txId` энд БАЙХГҮЙ: түүнийг DB trigger хүчээр тавина (audit seal, docs/DECISIONS.md 2026-11-19 · audit seal).
+ */
+export interface AuditRowData {
+  id?: string; at?: Date; orgId?: string | null; entity: string; entityId: string; action: string; actorId?: string | null;
+  beforeJson?: unknown; afterJson?: unknown; applicationId?: string | null; correlationId?: string | null; ip?: string | null; userAgent?: string | null;
+}
+/* eslint-disable @typescript-eslint/no-explicit-any -- Prisma-гийн Json төрөлтэй тааруулна (AuditTx-тэй адил) */
+type AuditCreateDb<R> = { auditLog: { create(args: { data: any }): R } };
+type AuditCreateManyDb<R> = { auditLog: { createMany(args: { data: any[]; skipDuplicates?: boolean }): R } };
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/**
+ * `audit_log` руу бичих ЦОРЫН ГАНЦ зам (guard: audit-writers.guard.test.ts). Өгөгдлийг хувиргахгүй дамжуулна (ариутгал нь дуудагчийн
+ * `recordAudit` / gateway `AuditService.toRow`-д). Клиентийн өөрийн promise-ийг буцаана — PrismaPromise хэвээр тул
+ * `prisma.$transaction([...])` массив транзакцид ч ашиглана (транзакцын хамрах хүрээ өөрчлөгдөхгүй).
+ */
+export function insertAuditRow<R>(db: AuditCreateDb<R>, data: AuditRowData): R {
+  return db.auditLog.create({ data });
+}
+/** Олон мөр нэг INSERT-ээр (`createMany`); `skipDuplicates` = id давхцлыг алгасна (gateway fallback drain idempotent). */
+export function insertAuditRows<R>(db: AuditCreateManyDb<R>, data: AuditRowData[], opts: { skipDuplicates?: boolean } = {}): R {
+  return db.auditLog.createMany(opts.skipDuplicates === undefined ? { data } : { data, skipDuplicates: opts.skipDuplicates });
 }
 
 /** Prisma client (interactive transaction-тэй). Тестийн helper тул төрлийг сул байлгав. */

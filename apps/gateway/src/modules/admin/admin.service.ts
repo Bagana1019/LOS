@@ -1,6 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ADMIN_BRANCH_BOUND_ROLES, type AdminBranchDto, type AdminUserDto, type AuditLogPage, type AuditLogQuery, type CreateBranchBody, type CreateUserBody, type UpdateBranchBody, type UpdateUserBody, type UserCredentialResult } from '@los/contracts';
+import { insertAuditRow } from '@los/database';
 import { DomainError, notFound } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
 import { hashPassword } from '../auth/password';
@@ -45,7 +46,7 @@ export class AdminService {
     if (await this.prisma.branch.findUnique({ where: { orgId_code: { orgId, code: body.code } } })) throw new DomainError('BRANCH_CODE_TAKEN', 'Энэ кодтой салбар бүртгэлтэй байна', 409);
     const b = await this.prisma.$transaction(async (tx) => {
       const created = await tx.branch.create({ data: { orgId, code: body.code, name: body.name, createdBy: actorId, updatedBy: actorId } });
-      await tx.auditLog.create({ data: { orgId, entity: 'BRANCH', entityId: created.id, action: 'BRANCH_CREATED', actorId, afterJson: { code: created.code, name: created.name }, ...meta } });
+      await insertAuditRow(tx, { orgId, entity: 'BRANCH', entityId: created.id, action: 'BRANCH_CREATED', actorId, afterJson: { code: created.code, name: created.name }, ...meta });
       return created;
     });
     return { id: b.id, code: b.code, name: b.name, isActive: b.isActive, activeUserCount: 0 };
@@ -56,7 +57,7 @@ export class AdminService {
     if (!before) throw notFound('Салбар', id);
     await this.prisma.$transaction(async (tx) => {
       await tx.branch.update({ where: { id }, data: { name: body.name, updatedBy: actorId } });
-      await tx.auditLog.create({ data: { orgId, entity: 'BRANCH', entityId: id, action: 'BRANCH_UPDATED', actorId, beforeJson: { name: before.name }, afterJson: { name: body.name }, ...meta } });
+      await insertAuditRow(tx, { orgId, entity: 'BRANCH', entityId: id, action: 'BRANCH_UPDATED', actorId, beforeJson: { name: before.name }, afterJson: { name: body.name }, ...meta });
     });
     return (await this.branches(orgId)).find((b) => b.id === id)!;
   }
@@ -72,7 +73,7 @@ export class AdminService {
     }
     await this.prisma.$transaction(async (tx) => {
       await tx.branch.update({ where: { id }, data: { isActive, updatedBy: actorId } });
-      await tx.auditLog.create({ data: { orgId, entity: 'BRANCH', entityId: id, action: isActive ? 'BRANCH_REACTIVATED' : 'BRANCH_DEACTIVATED', actorId, beforeJson: { isActive: before.isActive }, afterJson: { isActive }, ...meta } });
+      await insertAuditRow(tx, { orgId, entity: 'BRANCH', entityId: id, action: isActive ? 'BRANCH_REACTIVATED' : 'BRANCH_DEACTIVATED', actorId, beforeJson: { isActive: before.isActive }, afterJson: { isActive }, ...meta });
     });
     return (await this.branches(orgId)).find((b) => b.id === id)!;
   }
@@ -103,7 +104,7 @@ export class AdminService {
     const passwordHash = await hashPassword(password);
     const created = await this.prisma.$transaction(async (tx) => {
       const u = await tx.user.create({ data: { orgId, branchId: body.branchId, username: body.username, passwordHash, fullName: body.fullName, email: body.email, phone: body.phone, roles: body.roles, mustChangePassword: true, createdBy: actorId, updatedBy: actorId } });
-      await tx.auditLog.create({ data: { orgId, entity: 'USER', entityId: u.id, action: 'USER_CREATED', actorId, afterJson: { username: u.username, roles: u.roles, branchId: u.branchId }, ...meta } });
+      await insertAuditRow(tx, { orgId, entity: 'USER', entityId: u.id, action: 'USER_CREATED', actorId, afterJson: { username: u.username, roles: u.roles, branchId: u.branchId }, ...meta });
       return u;
     });
     return { user: toUserDto(created), temporaryPassword: password };
@@ -124,11 +125,9 @@ export class AdminService {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id }, data: { fullName: body.fullName, email: body.email, phone: body.phone, roles: body.roles, branchId: body.branchId, updatedBy: actorId } });
       if (accessChanged) await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.auditLog.create({
-        data: {
-          orgId, entity: 'USER', entityId: id, action: sameRoles ? 'USER_UPDATED' : 'USER_ROLES_CHANGED', actorId,
-          beforeJson: { roles: before.roles, branchId: before.branchId }, afterJson: { roles: body.roles, branchId: body.branchId, profileChanged: before.fullName !== body.fullName || before.email !== body.email || before.phone !== body.phone }, ...meta,
-        },
+      await insertAuditRow(tx, {
+        orgId, entity: 'USER', entityId: id, action: sameRoles ? 'USER_UPDATED' : 'USER_ROLES_CHANGED', actorId,
+        beforeJson: { roles: before.roles, branchId: before.branchId }, afterJson: { roles: body.roles, branchId: body.branchId, profileChanged: before.fullName !== body.fullName || before.email !== body.email || before.phone !== body.phone }, ...meta,
       });
     });
     return this.userDto(orgId, id);
@@ -149,7 +148,7 @@ export class AdminService {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id }, data: { isActive, deactivatedAt: isActive ? null : new Date(), failedLoginCount: 0, lockedUntil: null, updatedBy: actorId } });
       if (!isActive) await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.auditLog.create({ data: { orgId, entity: 'USER', entityId: id, action: isActive ? 'USER_REACTIVATED' : 'USER_DEACTIVATED', actorId, beforeJson: { isActive: before.isActive }, afterJson: { isActive }, ...meta } });
+      await insertAuditRow(tx, { orgId, entity: 'USER', entityId: id, action: isActive ? 'USER_REACTIVATED' : 'USER_DEACTIVATED', actorId, beforeJson: { isActive: before.isActive }, afterJson: { isActive }, ...meta });
     });
     return this.userDto(orgId, id);
   }
@@ -165,7 +164,7 @@ export class AdminService {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id }, data: { passwordHash, mustChangePassword: true, failedLoginCount: 0, lockedUntil: null, updatedBy: actorId } });
       await tx.session.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.auditLog.create({ data: { orgId, entity: 'USER', entityId: id, action: 'USER_PASSWORD_RESET', actorId, ...meta } });
+      await insertAuditRow(tx, { orgId, entity: 'USER', entityId: id, action: 'USER_PASSWORD_RESET', actorId, ...meta });
     });
     return { user: await this.userDto(orgId, id), temporaryPassword: password };
   }
@@ -187,7 +186,7 @@ export class AdminService {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: userId }, data: { branchId, updatedBy: actorId } });
       await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
-      await tx.auditLog.create({ data: { orgId, entity: 'USER', entityId: userId, action: 'USER_BRANCH_ASSIGNED', actorId, beforeJson: { branchId: user.branchId }, afterJson: { branchId }, correlationId: meta.correlationId, ip: meta.ip } });
+      await insertAuditRow(tx, { orgId, entity: 'USER', entityId: userId, action: 'USER_BRANCH_ASSIGNED', actorId, beforeJson: { branchId: user.branchId }, afterJson: { branchId }, correlationId: meta.correlationId, ip: meta.ip });
     });
     return (await this.users(orgId)).find((u) => u.id === userId)!;
   }

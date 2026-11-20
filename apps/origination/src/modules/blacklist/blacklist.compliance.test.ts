@@ -100,6 +100,7 @@ describe('BlacklistEscalationHandler', () => {
     expect(JSON.stringify(calls.outbox)).toContain('BlacklistEntryChanged');
     expect(JSON.stringify(calls.outbox)).not.toContain('УБ');
     expect(calls.audit).toHaveLength(1);
+    expect(calls.audit[0]).toMatchObject({ entity: 'blacklist', action: 'ESCALATE_APPLIED', actorId: 'checker', afterJson: { severity: 'BLACK', isActive: true } });
   });
   it('conflicts when the entry is no longer pending or was modified concurrently', async () => {
     await expect(handler().apply(ctx(fakeTx(row({ pendingSeverity: null })).tx))).rejects.toBeInstanceOf(ChangeConflictError);
