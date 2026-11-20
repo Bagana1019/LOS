@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { BsaLosCreateAnalysisBody, BsaResolveSuspicionsRequest, ReviewStatus, SuspicionFlag } from '@los/contracts';
+import type { BankCode, BsaLosCreateAnalysisBody, BsaResolveSuspicionsRequest, ReviewStatus, SuspicionFlag } from '@los/contracts';
 import * as api from './bsa.api';
 
 export const bsaKey = (appId: string) => ['bsa', appId] as const;
@@ -11,6 +11,8 @@ export const useAnalysis = (id: string) => useQuery({ queryKey: analysisKey(id),
 export const useJobs = (id: string) => useQuery({ queryKey: ['bsa-jobs', id], queryFn: () => api.fetchJobs(id), retry: false, refetchInterval: 4000 });
 export const useSuspicions = (id: string, q: { status?: ReviewStatus; flag?: SuspicionFlag }) =>
   useQuery({ queryKey: ['bsa-susp', id, q], queryFn: () => api.fetchSuspicions(id, { ...q, limit: 100 }), retry: false });
+/** Идэвхтэй ангиллын жагсаалт (Монгол нэр, чиглэл) — ховор өөрчлөгддөг тул 5 минут cache. */
+export const useCategories = () => useQuery({ queryKey: ['bsa-categories'], queryFn: api.fetchCategories, retry: false, staleTime: 5 * 60_000 });
 
 function useInvalidating<V, R>(appId: string, analysisId: string | null, fn: (v: V) => Promise<R>) {
   const qc = useQueryClient();
@@ -27,5 +29,6 @@ export const useCreateAnalysis = (appId: string) => useInvalidating(appId, null,
 export const usePush = (appId: string) => useInvalidating(appId, null, (analysisId: string) => api.pushAnalysis(appId, analysisId));
 export const useSyncPayment = (appId: string) => useInvalidating(appId, null, () => api.syncPayment(appId));
 export const useRecalculate = (appId: string, id: string) => useInvalidating(appId, id, () => api.recalculate(id));
-export const useUpload = (appId: string, id: string) => useInvalidating(appId, id, (files: File[]) => api.uploadStatements(id, files));
+export const useUpload = (appId: string, id: string) => useInvalidating(appId, id, (v: { files: File[]; bank?: BankCode }) => api.uploadStatements(id, v.files, v.bank));
+export const useRetryJob = (appId: string, id: string) => useInvalidating(appId, id, (v: { jobId: string; bankCode?: BankCode }) => api.retryJob(v.jobId, v.bankCode));
 export const useResolve = (appId: string, id: string) => useInvalidating(appId, id, (b: BsaResolveSuspicionsRequest) => api.resolveSuspicions(id, b));
