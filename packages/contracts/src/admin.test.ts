@@ -24,6 +24,40 @@ describe('validateApprovalLevels (BR-13)', () => {
   ])('%s → алдаа', (_n, ls) => {
     expect(validateApprovalLevels(ls)).toEqual(expect.any(String));
   });
+
+  describe('түвшин бүрд ≥1 батлагч (F9-9)', () => {
+    const M = (levelNo: number, amountFrom: number, amountTo: number | null, members: string[], name = `Түвшин-${levelNo}-нэр`) => ({ levelNo, name, amountFrom, amountTo, members: members.map((userId) => ({ userId })) });
+
+    it('бүх түвшинд батлагчтай бол зөв', () => {
+      expect(validateApprovalLevels([M(1, 0, 5, ['u1']), M(2, 5, null, ['u2', 'u3'])])).toBeNull();
+    });
+
+    it('батлагчгүй түвшин → алдаа: түвшний дугаар ба нэрийг нэрлэнэ', () => {
+      const err = validateApprovalLevels([M(1, 0, 5, ['u1']), M(2, 5, null, [], 'Төв')]);
+      expect(err).toContain('Түвшин 2');
+      expect(err).toContain('"Төв"');
+      expect(err).toContain('батлагч');
+    });
+
+    it('1-р түвшний бүх батлагчийг хассан (finding F9-9) → алдаа', () => {
+      expect(validateApprovalLevels([M(1, 0, 5, []), M(2, 5, null, ['u2'])])).toContain('Түвшин 1');
+    });
+
+    it('нэргүй (шинээр нэмсэн) мөр: нэрийн хоосон хашилт гаргахгүй', () => {
+      const err = validateApprovalLevels([M(1, 0, null, [], '')]);
+      expect(err).toContain('Түвшин 1');
+      expect(err).not.toContain('""');
+    });
+
+    it('босгын алдаа нь батлагчийн алдаанаас өмнө мэдэгдэнэ (тухайн түвшинд)', () => {
+      expect(validateApprovalLevels([M(1, 0, 5, []), M(2, 6, null, ['u2'])])).toContain('Түвшин 1');
+      expect(validateApprovalLevels([M(1, 0, 5, ['u1']), M(2, 6, null, [])])).toContain('эхлэх дүн');
+    });
+
+    it('members өгөөгүй дуудлага (зөвхөн босго шалгах) батлагчийг шалгахгүй — хуучин зан төлөв хэвээр', () => {
+      expect(validateApprovalLevels([L(1, 0, 5), L(2, 5, null)])).toBeNull();
+    });
+  });
 });
 
 describe('DTO schemas', () => {

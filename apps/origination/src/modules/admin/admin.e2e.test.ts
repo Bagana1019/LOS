@@ -113,6 +113,23 @@ describe.skipIf(!hasTestDb)('admin API (DB)', () => {
     expect(await t.prisma.changeRequest.count({ where: { orgId: ORG } })).toBe(0);
   });
 
+  it('батлах түвшин (F9-9): батлагчгүй түвшин хадгалагдахгүй — 422 APPROVAL_LEVELS_INVALID, мессеж түвшнийг нэрлэнэ; санал үүсэхгүй, түвшин өөрчлөгдөхгүй', async () => {
+    const first = await http().put('/api/approval-levels').set(admin()).send(levels([{ members: [] }]));
+    expect(first.status).toBe(422);
+    expect(first.body.code).toBe('APPROVAL_LEVELS_INVALID');
+    expect(String(first.body.message)).toContain('Түвшин 1 "Салбар"');
+    expect(String(first.body.message)).toContain('батлагч');
+
+    const last = await http().put('/api/approval-levels').set(admin()).send(levels([{}, {}, { members: [] }]));
+    expect(last.status).toBe(422);
+    expect(String(last.body.message)).toContain('Түвшин 3 "Хороо"');
+
+    expect(await t.prisma.changeRequest.count({ where: { orgId: ORG } })).toBe(0);
+    expect(await t.prisma.approvalLevel.count({ where: { orgId: ORG } })).toBe(0);
+    // батлагчтай бол хэвийн (санал үүснэ)
+    expect((await http().put('/api/approval-levels').set(admin()).send(levels())).status).toBe(202);
+  });
+
   it('батлах түвшин (Q-124): шийдвэр хүлээж буй батлах хүсэлт байвал санал үүсэхгүй (422); санал хүлээж байх хооронд хүсэлт гарвал батлахад FAILED', async () => {
     const product = await t.prisma.product.create({ data: { orgId: ORG, code: 'M13', name: 'M13', productType: 'CONSUMER', minAmount: 1, maxAmount: 1e9, minTerm: 1, maxTerm: 36, minRate: 0.1, maxRate: 0.4 } });
     const a = await createApplication(t.prisma, { productId: product.id, orgId: ORG, createdBy: 'o' });
