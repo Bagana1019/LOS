@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
-import { enqueueOutbox } from '@los/database';
+import { enqueueOutbox, insertAuditRow } from '@los/database';
 import type { AmlSubjectType } from '@los/contracts';
 import { ChangeConflictError, ChangeHandlerRegistry, ChangeValidationError, type ApplyContext, type ChangeHandler, type SnapshotContext } from '../maker-checker/change-handler';
 
@@ -64,11 +64,9 @@ export class BlacklistEscalationHandler implements ChangeHandler<Payload> {
       correlationId: request.correlationId, entryId: row.id, registerNoHash: row.registerNoHash, customerType: row.customerType as AmlSubjectType,
       name: row.name, listType: row.listType, severity: 'BLACK', reasonCode: row.reasonCode, isActive: true, changedAt: at.toISOString(),
     });
-    await tx.auditLog.create({
-      data: {
-        orgId: row.orgId, entity: 'blacklist', entityId: row.id, action: 'ESCALATE_APPLIED', actorId, correlationId: request.correlationId,
-        beforeJson: { severity: row.severity, pendingSeverity: 'BLACK', isActive: row.isActive }, afterJson: { severity: 'BLACK', pendingSeverity: null, isActive: true, changeRequestId: request.id },
-      },
+    await insertAuditRow(tx, {
+      orgId: row.orgId, entity: 'blacklist', entityId: row.id, action: 'ESCALATE_APPLIED', actorId, correlationId: request.correlationId,
+      beforeJson: { severity: row.severity, pendingSeverity: 'BLACK', isActive: row.isActive }, afterJson: { severity: 'BLACK', pendingSeverity: null, isActive: true, changeRequestId: request.id },
     });
   }
 }

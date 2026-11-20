@@ -101,6 +101,7 @@ describe.skipIf(!HAS_DB)('gateway admin management (branches, users)', () => {
     expect((await api().post('/api/auth/change-password').set(th).send({ currentPassword: temporaryPassword, newPassword: 'short' })).status).toBe(400);
     expect((await api().post('/api/auth/change-password').set(th).send({ currentPassword: temporaryPassword, newPassword: temporaryPassword })).status).toBe(422);
     expect((await api().post('/api/auth/change-password').set(th).send({ currentPassword: temporaryPassword, newPassword: 'NewPassw0rd-ok' })).status).toBe(204);
+    expect(await prisma.auditLog.findFirst({ where: { entityId: user.id, action: 'PASSWORD_CHANGED' } })).toMatchObject({ entity: 'USER', actorId: user.id }); // M10: өөрчлөлттэй нэг транзакцид
     expect((await login(uname('new'), temporaryPassword)).status).toBe(401);
     const again = await login(uname('new'), 'NewPassw0rd-ok');
     expect(again.status).toBe(200);
@@ -169,6 +170,8 @@ describe.skipIf(!HAS_DB)('gateway admin management (branches, users)', () => {
     expect(res.body.user.mustChangePassword).toBe(true);
     expect((await login(uname('rst'), first)).status).toBe(401);
     expect((await login(uname('rst'), res.body.temporaryPassword)).body.mustChangePassword).toBe(true);
+    expect(await prisma.auditLog.findFirst({ where: { entityId: user.id, action: 'USER_PASSWORD_RESET' } })).toMatchObject({ entity: 'USER', actorId: SEED.users.admin.id, orgId: expect.any(String) });
+    expect(JSON.stringify(await prisma.auditLog.findMany({ where: { entityId: user.id } }))).not.toContain(res.body.temporaryPassword as string);
     expect((await api().get('/api/auth/me').set({ authorization: `Bearer ${sess.body.accessToken as string}` })).status).toBe(401);
     expect(JSON.stringify(await prisma.auditLog.findMany({ where: { entityId: user.id } }))).not.toContain(res.body.temporaryPassword);
 
