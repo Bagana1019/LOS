@@ -94,6 +94,7 @@ DATABASE_URL=postgresql://migrator:***@host:5432/los pnpm turbo run db:migrate -
 5. `pnpm --filter <svc> audit:verify --anchor <seq>:<mac>`-г cron-оор ажиллуул. Production-д `--anchor`-гүй бол `UNANCHORED` (exit 3). Seal байх ёстой атал нэг ч seal алга бол `NOT_OK reason=NO_SEALS`.
 6. Өөр кластерт restore эсвэл логик репликаци хийвэл транзакцийн тоолуур ухарч `HORIZON_REGRESSED` гарна, seal зогсоно (шинэ гинж эсвэл дахин seal хэрэгтэй). `pg_upgrade` нөлөөлөхгүй. Дэлгэрэнгүй: `docs/DECISIONS.md` «audit seal».
 7. Лог дээр alert тавь: `AUDIT_SEAL_CHAIN_REGRESSED`, `AUDIT_SEAL_HORIZON_REGRESSED`, `AUDIT_SEAL_KEY_DOWNGRADE` (pod seal хийхээ зогсоосон — хүн шалгана), `AUDIT_SEAL_FAILED` (tick бүтэлгүйтсэн; давтагдвал шалга).
+8. **Seal-ийн саатал нь кластер даяар.** Sealer зөвхөн xid horizon (`pg_snapshot_xmin`)-оос доош мөрийг seal хийдэг бөгөөд энэ нь ижил Postgres дээрх БҮХ баазын бичих транзакцийг тооцдог (origination, scoring, dms-ийн урт ажил ч). Урт бичих транзакц seal-ийг түр хойшлуулна (мөр алдагдахгүй, хоцорно). `audit:verify`-ийн `backlogBelowHorizon` ба `unsealedRows` хэдэн минутаас удаан өсөж байвал `SELECT pid, now() - xact_start AS age, state, left(query, 80) FROM pg_stat_activity WHERE backend_xid IS NOT NULL ORDER BY xact_start;`-ээр хамгийн удаан бичих транзакцийг ол.
 
 ## 8. Шалгаагүй
 

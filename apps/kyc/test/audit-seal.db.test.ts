@@ -1,7 +1,7 @@
 // Audit seal · `kyc.audit_log` (AML шийдвэрийн аудит). Бодит Postgres + миграц. Бүрэн хамрах хүрээ origination/test/audit-seal.db.test.ts-д.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { AUDIT_SEAL_COLUMNS, auditKeyringFromEnv, purgeAuditLogForTests, recordAudit, sealAuditLog, verifyAuditChain, type AuditKeyring } from '@los/database';
+import { AUDIT_SEAL_COLUMNS, auditKeyringFromEnv, purgeAuditLogForTests, recordAudit, sealAuditLog, verifyAuditChain, waitUntilAuditRowsSealable, type AuditKeyring } from '@los/database';
 import { PrismaService } from '../src/prisma.service';
 
 const S = 'kyc';
@@ -23,6 +23,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('audit seal (kyc, Postgres)', ()
     const cols = await db.$queryRawUnsafe<{ c: string }[]>(`SELECT column_name AS c FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'audit_log'`, S);
     expect(cols.map((c) => c.c).sort()).toEqual(AUDIT_SEAL_COLUMNS.map((c) => c.name).sort());
     await db.$transaction(async (tx) => { await decide(tx, 'CLEARED'); await decide(tx, 'CONFIRMED'); });
+    await waitUntilAuditRowsSealable(db, S); // CI-д бусад багцын нээлттэй бичих транзакц xid horizon-г түр хойш татаж болно
     expect((await sealAuditLog(db, CFG, K)).seals).toEqual([expect.objectContaining({ seq: '1', rows: 2 })]);
     expect(await verifyAuditChain(db, CFG, K)).toMatchObject({ ok: true, sealedRows: 2 });
 
