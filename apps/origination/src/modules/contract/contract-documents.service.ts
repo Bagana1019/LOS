@@ -11,6 +11,8 @@ import { DMS_DOCGEN, type DmsDocgenPort } from './dms-docgen.port';
 
 const DOC_STATUSES = ['APPROVED', 'DISBURSING'];
 const ACTIVE_SIGNING = ['PENDING', 'IN_PROGRESS', 'FINALIZING'];
+/** F4-13: гарын үсэгтэй цаасан гэрээний скан — dms-ийн ерөнхий жагсаалтаас зөвхөн PDF/PNG/JPG (DOCX, XLSX, CSV, TXT биш). */
+const SIGNED_SCAN_MIMES: ReadonlySet<string> = new Set(['application/pdf', 'image/png', 'image/jpeg']);
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 const n = (d: { toString(): string } | null | undefined) => (d == null ? 0 : Number(d.toString()));
 
@@ -72,6 +74,11 @@ export class ContractDocumentsService {
     const file = await this.dms.fileInfo(fileId, ctx);
     if (!file) throw new DomainError('FILE_NOT_FOUND', 'Файл олдсонгүй', 422);
     assertFileUploadedByCaller(ctx, file.uploadedBy); // NFR-3: өөр хүний файлын id-г хавсаргаж болохгүй
+    // F4-13: эзэмшлийн дараа (өөр хүний файлын төрлийг задруулахгүй), гэрээний төлөв өөрчлөхөөс ӨМНӨ. `mime` нь dms-ийн magic bytes-аар баталгаажсан төрөл;
+    // төрөл мэдэгдэхгүй бол итгэхгүй (fail closed).
+    if (!file.mime || !SIGNED_SCAN_MIMES.has(file.mime.toLowerCase())) {
+      throw new DomainError('SIGNED_SCAN_TYPE_NOT_ALLOWED', 'Гарын үсэгтэй гэрээний скан зөвхөн PDF, PNG, JPG төрөлтэй байх ёстой', 415);
+    }
     const now = this.clock.now();
     const row = await this.prisma.$transaction(async (tx) => {
       const res = await tx.contract.updateMany({ where: { id: c.id, signedFileId: null }, data: { signedFileId: fileId, signedAt: now, signChannel: 'PAPER', updatedBy: ctx.userId } });
