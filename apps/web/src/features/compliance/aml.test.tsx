@@ -9,7 +9,7 @@ import { messageKeys } from '../../lib/i18n';
 import { textOfTestId, visibleText } from '../collateral/html.fixtures';
 import { describeApplicationError } from '../applications/applications.utils';
 import { fetchAmlQueue, fetchAmlScreening, reviewAmlHit } from './aml.api';
-import { describeAmlReviewError, screeningHref, validateReviewReason } from './aml.utils';
+import { describeAmlReviewError, reviewConfirmCopy, screeningHref, validateReviewReason } from './aml.utils';
 import { AmlQueueView } from './AmlQueueView';
 import { AmlScreeningView } from './AmlScreeningView';
 
@@ -52,6 +52,10 @@ describe('aml.utils', () => {
     expect(describeAmlReviewError(new Error('boom'))).toBe('Шийдвэр хадгалж чадсангүй');
   });
   it('screeningHref encodes the id', () => expect(screeningHref('a/b')).toBe('/los/compliance/aml/a%2Fb'));
+  it('F7-2: the confirmation copy names the decision and explains the consequence of each outcome', () => {
+    expect(reviewConfirmCopy('FALSE_POSITIVE')).toEqual({ decision: 'Худал тохирол', consequence: expect.stringContaining('хаалт нээгдэнэ') });
+    expect(reviewConfirmCopy('CONFIRMED')).toEqual({ decision: 'Жинхэнэ тохирол', consequence: expect.stringContaining('хаалт хэвээр') });
+  });
 });
 
 describe('AML_REVIEW_REQUIRED on the application page', () => {

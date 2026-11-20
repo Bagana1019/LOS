@@ -98,7 +98,7 @@ function HitCard({ hit, own, ...p }: { hit: AmlHit; own: boolean } & AmlScreenin
           <SideBySide hit={hit} detail={p.detail} />
           {hit.status !== 'OPEN' ? <Decision hit={hit} /> : null}
           {hit.status === 'OPEN' && own ? <Alert type="info" showIcon message={t('aml.review.selfReview')} /> : null}
-          {hit.status === 'OPEN' && !own ? <AmlReviewForm hitId={hit.id} submitting={p.submittingHitId === hit.id} onSubmit={p.onReview} /> : null}
+          {hit.status === 'OPEN' && !own ? <AmlReviewForm hitId={hit.id} hitName={hitEvidence(hit).name} customerName={p.detail.subjectName} submitting={p.submittingHitId === hit.id} onSubmit={p.onReview} /> : null}
         </Flex>
       </Card>
     </article>

@@ -14,6 +14,13 @@ export function validateReviewReason(text: string): string | null {
   return parsed.error.issues.some((i) => i.code === 'too_big') ? t('aml.review.reasonTooLong') : t('aml.review.reasonTooShort');
 }
 
+export interface ReviewConfirmCopy { decision: string; consequence: string }
+
+/** F7-2: баталгаажуулах цонхны текст — сонгосон шийдвэрийн нэр ба үр дагавар (шийдвэр буцаагдахгүй тул заавал харуулна). */
+export function reviewConfirmCopy(decision: AmlHitReviewRequest['decision']): ReviewConfirmCopy {
+  return { decision: t(`aml.review.${decision}`), consequence: t(`aml.review.consequence.${decision}`) };
+}
+
 const SELF_REVIEW = /reviewer must differ/i;
 const SUPERSEDED = /superseded/i;
 
