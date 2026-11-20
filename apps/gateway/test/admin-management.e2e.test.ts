@@ -97,7 +97,9 @@ describe.skipIf(!HAS_DB)('gateway admin management (branches, users)', () => {
     expect((await api().get('/api/auth/me').set(th)).body.mustChangePassword).toBe(true);
     expect((await api().get('/api/origination/customers').set(th)).body.code).toBe('PASSWORD_CHANGE_REQUIRED'); // proxy-оор ч нэвтэрч чадахгүй
 
-    expect((await api().post('/api/auth/change-password').set(th).send({ currentPassword: 'wrong', newPassword: 'Aa1!longenough' })).status).toBe(401);
+    const wrongCurrent = await api().post('/api/auth/change-password').set(th).send({ currentPassword: 'wrong', newPassword: 'Aa1!longenough' });
+    expect(wrongCurrent.status).toBe(422); // F9-14: not 401 — the web would read 401 as an expired session
+    expect(wrongCurrent.body.code).toBe('INVALID_CURRENT_PASSWORD');
     expect((await api().post('/api/auth/change-password').set(th).send({ currentPassword: temporaryPassword, newPassword: 'short' })).status).toBe(400);
     expect((await api().post('/api/auth/change-password').set(th).send({ currentPassword: temporaryPassword, newPassword: temporaryPassword })).status).toBe(422);
     expect((await api().post('/api/auth/change-password').set(th).send({ currentPassword: temporaryPassword, newPassword: 'NewPassw0rd-ok' })).status).toBe(204);

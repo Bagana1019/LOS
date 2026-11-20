@@ -110,8 +110,11 @@ export class AuthService {
   /** FR-13 · Өөрийн нууц үгээ солих. Бүх сесс хүчингүй болно (хулгайлагдсан token-ийг тасална), хэрэглэгч шинэ нууц үгээр дахин нэвтэрнэ. Нууц үгийг лог/аудитад бичихгүй. */
   async changePassword(userId: string, currentPassword: string, newPassword: string, meta: ClientMeta): Promise<void> {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    if (!user || !user.isActive || !(await verifyPassword(currentPassword, user.passwordHash))) {
-      throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Одоогийн нууц үг буруу' });
+    if (!user || !user.isActive) throw new UnauthorizedException({ code: 'INVALID_CREDENTIALS', message: 'Одоогийн нууц үг буруу' }); // unchanged: the guard already rejects such callers
+    // F9-14: 422, NOT 401 — the web client reads every 401 as an expired access token (refresh + retry + logout), which turned a typo into
+    // "session expired" and tripled the attempts. Counting is unchanged: the route @Throttle counts every call before this runs.
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+      throw new UnprocessableEntityException({ code: 'INVALID_CURRENT_PASSWORD', message: 'Одоогийн нууц үг буруу байна' });
     }
     if (await verifyPassword(newPassword, user.passwordHash)) {
       throw new UnprocessableEntityException({ code: 'PASSWORD_UNCHANGED', message: 'Шинэ нууц үг одоогийнхоос өөр байх ёстой' });
