@@ -17,6 +17,7 @@
   "terms.field.rateHint": "Хоосон бол системийн санал болгосон хүү",
   "terms.field.fee": "Шимтгэлийн хувь",
   "terms.field.feeHint": "0.015 = 1.5%",
+  "terms.field.feeHintPercent": "Хувиар бичнэ (жишээ: 1.5 = 1.5%)",
   "terms.field.downPayment": "Урьдчилгаа",
   "terms.field.charges": "Бусад төлбөр",
   "terms.field.insurance": "Даатгал",

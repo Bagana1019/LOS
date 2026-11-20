@@ -1,6 +1,7 @@
 'use client';
-import { App as AntApp, Alert, Badge, Button, Descriptions, Empty, Flex, Form, Input, InputNumber, Skeleton, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { App as AntApp, Alert, Badge, Button, Descriptions, Empty, Flex, Form, Input, Skeleton, Space, Table, Tabs, Tag, Typography } from 'antd';
 import type { InquiryBorrowerView, InquiryItemView, UnregisteredLoan } from '@los/contracts';
+import { MAX_MONEY, MoneyInput, moneyRules, useSingleFlight } from '../../components/form';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatDateTime, formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
@@ -120,6 +121,7 @@ function UnregisteredLoans({ applicationId, customerId, loans, onChanged }: { ap
   const [form] = Form.useForm<{ lenderName: string; amount: number; monthlyPayment: number; note?: string }>();
   const add = useAddLoan(applicationId, onChanged);
   const remove = useRemoveLoan(applicationId, onChanged);
+  const flight = useSingleFlight(); // давхар товшилтоор нэг зээлийг хоёр удаа нэмэхгүй (өрийн төлбөр давхардахгүй)
   const required = [{ required: true, message: t('inquiry.loans.required') }];
   return (
     <Flex vertical gap={8}>
@@ -133,12 +135,12 @@ function UnregisteredLoans({ applicationId, customerId, loans, onChanged }: { ap
           { key: 'x', render: (_: unknown, r: UnregisteredLoan) => <Button size="small" danger loading={remove.isPending} onClick={() => remove.mutate(r.id, { onSuccess: () => void message.success(t('inquiry.toast.loanRemoved')) })}>{t('inquiry.action.remove')}</Button> },
         ]} />
       ) : <Typography.Text type="secondary">{t('inquiry.loans.empty')}</Typography.Text>}
-      <Form form={form} layout="inline" onFinish={(v) => add.mutate({ ...v, customerId }, { onSuccess: () => { form.resetFields(); void message.success(t('inquiry.toast.loanAdded')); } })}>
+      <Form form={form} layout="inline" onFinish={(v) => void flight(() => add.mutateAsync({ ...v, customerId }).then(() => { form.resetFields(); void message.success(t('inquiry.toast.loanAdded')); })).catch(() => undefined /* алдаа add.error-оор доор харагдана */)}>
         <Form.Item name="lenderName" rules={required}><Input placeholder={t('inquiry.loans.lender')} /></Form.Item>
-        <Form.Item name="amount" rules={required}><InputNumber min={0} placeholder={t('inquiry.loans.amount')} style={{ width: 160 }} /></Form.Item>
-        <Form.Item name="monthlyPayment" rules={required}><InputNumber min={0} placeholder={t('inquiry.loans.monthly')} style={{ width: 160 }} /></Form.Item>
+        <Form.Item name="amount" validateFirst rules={moneyRules({ required: t('inquiry.loans.required'), positive: true, max: MAX_MONEY, label: t('inquiry.loans.amount') })}><MoneyInput placeholder={t('inquiry.loans.amount')} style={{ width: 160 }} /></Form.Item>
+        <Form.Item name="monthlyPayment" validateFirst rules={moneyRules({ required: t('inquiry.loans.required'), max: MAX_MONEY, label: t('inquiry.loans.monthly') })}><MoneyInput placeholder={t('inquiry.loans.monthly')} style={{ width: 160 }} /></Form.Item>
         <Form.Item name="note"><Input placeholder={t('inquiry.loans.note')} /></Form.Item>
-        <Form.Item><Space><Button htmlType="submit" loading={add.isPending}>{t('inquiry.action.addLoan')}</Button></Space></Form.Item>
+        <Form.Item><Space><Button htmlType="submit" loading={add.isPending} disabled={add.isPending}>{t('inquiry.action.addLoan')}</Button></Space></Form.Item>
       </Form>
       {add.error ? <ApiErrorAlert error={add.error} /> : null}
     </Flex>
