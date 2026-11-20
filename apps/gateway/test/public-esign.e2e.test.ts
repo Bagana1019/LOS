@@ -27,7 +27,7 @@ describe.skipIf(!HAS_DB)('gateway public e-sign (FR-11.4)', () => {
     });
     await new Promise<void>((r) => upstream.listen(0, '127.0.0.1', r));
     const port = (upstream.address() as AddressInfo).port;
-    for (const s of ['ORIGINATION', 'DMS']) process.env[`${s}_URL`] = `http://127.0.0.1:${port}`;
+    for (const s of ['ORIGINATION', 'DMS', 'KYC']) process.env[`${s}_URL`] = `http://127.0.0.1:${port}`;
     ({ app } = await createGateway());
     const login = await api().post('/api/auth/login').send({ username: SEED.users.officerA.username, password: PASSWORD });
     officer = login.body.accessToken;
@@ -63,11 +63,29 @@ describe.skipIf(!HAS_DB)('gateway public e-sign (FR-11.4)', () => {
     expect(seen).toHaveLength(0);
   });
 
-  it('ажилтны proxy-н бусад замууд хэвээр: dms файл, origination-ийн гэрээний e-sign endpoint', async () => {
+  it('ажилтны proxy-н бусад замууд хэвээр: origination-ийн гэрээний e-sign endpoint', async () => {
     const h = { authorization: `Bearer ${officer}` };
-    expect((await api().get('/api/dms/files/abc').set(h)).status).toBe(200);
     expect((await api().post('/api/origination/contracts/app-1/esign').set(h).send({})).status).toBe(200);
-    expect(seen.map((s) => `${s.method} ${s.url}`)).toEqual(['GET /api/files/abc', 'POST /api/contracts/app-1/esign']);
-    expect(seen[1]!.headers['x-user-id']).toBe(SEED.users.officerA.id);
+    expect(seen.map((s) => `${s.method} ${s.url}`)).toEqual(['POST /api/contracts/app-1/esign']);
+    expect(seen[0]!.headers['x-user-id']).toBe(SEED.users.officerA.id);
+  });
+
+  // F12-2: file metadata (name, size, sha256, uploader) was readable by any signed-in role; staff read files through origination's scope-checked facade.
+  it('F12-2: ажилтан dms файлын мета/агуулгыг proxy-гоор авч чадахгүй (404, dms-д хүрэхгүй)', async () => {
+    const h = { authorization: `Bearer ${officer}` };
+    for (const p of ['/api/dms/files/abc', '/api/dms/files/abc/content', '/api/dms/Files/abc', '/api/dms/%66iles/abc']) {
+      expect((await api().get(p).set(h)).status, p).toBe(404);
+    }
+    expect(seen).toHaveLength(0);
+  });
+
+  // F7-1: any role could POST /api/kyc/aml/screen with an arbitrary customerId → forged blocking AML result for the real customer.
+  it('F7-1: ажилтан AML шалгалт үүсгэх / харилцагчийн AML төлвийг уншихыг proxy-гоор хийж чадахгүй (404, kyc-д хүрэхгүй)', async () => {
+    const h = { authorization: `Bearer ${officer}` };
+    const forged = { customerId: 'f7-forged-customer', name: 'Orlan Tarsen', borrowerRole: 'PRIMARY' };
+    expect((await api().post('/api/kyc/aml/screen').set(h).send(forged)).status).toBe(404);
+    expect((await api().post('/api/kyc/aml/Screen').set(h).send(forged)).status).toBe(404);
+    expect((await api().get('/api/kyc/aml/customers/f7-forged-customer/latest').set(h)).status).toBe(404);
+    expect(seen).toHaveLength(0);
   });
 });
