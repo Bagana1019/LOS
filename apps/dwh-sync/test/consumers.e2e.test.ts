@@ -95,7 +95,7 @@ describe.skipIf(!DWH_TEST_URL || !REDIS_URL)('dwh-sync consumers (Redis + DWH)',
   it('/api/consumers/status reports schema version and per-group subscription + dead-letter counts (information, not readiness)', async () => {
     const res = await request(app.getHttpServer()).get('/api/consumers/status');
     expect(res.status).toBe(200);
-    expect(res.body.schema).toEqual({ ready: true, version: 3, required: 3 });
+    expect(res.body.schema).toEqual({ ready: true, version: 4, required: 4 });
     expect(res.body.busEnabled).toBe(true);
     for (const s of DWH_SUBSCRIPTIONS) expect(res.body.groups[s.group]).toMatchObject({ subscribed: true, deadLettered: 0 });
   });
@@ -137,7 +137,7 @@ describe.skipIf(!DWH_TEST_URL || !REDIS_URL)('dwh-sync startup DDL on an existin
   it('adds the missing columns at startup, records the version, is ready, and events that need them land', async () => {
     const cols = (await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'fact_application'`)).rows.map((r) => r.column_name);
     expect(cols).toEqual(expect.arrayContaining(['status_changed_at', 'scored_at']));
-    expect((await pool.query('SELECT version FROM dwh_schema_version ORDER BY version')).rows.map((r) => r.version)).toEqual([1, 2, 3]);
+    expect((await pool.query('SELECT version FROM dwh_schema_version ORDER BY version')).rows.map((r) => r.version)).toEqual([1, 2, 3, 4]);
     expect((await request(app.getHttpServer()).get('/api/health/ready')).status).toBe(200);
     const id = `app-${randomUUID()}`;
     await publisher.publish(ev('ApplicationStatusChanged', { applicationId: id, from: 'DRAFT', to: 'SUBMITTED' }));
