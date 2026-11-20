@@ -1,6 +1,7 @@
 export * from './context/request-context';
 export * from './auth/guards';
 export * from './auth/internal-secret';
+export * from './auth/audit-hmac-key';
 export * from './auth/scope';
 export * from './auth/file-ownership';
 export * from './auth/route-inventory';
@@ -16,3 +17,4 @@ export * from './bootstrap';
 export * from './internal/internal-http';
 export * from './internal/settings-client';
 export * from './events/events.module';
+export * from './audit/audit-seal.module';

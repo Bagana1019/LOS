@@ -8,3 +8,5 @@ export * from './seed-ids';
 export * from './register-no';
 export * from './advisory-lock';
 export * from './db-resilience';
+export * from './audit-seal';
+export * from './audit-seal-cli';

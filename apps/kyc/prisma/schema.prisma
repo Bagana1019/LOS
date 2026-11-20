@@ -48,11 +48,29 @@ model AuditLog {
   afterJson     Json?    @map("after_json")
   applicationId String?  @map("application_id")
   correlationId String?  @map("correlation_id")
+  /// Audit seal: бичигч транзакцын xid8 (DB trigger хүчээр тавина; клиент бичихгүй). docs/DECISIONS.md 2026-11-19 · audit seal
+  txId          Unsupported("xid8") @default(dbgenerated("pg_current_xact_id()")) @map("tx_id")
 
   @@index([orgId, entity, entityId])
   @@index([applicationId])
   @@index([actorId, at])
+  @@index([txId, id])
   @@map("audit_log")
+  @@schema("kyc")
+}
+
+/// Audit seal: audit_log-ийн HMAC гинж (append-only trigger). Зөвхөн @los/database sealAuditLog бичнэ (raw SQL); verifyAuditChain шалгана.
+model AuditSeal {
+  seq      BigInt              @id
+  keyId    String              @map("key_id")
+  lastTxId Unsupported("xid8") @map("last_tx_id")
+  lastId   String              @map("last_id")
+  rowCount Int                 @map("row_count")
+  prevMac  String?             @map("prev_mac")
+  mac      String
+  sealedAt DateTime            @default(now()) @map("sealed_at")
+
+  @@map("audit_seal")
   @@schema("kyc")
 }
 

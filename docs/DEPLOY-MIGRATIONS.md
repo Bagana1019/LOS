@@ -72,7 +72,30 @@ DATABASE_URL=postgresql://migrator:***@host:5432/los pnpm turbo run db:migrate -
 
 - **PR #58 (N4):** dwh-sync эхлэхэд DWH схемийн v3-ыг (`ADD COLUMN IF NOT EXISTS`) өөрөө хэрэглэнэ. DWH-д холбогдох роль DDL хийх эрхтэй (эсвэл эзэмшигч) байх ёстой — **шалгаагүй**.
 
-## 7. Шалгаагүй
+## 7. Audit seal (audit-tamper-evidence PR-ууд нэгдсэний дараа хамаарна)
+
+`feat/audit-tamper-evidence` нэгдсэний дараа schema бүрд (`iam`, `origination`, `kyc`) хоёр миграци нэмэгдэнэ. Энэ хэсэг тэр хүртэл `main`-д хамаарахгүй.
+
+| Миграци | Үр дүн | Тэмдэглэл |
+| --- | --- | --- |
+| `20261120000000_audit_seal` | OK (хоосон баазад `migrate deploy`) | `tx_id xid8 NOT NULL DEFAULT '0'` нь metadata-only (хүснэгтийг дахин бичихгүй), дараа нь `SET DEFAULT pg_current_xact_id()`. Trigger + шинэ `audit_seal` хүснэгт. Хуучин мөр `tx_id = 0` болж эхний seal(-үүд)-д орно. `iam.audit_log` нь хүсэлт бүрд бичигддэг тул §3-ын түгжээний дараалал энд ч хамаарна |
+| `20261120000001_audit_log_tx_id_index` | OK (хоосон баазад) | `CREATE INDEX CONCURRENTLY … ("tx_id", "id" COLLATE "C")`. Бичилтийг хаахгүй. Тусдаа нэг statement-тэй файл, учир нь Prisma файл бүрийг нэг транзакцид ажиллуулдаг бөгөөд `CONCURRENTLY` транзакц дотор алдаа өгнө |
+
+**`CONCURRENTLY` бүтэлгүйтвэл** `INVALID` индекс үлдэнэ (ихэвчлэн `lock_timeout` эсвэл таслагдсан холболт). Засах: `DROP INDEX CONCURRENTLY "<schema>"."audit_log_tx_id_id_idx";` → `prisma migrate resolve --rolled-back 20261120000001_audit_log_tx_id_index` → дахин deploy. Индексийн collation-ийг Prisma илэрхийлж чадахгүй тул `schema.prisma`-ийн `@@index([txId, id])` drift-д харагдахгүй. Индексийг үүсгэгч нь миграцийн SQL. Deploy-ийн дараа шалга: `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid;` (хоосон байх ёстой) — `IF NOT EXISTS` нь үлдсэн INVALID индексийн дээгүүр чимээгүй өнгөрдөг тул дахин deploy үүнийг засахгүй.
+
+`20261120000000_audit_seal` нь `SET LOCAL lock_timeout = '5s'`-ээр эхэлнэ: `ALTER TABLE` урт транзакцын ард дараалалд зогсож бүх аудит бичигчийг хаахгүй; түгжээ авч чадахгүй бол миграц бүтэлгүйтнэ (аюулгүй) — ачаалал багатай үед дахин ажиллуул.
+
+**Олголтын шаардлага (pipeline өгнө, код өөрөө өгөхгүй):**
+
+1. `AUDIT_HMAC_KEY`: ≥32 тэмдэгт, placeholder биш, `INTERNAL_AUTH_SECRET`-ээс өөр. Production-д байхгүй бол gateway, origination, kyc **эхлэхгүй**. `AUDIT_HMAC_KEY_ID`-г тогтоо. Rotation-д шинэ түлхүүр + шинэ id, хуучныг `AUDIT_HMAC_PREVIOUS_KEYS=<id>:<key>` (зөвхөн verify) дээр үлдээ.
+2. `AUDIT_SEAL_INTERVAL_MS`: бүхэл тоо (анхдагч 60000). Production-д NaN, сөрөг, эсвэл `AUDIT_SEAL_DISABLED=true`-гүй `0` бол сервис эхлэхгүй.
+3. App роль: `audit_log`, `audit_seal`-д **SELECT + INSERT л**, эзэмшигч/superuser биш. §2-ын `REVOKE UPDATE, DELETE, TRUNCATE`-д `iam.audit_seal`, `origination.audit_seal`, `kyc.audit_seal`-г нэмж бич.
+4. **`AUDIT_SEALED schema seq rows mac` логийг append-only (WORM) хадгалалт руу илгээ.** Үүнгүйгээр эзэмшигч эрхтэй этгээд сүүлийн seal-үүдийг устгаж, мөр засаад sealer-ээр дахин seal хийлгэхийг баазын дотроос илрүүлэх боломжгүй. Pod бүр санасан сүүлийн `(seq, mac)`-ээсээ ухарсныг мэдэж `AUDIT_SEAL_CHAIN_REGRESSED` бүртгээд seal хийхээ зогсооно, гэхдээ бүх pod нэгэн зэрэг restart хийвэл тэр санах ой алдагдана. Тэр үед зөвхөн гаднах anchor л илрүүлнэ.
+5. `pnpm --filter <svc> audit:verify --anchor <seq>:<mac>`-г cron-оор ажиллуул. Production-д `--anchor`-гүй бол `UNANCHORED` (exit 3). Seal байх ёстой атал нэг ч seal алга бол `NOT_OK reason=NO_SEALS`.
+6. Өөр кластерт restore эсвэл логик репликаци хийвэл транзакцийн тоолуур ухарч `HORIZON_REGRESSED` гарна, seal зогсоно (шинэ гинж эсвэл дахин seal хэрэгтэй). `pg_upgrade` нөлөөлөхгүй. Дэлгэрэнгүй: `docs/DECISIONS.md` «audit seal».
+7. Лог дээр alert тавь: `AUDIT_SEAL_CHAIN_REGRESSED`, `AUDIT_SEAL_HORIZON_REGRESSED`, `AUDIT_SEAL_KEY_DOWNGRADE` (pod seal хийхээ зогсоосон — хүн шалгана), `AUDIT_SEAL_FAILED` (tick бүтэлгүйтсэн; давтагдвал шалга).
+
+## 8. Шалгаагүй
 
 - `pnpm db:seed` (demo seed) — `HEAD` клиент шаардлагатай тул зохиомол SQL-ээр орлуулсан.
 - Superuser бус migrator роль (шалгалтад superuser-ээр ажиллуулсан; superuser шаарддаг командыг grep-ээр хайхад олдоогүй).
