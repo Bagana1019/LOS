@@ -15,7 +15,7 @@ END;
 $$;
 CREATE TRIGGER "audit_log_stamp_tx_id" BEFORE INSERT ON "kyc"."audit_log"
   FOR EACH ROW EXECUTE FUNCTION "kyc"."audit_log_stamp_tx_id"();
--- (tx_id, id COLLATE "C") индекс: тусдаа миграц 20261120000001_audit_log_tx_id_index (CREATE INDEX CONCURRENTLY нь транзакц дотор ажиллахгүй).
+-- (tx_id, id COLLATE "C") индекс: тусдаа миграц 20261120000001_audit_log_tx_id_index (энгийн CREATE INDEX; CONCURRENTLY биш: Prisma-ийн зэрэгцээ migrate-тэй deadlock болдог, тэр файлын тайлбарыг үз).
 
 -- 2) audit_seal: HMAC гинж (seq 1,2,3…). Зөвхөн @los/database sealAuditLog бичнэ; audit_log-той адил append-only.
 CREATE TABLE "kyc"."audit_seal" (
