@@ -4,11 +4,12 @@ import { mn } from '@los/ui';
 import type { ChangeRequestHistoryDto } from '@los/contracts';
 import { eventColor, eventLabel, fmt, roleLabel, statusLabel } from '../labels';
 import { formatDateTime } from '../time';
+import { PersonLabel } from './PersonLabel';
 
 const { Text, Paragraph } = Typography;
 
 /** Audit trail: event, actor, roles, comment, time - oldest first. */
-export function RequestTimeline({ history }: { history: ChangeRequestHistoryDto[] | undefined }) {
+export function RequestTimeline({ history, userName }: { history: ChangeRequestHistoryDto[] | undefined; userName?: (id: string) => string | null }) {
   if (!history || history.length === 0) {
     return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={mn['maker_checker.timeline.empty']} />;
   }
@@ -22,7 +23,7 @@ export function RequestTimeline({ history }: { history: ChangeRequestHistoryDto[
           <Text strong>{eventLabel(h.event)}</Text>
           <Text type="secondary"> · {formatDateTime(h.at)}</Text>
           <div>
-            <Text>{h.actorId ?? mn['maker_checker.timeline.system']}</Text>{' '}
+            {h.actorId === null ? <Text>{mn['maker_checker.timeline.system']}</Text> : <PersonLabel id={h.actorId} name={userName?.(h.actorId) ?? null} />}{' '}
             {h.actorRoles.map((r) => (
               <Tag key={r}>{roleLabel(r)}</Tag>
             ))}
