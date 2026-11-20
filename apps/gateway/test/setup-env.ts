@@ -10,3 +10,4 @@ process.env.LOGIN_IP_RATE_LIMIT = '1000';
 process.env.RATE_LIMIT_KEY_PREFIX = `test:gw:${process.pid}:${Date.now()}:`;
 process.env.WEB_ORIGIN = 'http://localhost:3000';
 process.env.INTERNAL_AUTH_SECRET = 'internal-secret-for-tests';
+process.env.AUDIT_SEAL_INTERVAL_MS = '0'; // audit seal: background sealer off (suites purge audit_log); seal tests drive sealAuditLog directly

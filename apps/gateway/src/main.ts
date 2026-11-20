@@ -7,6 +7,7 @@ void bootstrapService({
   module: AppModule,
   portEnv: 'GATEWAY_PORT',
   defaultPort: 4000,
+  auditSeal: true,
   cors: { origin: (process.env.WEB_ORIGIN ?? 'http://localhost:3000').split(',').map((s) => s.trim()), credentials: true },
   bodyParser: false,
   configure: configureGateway,

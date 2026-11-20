@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
-import { CommonModule, HealthModule, envFilePaths } from '@los/nest-common';
+import { GATEWAY_AUDIT_SEAL_COLUMNS } from '@los/database';
+import { AuditSealModule, CommonModule, HealthModule, envFilePaths } from '@los/nest-common';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -26,6 +27,7 @@ import { PrismaModule, PrismaService } from './prisma.service';
     CommonModule.forRoot({ contextGuard: false, trustIdentityHeaders: false }),
     PrismaModule,
     HealthModule.forServiceAsync({ service: 'gateway', inject: [PrismaService], useFactory: (db: PrismaService) => ({ db: () => db.$queryRaw`SELECT 1` }) }),
+    AuditSealModule.forRoot({ schema: 'iam', db: PrismaService, columns: GATEWAY_AUDIT_SEAL_COLUMNS }),
     AdminModule,
     AuditModule,
     AuthModule,

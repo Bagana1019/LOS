@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { CommonModule, EventsModule, HealthModule, envFilePaths } from '@los/nest-common';
+import { AuditSealModule, CommonModule, EventsModule, HealthModule, envFilePaths } from '@los/nest-common';
 import { PrismaModule, PrismaService } from './prisma.service';
 import { SharedModule } from './shared/shared.module';
 // Feature модуль бүр: өөрийн мөрийг `import` + `imports` хоёрт задлана (мөр тус бүр тусдаа тул зэрэгцээ салбар мерж хийхэд зөрчилгүй).
@@ -40,6 +40,7 @@ import { PortalModule } from './modules/portal/portal.module';
     PrismaModule,
     EventsModule.forRoot({ schema: 'origination', db: PrismaService }),
     HealthModule.forServiceAsync({ service: 'origination', inject: [PrismaService], useFactory: (db: PrismaService) => ({ db: () => db.$queryRaw`SELECT 1` }) }),
+    AuditSealModule.forRoot({ schema: 'origination', db: PrismaService }),
     SharedModule,
     ApplicationModule,
     BorrowerModule,
