@@ -12,8 +12,9 @@ import { applyStepUpdates, loadSteps, planScoreStale, planStepTarget } from '../
 import { isEditableStatus } from '../borrower/borrower.rules';
 import { CustomerDirectory, customerDisplayName, customerRegisterNo } from '../borrower/customer-directory';
 import {
-  BSA_PENDING_MESSAGE, BSA_PULLED_MESSAGE, dateToYearMonth, hasIncome, incomeBlockers, incomeStepTarget, isFutureMonth, monthEnd, monthStart, parseYearMonth, summaryView,
-  type IncomeParticipant,
+  BSA_PENDING_MESSAGE, BSA_PULLED_MESSAGE, dateToYearMonth, hasIncome, incomeBlockers, incomeStepTarget, isFutureMonth, manualSalaryConflict, monthEnd, monthStart, parseYearMonth,
+  SALARY_CONFLICT_CODE, salaryConflictMessage, summaryView, supersededManualIds,
+  type IncomeParticipant, type SalaryRef,
 } from './income.rules';
 import { KYC_NDSH_PORT, type KycNdshPort } from './ports/kyc-ndsh.port';
 
@@ -58,18 +59,20 @@ export class IncomeService {
           data: items.map((r) => ({ orgId: app.orgId, applicationId: app.id, customerId, employer: r.employer, year: r.year, month: r.month, salary: r.salary, contributionPaid: r.contributionPaid, source: 'NDSH', createdBy: ctx.userId, updatedBy: ctx.userId })),
         });
       }
+      const supersededManual = await this.dropSupersededManual(tx, app.id, customerId, items);
       await this.refreshAverage(tx, app, customerId, ctx);
-      return { customerId, rows: items.length };
+      return { customerId, rows: items.length, supersededManual };
     });
   }
 
-  /** Гараар цалингийн мөр нэмэх (НДШ-д байхгүй / засвар). */
+  /** Гараар цалингийн мөр нэмэх (НДШ-д байхгүй сар / нэмэлт ажил олгогч). Ижил ажил олгогчийн (эсвэл ажил олгогчгүй) гар мөр нэг сард нэг л байна, НДШ-ийн мөрийг давхарлахгүй (F2-14). */
   async addSalary(ctx: RequestContext, applicationId: string, input: IncomeSalaryInput): Promise<IncomeOverviewResponse> {
     const app = await this.access.load(ctx, applicationId, 'write');
     this.assertEditable(app);
     if (isFutureMonth({ year: input.year, month: input.month }, this.clock.now())) throw new DomainError('INVALID_PERIOD', 'Ирээдүйн сарын цалин оруулж болохгүй', 422);
     return this.mutate(ctx, app, 'INCOME_SALARY_ADDED', async (tx) => {
       await this.requireParticipant(tx, app.id, input.customerId);
+      await this.assertNoSalaryConflict(tx, app.id, input);
       const row = await tx.incomeSalary.create({
         data: { orgId: app.orgId, applicationId: app.id, customerId: input.customerId, employer: input.employer ?? null, year: input.year, month: input.month, salary: input.salary, contributionPaid: input.contributionPaid ?? null, source: 'MANUAL', createdBy: ctx.userId, updatedBy: ctx.userId },
       });
@@ -182,6 +185,22 @@ export class IncomeService {
       .sort((a, b) => (a.role === b.role ? 0 : a.role === 'PRIMARY' ? -1 : 1))
       .filter((r) => (seen.has(r.customerId) ? false : (seen.add(r.customerId), true)))
       .map((r) => ({ customerId: r.customerId, role: r.role as 'PRIMARY' | 'CO_BORROWER', included: r.role === 'PRIMARY' || r.incomeIncluded, displayName: customerDisplayName(r.customer) }));
+  }
+
+  /** F2-14 · `mutate`-ийн хүсэлтийн мөрийн түгжээ (FOR UPDATE) дотор шалгана → давхар дарах/зэрэг хүсэлтээс зөвхөн эхнийх нь бичигдэнэ. */
+  private async assertNoSalaryConflict(tx: Tx, applicationId: string, input: IncomeSalaryInput): Promise<void> {
+    const existing = await tx.incomeSalary.findMany({ where: { applicationId, customerId: input.customerId, year: input.year, month: input.month }, select: { year: true, month: true, employer: true, source: true } });
+    const conflict = manualSalaryConflict(input, existing.map((r) => ({ ...r, source: r.source as SalaryRef['source'] })));
+    if (conflict) throw new DomainError(SALARY_CONFLICT_CODE[conflict], salaryConflictMessage(conflict, input), 409, { year: input.year, month: input.month });
+  }
+
+  /** НДШ дахин татсаны дараа НДШ-ийн мөртэй давхардсан (ижил сар + хоосон/ижил ажил олгогч) гар цалингийн мөрийг хасна — НДШ эх сурвалжийн үнэн. Хассан мөрийн тоо. */
+  private async dropSupersededManual(tx: Tx, applicationId: string, customerId: string, ndsh: ReadonlyArray<{ year: number; month: number; employer: string | null }>): Promise<number> {
+    if (!ndsh.length) return 0;
+    const manual = await tx.incomeSalary.findMany({ where: { applicationId, customerId, source: 'MANUAL' }, select: { id: true, year: true, month: true, employer: true } });
+    const ids = supersededManualIds(manual.map((m) => ({ ...m, source: 'MANUAL' as const })), ndsh.map((n) => ({ ...n, source: 'NDSH' as const })));
+    if (ids.length) await tx.incomeSalary.deleteMany({ where: { id: { in: ids } } });
+    return ids.length;
   }
 
   private async requireParticipant(db: Tx, applicationId: string, customerId: string) {

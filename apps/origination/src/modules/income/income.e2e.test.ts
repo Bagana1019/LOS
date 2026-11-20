@@ -96,7 +96,8 @@ describe.skipIf(!hasTestDb)('income API (DB)', () => {
     const refuse = await http().delete(url(app.id, `/salaries/${ndshRow.id}`)).set(officer);
     expect(refuse.status).toBe(422);
     expect(refuse.body.code).toBe('SALARY_NOT_EDITABLE');
-    const add = parse(await http().post(url(app.id, '/salaries')).set(officer).send({ customerId: primary.id, year: 2026, month: 9, salary: 100_000 }));
+    // 2025-09 нь НДШ-ийн хүрээнээс (2025-11…2026-10) гадуур: НДШ-д байгаа сард ажил олгогчгүй гар мөр нэмэхийг F2-14 хориглоно.
+    const add = parse(await http().post(url(app.id, '/salaries')).set(officer).send({ customerId: primary.id, year: 2025, month: 9, salary: 100_000 }));
     const manualRow = add.borrowers[0]!.salaries.find((s) => s.source === 'MANUAL')!;
     expect(parse(await http().delete(url(app.id, `/salaries/${manualRow.id}`)).set(officer)).borrowers[0]!.salaries.some((s) => s.source === 'MANUAL')).toBe(false);
     expect((await http().delete(url(app.id, '/salaries/nope')).set(officer)).body.code).toBe('SALARY_NOT_FOUND');
@@ -220,5 +221,114 @@ describe.skipIf(!hasTestDb)('income API (DB)', () => {
     expect(audit.map((a) => a.action)).toEqual(['INCOME_NDSH_FETCHED', 'INCOME_CALCULATED']);
     expect(JSON.stringify(audit)).not.toContain(ndsh.registers[0]!);
     expect(audit[1]!.afterJson).toMatchObject({ customerId: primary.id, average: 1_500_000 });
+  });
+
+  // ── F2-14 · давхардсан сарын цалин ────────────────────────────────────────────────────
+  const addSalary = (id: string, body: Record<string, unknown>) => http().post(url(id, '/salaries')).set(officer).send(body);
+  const salaryRows = (applicationId: string, customerId: string) => t.prisma.incomeSalary.findMany({ where: { applicationId, customerId }, orderBy: [{ year: 'asc' }, { month: 'asc' }, { createdAt: 'asc' }] });
+
+  it('F2-14: the same manual salary month cannot be added twice (409 SALARY_MONTH_DUPLICATE); one row, average stays 1,500,000 and no second audit entry', async () => {
+    const { app, primary } = await setup();
+    expect((await addSalary(app.id, { customerId: primary.id, year: 2026, month: 10, salary: 1_500_000 })).status).toBe(201);
+    parse(await calculate(app.id, primary.id, '2026-10', '2026-10'));
+    const dup = await addSalary(app.id, { customerId: primary.id, year: 2026, month: 10, salary: 1_500_000 });
+    expect(dup.status).toBe(409);
+    expect(dup.body).toMatchObject({ code: 'SALARY_MONTH_DUPLICATE', details: { year: 2026, month: 10 } });
+    expect(dup.body.message).toContain('2026-10');
+    expect(await salaryRows(app.id, primary.id)).toHaveLength(1);
+    const view = parse(await http().get(url(app.id)).set(officer));
+    expect(view.borrowers[0]!.summary).toMatchObject({ salaryTotal: 1_500_000, avgSalaryMonthly: 1_500_000 });
+    const audit = await t.prisma.auditLog.findMany({ where: { applicationId: app.id }, orderBy: { at: 'asc' } });
+    expect(audit.map((a) => a.action)).toEqual(['INCOME_SALARY_ADDED', 'INCOME_CALCULATED']);
+  });
+
+  it('F2-14: two manual rows in the same month with DIFFERENT named employers are both accepted (201, 201) and the average sums both (DECISIONS 2026-11-03)', async () => {
+    const { app, primary } = await setup();
+    expect((await addSalary(app.id, { customerId: primary.id, employer: 'А ХХК', year: 2026, month: 9, salary: 1_000_000 })).status).toBe(201);
+    expect((await addSalary(app.id, { customerId: primary.id, employer: 'Б ХХК', year: 2026, month: 9, salary: 500_000 })).status).toBe(201);
+    expect(await salaryRows(app.id, primary.id)).toHaveLength(2);
+    const calc = parse(await calculate(app.id, primary.id, '2026-09', '2026-09'));
+    expect(calc.borrowers[0]!.summary).toMatchObject({ months: 1, salaryTotal: 1_500_000, avgSalaryMonthly: 1_500_000 });
+  });
+
+  it('F2-14: same employer twice → 409 (any case / spacing); the message names the same-employer rule and offers no "combine into one row" advice', async () => {
+    const { app, primary } = await setup();
+    await addSalary(app.id, { customerId: primary.id, employer: 'А ХХК', year: 2026, month: 9, salary: 1_000_000 });
+    await addSalary(app.id, { customerId: primary.id, employer: 'Б ХХК', year: 2026, month: 9, salary: 500_000 });
+    for (const employer of ['А ХХК', ' а  ххк ', 'Б ХХК']) {
+      const dup = await addSalary(app.id, { customerId: primary.id, employer, year: 2026, month: 9, salary: 1_000_000 });
+      expect(dup.status, employer).toBe(409);
+      expect(dup.body).toMatchObject({ code: 'SALARY_MONTH_DUPLICATE', details: { year: 2026, month: 9 } });
+      expect(dup.body.message).toMatch(/2026-09.*ижил ажил олгогч.*нэрийг заан/);
+      expect(dup.body.message).not.toMatch(/нийлбэр|нэг мөрөөр/);
+    }
+    expect(await salaryRows(app.id, primary.id)).toHaveLength(2);
+  });
+
+  it('F2-14: a blank employer is a wildcard against a named one in the same month, in both orders → 409', async () => {
+    const { app, primary } = await setup();
+    // blank first, then named
+    expect((await addSalary(app.id, { customerId: primary.id, year: 2026, month: 8, salary: 1_000_000 })).status).toBe(201);
+    const namedAfterBlank = await addSalary(app.id, { customerId: primary.id, employer: 'А ХХК', year: 2026, month: 8, salary: 500_000 });
+    expect(namedAfterBlank.status).toBe(409);
+    expect(namedAfterBlank.body.code).toBe('SALARY_MONTH_DUPLICATE');
+    // named first, then blank
+    expect((await addSalary(app.id, { customerId: primary.id, employer: 'А ХХК', year: 2026, month: 7, salary: 1_000_000 })).status).toBe(201);
+    const blankAfterNamed = await addSalary(app.id, { customerId: primary.id, year: 2026, month: 7, salary: 500_000 });
+    expect(blankAfterNamed.status).toBe(409);
+    expect(blankAfterNamed.body.code).toBe('SALARY_MONTH_DUPLICATE');
+    expect(await salaryRows(app.id, primary.id)).toHaveLength(2);
+  });
+
+  it('F2-14: a double click (two concurrent identical requests) stores exactly one row — one 201, one 409', async () => {
+    const { app, primary } = await setup();
+    const body = { customerId: primary.id, year: 2026, month: 10, salary: 1_500_000 };
+    const [a, b] = await Promise.all([addSalary(app.id, body), addSalary(app.id, body)]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    expect(await salaryRows(app.id, primary.id)).toHaveLength(1);
+  });
+
+  it('F2-14: uniqueness is per borrower and per month; deleting the manual row frees the month again', async () => {
+    const { app, primary, co } = await setup({ co: true });
+    const body = (customerId: string, month: number) => ({ customerId, year: 2026, month, salary: 1_000_000 });
+    expect((await addSalary(app.id, body(primary.id, 10))).status).toBe(201);
+    expect((await addSalary(app.id, body(co!.id, 10))).status).toBe(201); // other borrower, same month
+    expect((await addSalary(app.id, body(primary.id, 9))).status).toBe(201); // same borrower, other month
+    expect((await addSalary(app.id, body(primary.id, 10))).status).toBe(409);
+    const row = (await salaryRows(app.id, primary.id)).find((r) => r.month === 10)!;
+    expect((await http().delete(url(app.id, `/salaries/${row.id}`)).set(officer)).status).toBeLessThan(300);
+    expect((await addSalary(app.id, body(primary.id, 10))).status).toBe(201);
+  });
+
+  it('F2-14: a manual month that НДШ already has is rejected (409 SALARY_MONTH_IN_NDSH) unless it names a different employer (second job); the average is never doubled', async () => {
+    const { app, primary } = await setup();
+    await fetchNdsh(app.id, primary.id);
+    await calculate(app.id, primary.id);
+    for (const employer of [undefined, ' монгол  ШУУДАН ххк ']) {
+      const res = await addSalary(app.id, { customerId: primary.id, ...(employer ? { employer } : {}), year: 2026, month: 10, salary: 1_500_000 });
+      expect(res.status, JSON.stringify(res.body)).toBe(409);
+      expect(res.body.code).toBe('SALARY_MONTH_IN_NDSH');
+      expect(res.body.message).toContain('2026-10');
+    }
+    expect(parse(await http().get(url(app.id)).set(officer)).borrowers[0]!.summary.avgSalaryMonthly).toBe(1_500_000);
+    const second = parse(await addSalary(app.id, { customerId: primary.id, employer: 'Хоёр дахь ажил', year: 2026, month: 10, salary: 500_000 }));
+    expect(second.borrowers[0]!.summary.avgSalaryMonthly).toBe(1_541_666.67);
+    expect((await addSalary(app.id, { customerId: primary.id, employer: ' хоёр  ДАХЬ ажил', year: 2026, month: 10, salary: 1 })).body.code).toBe('SALARY_MONTH_DUPLICATE'); // нэмэлт ажлыг давтахгүй
+    expect((await addSalary(app.id, { customerId: primary.id, year: 2025, month: 10, salary: 300_000 })).status).toBe(201); // НДШ-д байхгүй сар
+  });
+
+  it('F2-14: fetching НДШ after hand-entered salary drops only the manual rows it now repeats (same month + blank / same employer); the month is counted once', async () => {
+    const { app, primary } = await setup();
+    expect((await addSalary(app.id, { customerId: primary.id, year: 2026, month: 10, salary: 1_500_000 })).status).toBe(201); // НДШ-тэй давхцана
+    expect((await addSalary(app.id, { customerId: primary.id, employer: 'Хоёр дахь ажил', year: 2026, month: 9, salary: 500_000 })).status).toBe(201); // нэмэлт ажил
+    expect((await addSalary(app.id, { customerId: primary.id, year: 2025, month: 10, salary: 300_000 })).status).toBe(201); // НДШ-ийн хүрээнээс гадуур
+    const fetched = parse(await fetchNdsh(app.id, primary.id));
+    const manual = fetched.borrowers[0]!.salaries.filter((s) => s.source === 'MANUAL').map((s) => `${s.year}-${s.month}`).sort();
+    expect(manual).toEqual(['2025-10', '2026-9']);
+    expect(fetched.borrowers[0]!.salaries.filter((s) => s.year === 2026 && s.month === 10)).toHaveLength(1);
+    const calc = parse(await calculate(app.id, primary.id, '2025-10', '2026-10'));
+    expect(calc.borrowers[0]!.summary).toMatchObject({ months: 13, salaryTotal: 18_800_000, avgSalaryMonthly: 1_446_153.85 });
+    const audit = await t.prisma.auditLog.findFirstOrThrow({ where: { applicationId: app.id, action: 'INCOME_NDSH_FETCHED' } });
+    expect(audit.afterJson).toMatchObject({ rows: 12, supersededManual: 1 });
   });
 });
