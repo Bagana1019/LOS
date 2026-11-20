@@ -1,6 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { Clock } from '@los/nest-common';
-import { runExclusive } from '@los/database';
+import { insertAuditRows, runExclusive } from '@los/database';
 import { PrismaService } from '../../prisma.service';
 import { OrgSettings } from '../../shared/org-settings';
 
@@ -56,7 +56,7 @@ export class DraftArchiveService implements OnModuleInit, OnModuleDestroy {
       if (!stale.length) return { archived: 0, days };
       const now = this.clock.now();
       await tx.loanApplication.updateMany({ where: { id: { in: stale.map((s) => s.id) } }, data: { archivedAt: now } });
-      await tx.auditLog.createMany({ data: stale.map((s) => ({ orgId, entity: 'LOAN_APPLICATION', entityId: s.id, action: 'DRAFT_ARCHIVED', actorId, applicationId: s.id, at: now, afterJson: { archivedAt: now.toISOString(), days } })) });
+      await insertAuditRows(tx, stale.map((s) => ({ orgId, entity: 'LOAN_APPLICATION', entityId: s.id, action: 'DRAFT_ARCHIVED', actorId, applicationId: s.id, at: now, afterJson: { archivedAt: now.toISOString(), days } })));
       return { archived: stale.length, days };
     });
   }

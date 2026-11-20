@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { auditDiff, recordAudit, sanitizeForAudit } from './audit';
+import { auditDiff, insertAuditRow, insertAuditRows, recordAudit, sanitizeForAudit } from './audit';
 import { buildEvent, enqueueOutbox } from './outbox';
 import { consumeOnce, idempotentHandler } from './processed-events';
 
@@ -59,6 +59,20 @@ describe('audit', () => {
     const create = vi.fn(async () => ({}));
     await recordAudit({ auditLog: { create } }, { orgId: 'o1', entity: 'LoanApplication', entityId: 'a1', action: 'STATUS_CHANGED', actorId: 'u1', beforeJson: { status: 'DRAFT', token: 't' }, afterJson: { status: 'SUBMITTED' }, applicationId: 'a1' });
     expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ beforeJson: { status: 'DRAFT', token: '[redacted]' }, afterJson: { status: 'SUBMITTED' }, applicationId: 'a1', correlationId: null }) });
+  });
+  it('insertAuditRow passes the row through unchanged and returns the client own promise (PrismaPromise stays batchable)', () => {
+    const lazy = { lazyPrismaPromise: true };
+    const create = vi.fn(() => lazy);
+    const row = { orgId: 'o1', entity: 'USER', entityId: 'u2', action: 'USER_CREATED', actorId: 'u1', afterJson: { password: 'kept-as-given' }, ip: '1.2.3.4' };
+    expect(insertAuditRow({ auditLog: { create } }, row)).toBe(lazy);
+    expect(create).toHaveBeenCalledWith({ data: row });
+  });
+  it('insertAuditRows forwards rows and skipDuplicates only when given', () => {
+    const createMany = vi.fn(() => ({ count: 1 }));
+    const rows = [{ orgId: 'o1', entity: 'E', entityId: 'e1', action: 'A', at: new Date('2026-11-19T00:00:00Z') }];
+    insertAuditRows({ auditLog: { createMany } }, rows);
+    insertAuditRows({ auditLog: { createMany } }, rows, { skipDuplicates: true });
+    expect(createMany.mock.calls).toEqual([[{ data: rows }], [{ data: rows, skipDuplicates: true }]]);
   });
   it('auditDiff keeps only changed fields', () => {
     expect(auditDiff({ a: 1, b: 2, c: { x: 1 } }, { a: 1, b: 3, c: { x: 1 }, d: 4 })).toEqual({ before: { b: 2, d: undefined }, after: { b: 3, d: 4 } });

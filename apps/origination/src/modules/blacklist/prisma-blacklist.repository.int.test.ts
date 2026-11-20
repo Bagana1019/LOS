@@ -53,6 +53,18 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
       expect(await outbox(event.eventId)).toMatchObject({ id: event.eventId, type: 'BlacklistEntryChanged', payload: event, publishedAt: null });
     });
 
+    it('writes the FR-13.5 audit row in the same transaction (and none when the CAS update rolls back)', async () => {
+      const row = makeRow();
+      await repo.saveWithEvent(row, makeEvent(row), null, { action: 'CREATE', actorId: 'user-1', correlationId: 'corr-a', before: null, after: { severity: 'BLACK' } });
+      const audit = await prisma.auditLog.findMany({ where: { orgId, entityId: row.id } });
+      expect(audit).toEqual([expect.objectContaining({ entity: 'blacklist', action: 'CREATE', actorId: 'user-1', correlationId: 'corr-a', beforeJson: null, afterJson: { severity: 'BLACK' } })]);
+
+      const stale = makeRow({ ...row, name: 'X', updatedAt: new Date('2026-10-28T11:00:00.000Z') });
+      await expect(repo.saveWithEvent(stale, makeEvent(stale), new Date('2000-01-01T00:00:00.000Z'), { action: 'UPDATE', actorId: 'user-2', correlationId: 'corr-b', before: { name: row.name }, after: { name: 'X' } }))
+        .rejects.toBeInstanceOf(StaleBlacklistEntryError);
+      expect(await prisma.auditLog.count({ where: { orgId, entityId: row.id } })).toBe(1);
+    });
+
     it('updates an existing row by id together with a new event', async () => {
       const row = makeRow();
       await repo.saveWithEvent(row, makeEvent(row), null);
