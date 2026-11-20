@@ -5,10 +5,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { enqueueOutbox, insertAuditRow } from '@los/database';
 import type { AmlSubjectType } from '@los/contracts';
-import { ChangeConflictError, ChangeHandlerRegistry, ChangeValidationError, type ApplyContext, type ChangeHandler, type SnapshotContext } from '../maker-checker/change-handler';
+import { ChangeConflictError, ChangeHandlerRegistry, ChangeValidationError, type ApplyContext, type ChangeHandler, type SnapshotContext, type UnappliedContext } from '../maker-checker/change-handler';
 
 export const BLACKLIST_CHANGE_TARGET = 'BLACKLIST_ENTRY';
 export const BLACKLIST_CHANGE_ACTION = 'ACTIVATE_BLACK';
+/** onNotApplied: мөр уншсан ба бичсэн хооронд өөрчлөгдвөл дахин уншиж оролдох тоо. */
+const MAX_CLEAR_ATTEMPTS = 3;
+const SYSTEM_ACTOR = 'system';
 const Payload = z.object({ entryId: z.string().uuid() });
 type Payload = z.infer<typeof Payload>;
 
@@ -68,5 +71,34 @@ export class BlacklistEscalationHandler implements ChangeHandler<Payload> {
       orgId: row.orgId, entity: 'blacklist', entityId: row.id, action: 'ESCALATE_APPLIED', actorId, correlationId: request.correlationId,
       beforeJson: { severity: row.severity, pendingSeverity: 'BLACK', isActive: row.isActive }, afterJson: { severity: 'BLACK', pendingSeverity: null, isActive: true, changeRequestId: request.id },
     });
+  }
+
+  /**
+   * F8-2: хүсэлт татгалзагдсан/цуцлагдсан/хугацаа дууссан/FAILED бол мөр `pendingSeverity = BLACK`-ээр мөнхөд үлдэж, UI "батлах хүлээгдэж байна" гэж харуулаад
+   * шинэ хүсэлт үүсэхгүй байсан. Зөвхөн pending тэмдэглэгээг цэвэрлэнэ: severity/isActive өөрчлөгдөхгүй тул kyc projection-д event гаргахгүй.
+   * Мөр pending Хар биш (Саарал болгосон, идэвхгүй болгосон) эсвэл байхгүй бол юу ч хийхгүй (идэмпотент). Бичилт нь apply шиг updatedAt дээрх compare-and-set.
+   */
+  async onNotApplied({ db, request, outcome, actor }: UnappliedContext) {
+    const tx = db as EscalationTx;
+    const actorId = actor?.userId ?? SYSTEM_ACTOR;
+    for (let attempt = 0; attempt < MAX_CLEAR_ATTEMPTS; attempt++) {
+      const row = await tx.blacklist.findFirst({ where: { id: request.targetId, orgId: request.orgId } });
+      if (!row || row.pendingSeverity !== 'BLACK') return;
+      const at = new Date(Math.max(Date.now(), row.updatedAt.getTime() + 1)); // updatedAt хатуу өснө: өмнө уншсан бусад writer-ийн CAS зөрнө
+      const { count } = await tx.blacklist.updateMany({
+        where: { id: row.id, orgId: row.orgId, pendingSeverity: 'BLACK', updatedAt: row.updatedAt },
+        data: { pendingSeverity: null, updatedAt: at, updatedBy: actorId },
+      });
+      if (count === 1) {
+        await insertAuditRow(tx, {
+          orgId: row.orgId, entity: 'blacklist', entityId: row.id, action: `ESCALATE_${outcome}`, actorId, correlationId: request.correlationId,
+          beforeJson: { severity: row.severity, pendingSeverity: 'BLACK', isActive: row.isActive },
+          afterJson: { severity: row.severity, pendingSeverity: null, isActive: row.isActive, changeRequestId: request.id, outcome },
+        });
+        return;
+      }
+    }
+    // Бусад writer давтан өөрчилсөөр байвал чимээгүй орхихгүй: хаалт бүхэлдээ буцаагдаж (хүсэлт PENDING хэвээр) дуудагч дахин оролдоно.
+    throw new Error('blacklist entry was modified concurrently; could not clear the pending Black marker');
   }
 }

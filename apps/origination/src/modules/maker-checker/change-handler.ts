@@ -58,6 +58,19 @@ export interface ApplyContext<P> {
   checker: Actor | null;
 }
 
+/** apply() ДУУДАГДААГҮЙ терминал үр дүн: татгалзсан, цуцалсан, хугацаа дууссан, эсвэл apply хуучирсан өгөгдөлд тулж FAILED болсон. */
+export type UnappliedOutcome = 'REJECTED' | 'CANCELLED' | 'EXPIRED' | 'FAILED';
+export interface UnappliedContext {
+  /** Хүсэлтийн төлөв өөрчлөгдөж буй ИЖИЛ tx-ийн handle (ApplyContext.db-тэй адил) — handler зөвхөн үүгээр бичнэ. */
+  db: unknown;
+  repo: ChangeRequestTx;
+  /** Хаагдсаны дараах мөр (status, checkerComment, failureReason шинэчлэгдсэн) */
+  request: ChangeRequestRow;
+  outcome: UnappliedOutcome;
+  /** REJECTED/FAILED: батлагч, CANCELLED: maker, EXPIRED: null (sweeper/системийн хаалт) */
+  actor: Actor | null;
+}
+
 /**
  * Домэйн модуль бүр өөрийн "батлуулах ёстой өөрчлөлт" бүрийг handler болгон бүртгэнэ (ChangeHandlerRegistry.register).
  * Бүртгэсний дараа MakerCheckerService.submit/execute нь policy-д тулгуурлан 4 нүдний урсгалд оруулна.
@@ -82,6 +95,13 @@ export interface ChangeHandler<P = unknown> {
   readonly codec?: PayloadCodec;
   /** Өөрчлөлтийг хэрэгжүүлнэ — checker батлах үед (эсвэл DIRECT горимд) нэг tx дотор */
   apply(ctx: ApplyContext<P>): Promise<void>;
+  /**
+   * Сонголттой. Хүсэлт apply-гүйгээр хаагдахад (татгалзсан/цуцалсан/хугацаа дууссан/FAILED) статус өөрчлөлттэй НЭГ tx-д дуудагдана:
+   * handler зорилтдоо тавьсан "хүлээгдэж буй" тэмдэглэгээг (жишээ нь blacklist.pendingSeverity) цэвэрлэх ёстой, эс бөгөөс зорилт мөнхөд pending үлдэнэ.
+   * Идэмпотент байх ёстой. Алдаа шидвэл хаалт бүхэлдээ буцаагдана (хүсэлт PENDING хэвээр, алдаа дуудагчид гарна).
+   * Дуудагдахгүй тохиолдол: батлагдсан (apply), DIRECT, мөн хугацаа дууссан хүсэлтийг ИЖИЛ tx-д шинэ илгээлт шууд сольж байгаа үед (шинэ хүсэлт зорилтын pending төлвийг өөртөө авна).
+   */
+  onNotApplied?(ctx: UnappliedContext): Promise<void>;
 }
 
 export class ChangeHandlerRegistry {

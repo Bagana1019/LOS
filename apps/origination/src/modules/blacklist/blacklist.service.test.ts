@@ -222,13 +222,15 @@ describe('BlacklistService', () => {
 
     it('stamps every create / update / deactivate / reactivate event with a fresh changedAt and the full current payload', async () => {
       const { id } = await service.create(adminCtx(), input());
+      // F8-1: төрөл нь регистрээс тодорхойлогдох тул customerType-ийг регистртэй хамт (хос хэлбэрээр) солино.
+      const legal = { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', registerNoHash: hashRegisterNo('1234567') };
       const steps: [string, () => Promise<unknown>, Record<string, unknown>][] = [
         ['name only', () => service.update(adminCtx(), id, patch({ name: 'Шинэ нэр' })), { name: 'Шинэ нэр' }],
-        ['customerType only', () => service.update(adminCtx(), id, patch({ customerType: 'LEGAL_ENTITY' })), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY' }],
-        ['reasonCode only', () => service.update(adminCtx(), id, patch({ reasonCode: 'FRAUD_SUSPECT' })), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT' }],
-        ['listType only', () => service.update(adminCtx(), id, patch({ listType: 'FRAUD' })), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD' }],
-        ['deactivate', () => service.deactivate(adminCtx(), id, 'test reason'), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD', isActive: false }],
-        ['reactivate', () => service.update(adminCtx(), id, patch({ isActive: true })), { name: 'Шинэ нэр', customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD', isActive: true }],
+        ['customerType with its register', () => service.update(adminCtx(), id, patch({ customerType: 'LEGAL_ENTITY', registerNo: '1234567' })), legal],
+        ['reasonCode only', () => service.update(adminCtx(), id, patch({ reasonCode: 'FRAUD_SUSPECT' })), { ...legal, reasonCode: 'FRAUD_SUSPECT' }],
+        ['listType only', () => service.update(adminCtx(), id, patch({ listType: 'FRAUD' })), { ...legal, reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD' }],
+        ['deactivate', () => service.deactivate(adminCtx(), id, 'test reason'), { ...legal, reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD', isActive: false }],
+        ['reactivate', () => service.update(adminCtx(), id, patch({ isActive: true })), { ...legal, reasonCode: 'FRAUD_SUSPECT', listType: 'FRAUD', isActive: true }],
       ];
       expect(repo.events).toHaveLength(1);
       expect(repo.events[0]).toEqual(expectedEvent(id, {}, 0));
@@ -245,22 +247,22 @@ describe('BlacklistService', () => {
       repo.events.forEach((e) => expect(DomainEvent.parse(e)).toEqual(e));
     });
 
-    it('emits the changed customerType / reasonCode from an import that changes only that field', async () => {
+    it('emits the changed reasonCode from an import that changes only that field, and rejects a customerType that does not fit the register', async () => {
       const { id } = await service.create(adminCtx(), input());
       clock.advance(HOUR);
+      // F8-1: төрөл нь регистрээс тодорхойлогдох тул зөвхөн төрлийг солих импорт мөрийн алдаа болно, event гарахгүй
       const onlyType = await service.importRows(adminCtx(), [{ row: 1, data: entryInput({ customerType: 'LEGAL_ENTITY' }) }]);
-      expect(onlyType).toEqual({ created: 0, updated: 1, skipped: 0, errors: [] });
-      expect(repo.events.at(-1)).toEqual(expectedEvent(id, { customerType: 'LEGAL_ENTITY' }, HOUR));
+      expect(onlyType).toEqual({ created: 0, updated: 0, skipped: 0, errors: [{ row: 1, message: expect.stringContaining('customerType') }] });
+      expect(repo.events).toHaveLength(1);
 
-      clock.advance(HOUR);
-      const onlyReason = await service.importRows(adminCtx(), [{ row: 1, data: entryInput({ customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT' }) }]);
+      const onlyReason = await service.importRows(adminCtx(), [{ row: 1, data: entryInput({ reasonCode: 'FRAUD_SUSPECT' }) }]);
       expect(onlyReason).toEqual({ created: 0, updated: 1, skipped: 0, errors: [] });
-      expect(repo.events.at(-1)).toEqual(expectedEvent(id, { customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT' }, 2 * HOUR));
+      expect(repo.events.at(-1)).toEqual(expectedEvent(id, { reasonCode: 'FRAUD_SUSPECT' }, HOUR));
 
       clock.advance(HOUR);
-      const same = await service.importRows(adminCtx(), [{ row: 1, data: entryInput({ customerType: 'LEGAL_ENTITY', reasonCode: 'FRAUD_SUSPECT' }) }]);
+      const same = await service.importRows(adminCtx(), [{ row: 1, data: entryInput({ reasonCode: 'FRAUD_SUSPECT' }) }]);
       expect(same).toEqual({ created: 0, updated: 0, skipped: 1, errors: [] });
-      expect(repo.events).toHaveLength(3);
+      expect(repo.events).toHaveLength(2);
       strictlyIncreasing();
     });
 

@@ -21,8 +21,13 @@ const MODIFIER_LETTER = /\p{Lm}/u;
  * Mark (нийлэхгүй үлдсэн) нь нормчлогчид хэвийн хаягддаг, үсэг/цифр алдагдуулахгүй тул зөвшөөрнө; \p{Lm} нь нормчлогчид хаягддаг тул үгүй.
  */
 export function hasOnlyRegisterChars(registerNo: string): boolean {
-  const rest = registerNo.replace(INVISIBLE, '').normalize('NFKC').replace(SEPARATORS, '');
+  const rest = stripRegisterSeparators(registerNo);
   return LETTERS_DIGITS_MARKS.test(rest) && !MODIFIER_LETTER.test(rest);
+}
+
+/** Нормчлогчийн чимээгүй хаядаг тусгаарлагч (+ үл үзэгдэх) тэмдэгтийг хассан (NFKC-ийн дараах) регистр. F8-1: хэлбэрийн шалгалт энэ дээр хийгдэнэ. */
+export function stripRegisterSeparators(registerNo: string): string {
+  return registerNo.replace(INVISIBLE, '').normalize('NFKC').replace(SEPARATORS, '');
 }
 
 // "---" шиг тэмдэгт нормчлогдоод хоосон болвол hash нь бүх ийм регистрт таарна.

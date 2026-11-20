@@ -337,7 +337,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
       const setup = async (i: number) => {
         const writer = makeService(repo, new FixedClock(), ids);
         const ctx = adminCtx({ orgId });
-        const entry = await writer.create(ctx, BlacklistCreateBody.parse(entryInput({ registerNo: `УБ9000000${i}` })));
+        const entry = await writer.create(ctx, BlacklistCreateBody.parse(entryInput({ registerNo: `УБ${90000000 + i}` }))); // 8 орон: `УБ9000000${i}` нь i ≥ 10 үед 9 орон болж F8-1-ийн шалгалтад няцаагдана
         await writer.deactivate(ctx, entry.id, 'test reason');
         return { ctx, id: entry.id, writer };
       };
