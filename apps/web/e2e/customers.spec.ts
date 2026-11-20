@@ -69,7 +69,10 @@ test('шинэ харилцагч: регистр → иргэний код → 
   await expect(page.getByRole('button', { name: 'Зураг орсон' })).toBeVisible();
   await page.getByTestId('customer-submit').click();
 
+  // F1-15: toast нь картаас ӨМНӨ (карт compile удаан бол 3с-д арилдаг), карт дээр нь тогтвортой баннер
+  await expect(page.locator('.ant-message-notice').filter({ hasText: 'Харилцагч бүртгэгдлээ' })).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/customer/${ID}$`));
+  await expect(page.getByTestId('customer-created-banner')).toBeVisible();
   const sent = api.lastCall('POST', '/customers')?.body as Record<string, unknown>;
   expect(api.lastCall('POST', '/customers/xyp-otp')?.body).toEqual({ registerNo: 'УБ90010112' }); // утасны дугаар явахгүй
   expect(api.lastCall('POST', '/customers/xyp-fetch')?.body).toEqual({ registerNo: 'УБ90010112', otp: '123456' });

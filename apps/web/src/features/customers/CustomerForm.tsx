@@ -17,6 +17,10 @@ interface Props {
   serverIssues: { path: string; message: string }[];
   submitting: boolean;
   onSubmit: (payload: Record<string, unknown>) => void;
+  /** Илгээх товчийн текст (анхдагч «Бүртгэх»). Засах горимд «Хадгалах». */
+  submitLabel?: string;
+  /** Илгээх товчийн хажууд (жишээ «Болих»). */
+  extra?: React.ReactNode;
 }
 
 const L = (k: string) => t(`customer.field.${k}`);
@@ -66,7 +70,7 @@ function ContactHomeAddress({ form, index, residence }: { form: ReturnType<typeo
 const stripHomeSame = (values: Values): Values => ({ ...values, contacts: ((values.contacts as Values[] | undefined) ?? []).map(({ homeSame: _h, ...c }) => c) });
 
 /** FR-2.3 / FR-2.4: харилцагчийн бүрэн маягт. Заавал талбарыг `@los/contracts`-ийн `CustomerInput`-аар шалгана (сервертэй ижил). */
-export function CustomerForm({ customerType, registerNo, initial, prefilled, serverIssues, submitting, onSubmit }: Props) {
+export function CustomerForm({ customerType, registerNo, initial, prefilled, serverIssues, submitting, onSubmit, submitLabel, extra }: Props) {
   const { message } = AntApp.useApp();
   const [form] = Form.useForm<Values>();
   const individual = customerType === 'INDIVIDUAL';
@@ -221,7 +225,10 @@ export function CustomerForm({ customerType, registerNo, initial, prefilled, ser
         </Flex>
       </Card>
 
-      <Button type="primary" htmlType="submit" loading={submitting} data-testid="customer-submit">{t('customer.new.submit')}</Button>
+      <Flex gap={8} wrap>
+        <Button type="primary" htmlType="submit" loading={submitting} data-testid="customer-submit">{submitLabel ?? t('customer.new.submit')}</Button>
+        {extra}
+      </Flex>
     </Form>
   );
 }

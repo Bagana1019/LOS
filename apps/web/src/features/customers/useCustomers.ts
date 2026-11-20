@@ -19,6 +19,15 @@ export const useXypOtp = () => useMutation({ mutationFn: (registerNo: string) =>
 /** 2-р алхам: иргэний кодоор татна. Код нэг удаагийнх — автоматаар дахин оролдохгүй. */
 export const useXypFetch = () => useMutation({ mutationFn: (v: { registerNo: string; otp: string }) => api.xypFetch(v.registerNo, v.otp) });
 
+/** ААН (F1-16): иргэний код хүсэхгүй, зөвхөн бүртгэлтэй эсэх + хар жагсаалтыг шалгана (SMS, ХУР-ын хязгаарт тоологдохгүй). */
+export const useLookupCustomer = () => useMutation({ mutationFn: (registerNo: string) => api.lookupCustomer(registerNo) });
+
+/** F1-15: засвар амжилттай бол карт/жагсаалтыг дахин татна; `mutate`-ийн `onSuccess` нь шинэ карт ирсний ДАРАА ажиллана (хуучин утга гялсхийхгүй). */
+export function useUpdateCustomer(id: string) {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: (body: Record<string, unknown>) => api.updateCustomer(id, body), onSuccess: () => qc.invalidateQueries({ queryKey: customersKey }) });
+}
+
 export function useCreateCustomer() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (body: Record<string, unknown>) => api.createCustomer(body), onSuccess: () => qc.invalidateQueries({ queryKey: customersKey }) });
