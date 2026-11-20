@@ -125,8 +125,10 @@ describe.skipIf(!DWH_TEST_URL)('DwhProjector — N4 fact dimensions (DWH Postgre
     it('enriched COMPLETED payload lands customer, period, income, cash flow, DTI (fraction), level and suspicion count', async () => {
       await projector.handle('dwh-sync-bsa', ev('StatementImported', { ...BSA_OLD, ...BSA_METRICS }, T2));
       expect(await row('fact_bsa_analysis', 'analysis_id', 'an-1')).toMatchObject({
-        customer_id: 'c-1', period_months: 6, monthly_income: '3200000.00', net_cash_flow_monthly: '900000.50', dti: '0.3820', dti_level: 'MEDIUM', suspicion_count: 2, total_income: null,
+        customer_id: 'c-1', period_months: 6, monthly_income: '3200000.00', net_cash_flow_monthly: '900000.50', dti: '0.3820', dti_level: 'MEDIUM', suspicion_count: 2,
       });
+      // total_income is derived (04-total-income-view.sql), not stored: 3 200 000.00 × 6 months.
+      expect((await pool.query(`SELECT total_income FROM v_fact_bsa_analysis WHERE analysis_id = 'an-1'`)).rows).toEqual([{ total_income: '19200000.00' }]);
       expect((await pool.query('SELECT customer_type FROM dim_customer')).rows).toEqual([{ customer_type: 'UNKNOWN' }]);
     });
     it('old v1 payload still projects: metrics NULL, suspicion_count 0', async () => {
