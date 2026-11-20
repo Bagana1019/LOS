@@ -47,13 +47,21 @@ export interface LoanSelection {
   /** null → төлөвөөр хязгаарлахгүй */
   statuses: readonly string[] | null;
   search: string | null;
+  /**
+   * 'YYYY-MM-DD' (UB): зөвхөн энэ өдрийн төгсгөл хүртэл олгогдсон зээл (түүхэн asOf-ийн багц). Заагаагүй/null → хязгаарлахгүй.
+   * `disbursed_at` NULL (MIGRATED/эхний үлдэгдэл — анхны олголтын огноо мэдэгдэхгүй) зээл хэвээр орно: огноо зохиохгүй.
+   * ХЯЗГААР: хаагдсан огнооны багана байхгүй тул asOf-ийн дараа хаагдсан (одоо CLOSED) зээлийг ACTIVE/MIGRATED багцад оруулах боломжгүй —
+   * тэд asOf-д эргэн төлөгдөж байсан ч одоогийн төлвөөр (REPAYING_STATUSES) нь шүүгдэж орхигдоно.
+   */
+  disbursedBy?: string | null;
 }
 
-export function selectionOf(input: ReportInput, statuses: readonly string[] | null, o: { currency?: boolean; search?: boolean } = {}): LoanSelection {
+export function selectionOf(input: ReportInput, statuses: readonly string[] | null, o: { currency?: boolean; search?: boolean; disbursedBy?: string | null } = {}): LoanSelection {
   const f = input.filters;
   return {
     orgId: input.scope.orgId, branchId: f.branchId, officerId: f.officerId, productId: f.productId,
     currency: o.currency === false ? null : f.currency, statuses, search: o.search === false ? null : f.search,
+    ...(o.disbursedBy ? { disbursedBy: o.disbursedBy } : {}),
   };
 }
 
@@ -74,6 +82,8 @@ export function loanConditions(sel: LoanSelection): Sql[] {
   if (sel.currency) conds.push(sql`la.currency = ${sel.currency}`);
   if (sel.statuses?.length) conds.push(sql`la.status IN (${Prisma.join([...sel.statuses])})`);
   if (sel.search) conds.push(searchCondition(sel.search));
+  // F11-2: asOf өдрийн төгсгөл (UB) хүртэл олгогдсон; installmentsCte-ийн төлбөрийн хилтэй ижил (asOf+1 өдрийн UB 00:00-аас өмнө).
+  if (sel.disbursedBy) conds.push(sql`(la.disbursed_at IS NULL OR la.disbursed_at < ${ubDayStartUtc(addDays(sel.disbursedBy, 1))}::timestamp)`);
   return conds;
 }
 

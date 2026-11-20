@@ -34,7 +34,7 @@ export const outstandingBalance = sqlReport({
     const f = input.filters;
     const statuses = f.status ? [f.status] : REPAYING_STATUSES;
     const base = sql`
-      WITH ${loansCte(selectionOf(input, statuses))}, ${installmentsCte({ asOf: f.asOf })},
+      WITH ${loansCte(selectionOf(input, statuses, { disbursedBy: f.asOf }))}, ${installmentsCte({ asOf: f.asOf })},
       ${disbursementCte},
       agg AS (
         SELECT i.application_id,

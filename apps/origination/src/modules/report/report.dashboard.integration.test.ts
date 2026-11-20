@@ -114,7 +114,8 @@ describe.skipIf(!hasTestDb)('report: dashboard (KPI) (HTTP)', () => {
       expect(d.disbursements.monthly[0].month).toBe('2025-10');
       expect(d.disbursements).toMatchObject({ thisMonthAmount: 300_000, lastMonthAmount: 0, yearToDateAmount: 2_300_000 }); // LN 10-12 хараахан үгүй
       expect(d.applications).toMatchObject({ submittedThisMonth: 1, approvedThisMonth: 1, returnedThisMonth: 0, approvalRate: 1, avgDecisionHours: 12 });
-      expect(d.portfolio).toMatchObject({ activeLoanCount: 5, outstandingPrincipal: 2_510_000, overdueAmount: 720_000, overdueLoanCount: 2, parRatio: 0.581673 });
+      // F11-2: LN нь 10-12-нд олгогдсон тул 09-30-ны багцад ороогүй (өмнө нь 5 зээл / 2,510,000 гэж буруу гарч байсан): LA 460k + LB 300k + LC 1,000k + LE 500k; PAR = (460k + 1,000k) / 2,260,000
+      expect(d.portfolio).toMatchObject({ activeLoanCount: 4, outstandingPrincipal: 2_260_000, overdueAmount: 720_000, overdueLoanCount: 2, parRatio: 0.646018 });
       expect(bucketOf(d, 'DPD_1_30')).toMatchObject({ loanCount: 1, principal: 460_000 }); // LA: 09-10 → 20 хоног (LB-1 төлөлт 10-27 хараахан үгүй)
       expect(bucketOf(d, 'DPD_90_PLUS')).toMatchObject({ loanCount: 1, principal: 1_000_000 }); // LC: 07-01 → 91 хоног
       // 9-р сар: LA 110k (50k төлсөн) + LC 220k + LF 110k (CLOSED, бүтнээр төлсөн — цуглуулалтад ордог, finding: CLOSED хасагдаж хувь хазайна) → 440k / 160k
