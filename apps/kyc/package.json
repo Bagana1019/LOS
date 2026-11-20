@@ -6,6 +6,8 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "test": "vitest run --passWithNoTests",
+    "audit:verify": "node dist/audit-seal.cli.js verify",
+    "audit:seal": "node dist/audit-seal.cli.js seal",
     "lint": "eslint src test",
     "db:generate": "node ../../scripts/prisma.mjs kyc generate",
     "db:migrate": "node ../../scripts/prisma.mjs kyc migrate deploy",

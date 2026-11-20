@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { type INestApplication, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { describeDbError } from '@los/database';
+import { assertAuditHmacKey, assertAuditSealSchedule } from './auth/audit-hmac-key';
 import { assertInternalAuthSecret } from './auth/internal-secret';
 import { loadEnvFiles } from './config';
 import { JsonLogger } from './logging/json-logger';
@@ -17,6 +18,8 @@ export interface BootstrapOptions {
   bodyParser?: boolean;
   /** `req.rawBody` (JSON/urlencoded-ийн илгээсэн байт) — provider webhook-ийн гарын үсгийг байтаар шалгахад (dms e-sign). */
   rawBody?: boolean;
+  /** `audit_log` эзэмшигч (gateway, origination, kyc): production-д AUDIT_HMAC_KEY шалгана (audit seal). */
+  auditSeal?: boolean;
   configure?: (app: INestApplication) => void | Promise<void>;
 }
 
@@ -24,6 +27,7 @@ export interface BootstrapOptions {
 export async function bootstrapService(opts: BootstrapOptions): Promise<INestApplication> {
   loadEnvFiles();
   assertInternalAuthSecret(); // H2: production-д нууцгүйгээр эхлэхгүй (NestFactory.create-ээс ӨМНӨ)
+  if (opts.auditSeal) { assertAuditHmacKey(); assertAuditSealSchedule(); } // audit seal: production-д түлхүүр сул / seal чимээгүй унтарсан бол эхлэхгүй
   const logger = new JsonLogger(opts.service);
   let app: INestApplication | undefined;
   try {

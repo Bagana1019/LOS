@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { CommonModule, EventsModule, HealthModule, envFilePaths } from '@los/nest-common';
+import { AuditSealModule, CommonModule, EventsModule, HealthModule, envFilePaths } from '@los/nest-common';
 import { PrismaModule, PrismaService } from './prisma.service';
 // Feature модуль бүр: өөрийн мөрийг `import` + `imports` хоёрт задлана (мөр тус бүр тусдаа тул зэрэгцээ салбар мерж хийхэд зөрчилгүй).
 import { InquiryModule } from './modules/inquiry/inquiry.module';
@@ -18,6 +18,7 @@ import { CollateralChecksModule } from './modules/collateral-checks/collateral-c
     PrismaModule,
     EventsModule.forRoot({ schema: 'kyc', db: PrismaService }),
     HealthModule.forServiceAsync({ service: 'kyc', inject: [PrismaService], useFactory: (db: PrismaService) => ({ db: () => db.$queryRaw`SELECT 1` }) }),
+    AuditSealModule.forRoot({ schema: 'kyc', db: PrismaService }),
     InquiryModule,
     XypModule,
     // DanModule,
