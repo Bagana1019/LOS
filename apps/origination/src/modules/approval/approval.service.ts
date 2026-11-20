@@ -158,7 +158,8 @@ export class ApprovalService {
       include: {
         product: { select: { name: true } }, steps: { select: { stepKey: true, status: true } }, collaterals: { select: { id: true } },
         borrowers: { where: { role: 'PRIMARY' }, include: { customer: true }, take: 1 },
-        schedules: { where: { isStale: false }, orderBy: { generatedAt: 'desc' }, take: 1, include: { rows: { orderBy: { seq: 'asc' }, take: 1 } } },
+        // №0 мөр нь олголт (total 0) — «Сарын төлбөр» нь эхний бодит төлбөр (№1+). Үгүй бол батлагч 0₮ харна (F3-1b).
+        schedules: { where: { isStale: false }, orderBy: { generatedAt: 'desc' }, take: 1, include: { rows: { where: { seq: { gte: 1 } }, orderBy: { seq: 'asc' }, take: 1 } } },
         decisions: { orderBy: { decidedAt: 'desc' }, take: 1 },
       },
     });

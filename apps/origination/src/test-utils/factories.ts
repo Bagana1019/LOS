@@ -53,14 +53,19 @@ export async function createBorrower(prisma: PrismaService, applicationId: strin
   return prisma.loanApplicationBorrower.create({ data: { orgId: ORG, applicationId, customerId, role, isPrimary: role === 'PRIMARY', incomeIncluded: role === 'PRIMARY' || role === 'CO_BORROWER', ...o } });
 }
 
-/** Жишээ ЭТХ: тэнцүү төлбөр (annuity), эхний төлөх өдөр firstDue (YYYY-MM-DD), сар бүр 30 хоног. */
-export async function createSchedule(prisma: PrismaService, applicationId: string, o: { principal?: number; rate?: number; months?: number; firstDue: string; stale?: boolean }) {
+/**
+ * Жишээ ЭТХ: тэнцүү төлбөр (annuity), эхний төлөх өдөр firstDue (YYYY-MM-DD), сар бүр 30 хоног.
+ * `disbursementRow`: жинхэнэ үүсгэгч (`@los/calc` buildSchedule) шиг №0 олголтын мөр (total 0) нэмнэ. Анхдагчаар хасагдсан — №1-ээс эхэлсэн ЭТХ-д найдсан
+ * хуучин тестүүд хэвээр; «эхний мөр = эхний төлбөр» гэж андуурах алдааг (F3-1b) илрүүлэх тест л асаана.
+ */
+export async function createSchedule(prisma: PrismaService, applicationId: string, o: { principal?: number; rate?: number; months?: number; firstDue: string; stale?: boolean; disbursementRow?: boolean }) {
   const principal = o.principal ?? 1_200_000;
   const rate = o.rate ?? 24;
   const months = o.months ?? 12;
   const payment = annuityPayment(principal, rate, months);
   let balance = principal;
   const rows: Prisma.RepaymentScheduleRowCreateWithoutScheduleInput[] = [];
+  if (o.disbursementRow) rows.push({ seq: 0, dueDate: new Date(addDays(o.firstDue, -30) + 'T00:00:00Z'), days: 0, disbursement: principal, principal: 0, interest: 0, total: 0, balance: principal });
   for (let seq = 1; seq <= months; seq++) {
     const interest = Math.round(balance * (rate / 100 / 12) * 100) / 100;
     const princ = seq === months ? balance : Math.round((payment - interest) * 100) / 100;

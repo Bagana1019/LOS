@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { DecisionView, MyApprovalListResponse } from '@los/contracts';
-import { actors, createApplication, createBorrower, createCustomer, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
+import { actors, createApplication, createBorrower, createCustomer, createSchedule, hasTestDb, ORG, resetDb } from '../../test-utils/factories';
 import { KYC_AML_PORT } from '../aml/ports/kyc-aml.port';
 import { FakeKycAml } from '../aml/testing/fake-kyc-aml.port';
 import { DMS_DOCUMENTS } from '../document/dms-documents.port';
@@ -191,6 +191,30 @@ describe.skipIf(!hasTestDb)('approval flow (DB)', () => {
     await vote(app.id, bm, 'APPROVE').expect(200);
     expect((await mine(bm)).total).toBe(0);
     expect((await mine(ap(1))).items[0]).toMatchObject({ applicationId: app.id, levelNo: 2, levelName: 'Төв', version: 1 });
+  });
+
+  // FR-10.1 · F3-1b: шийдвэрийн хуудасны «Сарын төлбөр» нь ЭТХ-ийн №0 олголтын мөр (total 0) биш, эхний бодит төлбөр (№1) байх ёстой.
+  // Жинхэнэ ЭТХ-д №0 мөр бий (`@los/calc` buildSchedule) тул `disbursementRow` асаалттай — үгүй бол алдааг тест харахгүй.
+  describe('шийдвэрийн хураангуй: сарын төлбөр', () => {
+    it('ЭТХ-д №0 олголтын мөр байхад эхний бодит төлбөрийг харуулна (0₮ биш)', async () => {
+      const app = await draft(1_200_000);
+      const sched = await createSchedule(t.prisma, app.id, { principal: 1_200_000, rate: 24, months: 12, firstDue: '2026-12-03', disbursementRow: true });
+      expect(sched.rows[0]).toMatchObject({ seq: 0 });
+      expect(Number(sched.rows[0]!.total)).toBe(0);
+      const first = sched.rows.find((r) => r.seq === 1)!;
+      expect(Number(first.total)).toBeGreaterThan(0);
+
+      const v = await view(app.id);
+      expect(v.summary.monthlyPayment).toBe(Number(first.total));
+    });
+
+    it('ЭТХ үүсээгүй, эсвэл хуучирсан (stale) бол сарын төлбөр null — 0₮ гэж хуурамч дүн харуулахгүй', async () => {
+      const none = await draft(1_200_000);
+      expect((await view(none.id)).summary.monthlyPayment).toBeNull();
+      const stale = await draft(1_200_000);
+      await createSchedule(t.prisma, stale.id, { firstDue: '2026-12-03', disbursementRow: true, stale: true });
+      expect((await view(stale.id)).summary.monthlyPayment).toBeNull();
+    });
   });
 
   // FR-1.5 / FR-10.2 (M3 review): жагсаалтын мөрөөс санал өгөхдөө харсан түвшин, хувилбараа дамжуулна. Хоцрогдсон бол өөр шийдвэрт санал өгөхгүй — 409 VOTE_TARGET_CHANGED.
