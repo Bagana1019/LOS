@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AUDIT_SEAL_COLUMNS, advisoryLockKey, auditKeyringFromEnv, insertAuditRow, purgeAuditLogForTests, runAuditSealCli, sealAuditLog, verifyAuditChain, type AuditKeyring, type AuditSealDb } from '@los/database';
+import { AUDIT_SEAL_COLUMNS, advisoryLockKey, auditKeyringFromEnv, insertAuditRow, purgeAuditLogForTests, runAuditSealCli, waitUntilAuditRowsSealable, sealAuditLog, verifyAuditChain, type AuditKeyring, type AuditSealDb } from '@los/database';
 import { AuditSealerHost } from '@los/nest-common';
 import { PrismaService } from '../src/prisma.service';
 
@@ -20,7 +20,12 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('audit seal (origination, Postgr
   let db: PrismaService;
   const orgId = `org-seal-${randomUUID()}`;
   const row = (action: string) => ({ orgId, entity: 'TEST', entityId: randomUUID(), action, actorId: 'u1', afterJson: { b: 2, a: [1, { z: 1, y: null }] } });
-  const insert = (n: number, action = 'SEAL_TEST') => db.$transaction(async (tx) => { for (let i = 0; i < n; i += 1) await insertAuditRow(tx, row(`${action}_${i}`)); });
+  /** CI-д бусад багц нэг Postgres-ийг хуваалцана: xid horizon түр хоцорч болно, тиймээс commit хийсэн мөр seal-д орох хүртэл хүлээнэ (wait=false: тест өөрөө нээлттэй транзакц барьсан эсвэл horizon-г хуурамчаар тааруулсан). */
+  const sealable = () => waitUntilAuditRowsSealable(db, S);
+  const insert = async (n: number, action = 'SEAL_TEST', wait = true) => {
+    await db.$transaction(async (tx) => { for (let i = 0; i < n; i += 1) await insertAuditRow(tx, row(`${action}_${i}`)); });
+    if (wait) await sealable();
+  };
   const count = async (t: 'audit_log' | 'audit_seal') => (await db.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM "${S}"."${t}"`))[0]!.n;
   /** Trigger-ийг ЭНЭ транзакцид л унтрааж SQL ажиллуулна (DDL транзакцтай буцна). */
   const tamper = (table: 'audit_log' | 'audit_seal', trigger: string, sql: string, ...v: unknown[]) => db.$transaction(async (tx) => {
@@ -165,7 +170,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('audit seal (origination, Postgr
     const started = gate();
     const slow = db.$transaction(async (tx) => { await insertAuditRow(tx, row('SLOW')); started.open(); await hold.p; }, { timeout: 20_000 });
     await started.p;
-    await insert(1, 'FAST'); // xid > slow-ийн xid, commit-ээ түрүүлж хийнэ
+    await insert(1, 'FAST', false); // xid > slow-ийн xid, commit-ээ түрүүлж хийнэ (slow нээлттэй тул horizon-г хүлээхгүй)
     expect((await sealAuditLog(db, CFG, K1)).seals).toEqual([]); // FAST commit болсон ч horizon-оос дээш
     hold.open();
     await slow;
@@ -217,6 +222,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('audit seal (origination, Postgr
       await Promise.all(writers);
       writing = false;
       const sealedDuring = (await Promise.all(sealers)).reduce((a, b) => a + b, 0);
+      await sealable();
       while ((await sealAuditLog(db, CFG, K1, { batchSize: 7 })).seals.length > 0) { /* дуустал */ }
       const total = await count('audit_log');
       expect(total).toBe(4 * 15 * 2);
@@ -298,7 +304,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('audit seal (origination, Postgr
     await forge('restored-2', high);
     const oldCluster = intercept((q) => (q.includes('pg_snapshot_xmin') ? [{ horizon: '1000000000001' }] : undefined));
     expect((await sealAuditLog(oldCluster, CFG, K1)).seals).toEqual([expect.objectContaining({ seq: '1', rows: 2 })]);
-    await insert(1); // шинэ кластерт: xid ≪ курсор
+    await insert(1, 'SEAL_TEST', false); // шинэ кластерт: xid ≪ курсор (курсор хуурамч өндөр тул horizon-г хүлээхгүй)
     expect(await sealAuditLog(db, CFG, K1)).toMatchObject({ regressed: 'HORIZON_REGRESSED', seals: [] });
     expect((await verifyAuditChain(db, CFG, K1)).firstBroken).toEqual({ seq: '1', reason: 'HORIZON_REGRESSED' });
   });

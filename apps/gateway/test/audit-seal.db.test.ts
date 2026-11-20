@@ -2,7 +2,7 @@
 // Гинжний бүрэн хамрах хүрээ (тамперын бүх төрөл, зэрэгцээ бичилт, түгжээ) origination/test/audit-seal.db.test.ts-д.
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { GATEWAY_AUDIT_SEAL_COLUMNS, auditKeyringFromEnv, insertAuditRow, insertAuditRows, purgeAuditLogForTests, sealAuditLog, verifyAuditChain, type AuditKeyring } from '@los/database';
+import { GATEWAY_AUDIT_SEAL_COLUMNS, auditKeyringFromEnv, insertAuditRow, insertAuditRows, purgeAuditLogForTests, sealAuditLog, verifyAuditChain, waitUntilAuditRowsSealable, type AuditKeyring } from '@los/database';
 import { PrismaService } from '../src/prisma.service';
 
 const S = 'iam';
@@ -35,6 +35,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('audit seal (gateway iam, Postgr
     expect(cols.map((c) => c.c).sort()).toEqual(GATEWAY_AUDIT_SEAL_COLUMNS.map((c) => c.name).sort());
     await insertAuditRow(db, row('LOGIN_SUCCESS', { orgId: 'org-1' }));
     await insertAuditRows(db, [row('HTTP_1'), row('HTTP_2')], { skipDuplicates: true }); // fallback drain-ийн зам
+    await waitUntilAuditRowsSealable(db, S); // CI-д бусад багцын нээлттэй бичих транзакц xid horizon-г түр хойш татаж болно
     expect((await sealAuditLog(db, CFG, K)).seals).toEqual([expect.objectContaining({ seq: '1', rows: 3 })]);
     expect(await verifyAuditChain(db, CFG, K)).toMatchObject({ ok: true, seals: 1, sealedRows: 3, unsealedRows: 0 });
   });
@@ -42,6 +43,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('audit seal (gateway iam, Postgr
   it('detects a rewritten ip / user agent (gateway-only columns) and a deleted login row', async () => {
     const login = row('LOGIN_FAILED');
     await insertAuditRows(db, [login, row('HTTP_1')]);
+    await waitUntilAuditRowsSealable(db, S);
     await sealAuditLog(db, CFG, K);
     await tamper(`UPDATE "${S}"."audit_log" SET ip = '203.0.113.9' WHERE id = $1`, login.id);
     expect((await verifyAuditChain(db, CFG, K)).firstBroken).toEqual({ seq: '1', reason: 'MAC_MISMATCH' });

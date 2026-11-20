@@ -69,6 +69,32 @@ export async function purgeAuditLogForTests<R>(db: AuditPurgeDb, fn: (tx: any) =
   }, PURGE_TX);
 }
 
+/**
+ * ЗӨВХӨН ТЕСТ: нэг sealer pass `<schema>.audit_log`-ийн одоо байгаа БҮХ мөрийг хамрах хүртэл хүлээнэ.
+ * Sealer зөвхөн кластер даяарх xid horizon (`pg_snapshot_xmin`)-оос доош мөрийг seal хийдэг. CI-д нэг Postgres-ийг хуваалцдаг бусад багцын
+ * нээлттэй бичих транзакц horizon-г түр хойш татаж, "commit хийсэн мөр шууд seal-д орно" гэсэн тест санамсаргүй унана (алдагдахгүй, хоцорно).
+ * Тестүүд тэр таамаглалын оронд энд хүлээнэ. Тестийн өөрийн нээлттэй транзакц барьсан үед хэзээ ч дуусахгүй тул тэр тестэд хэрэглэхгүй.
+ * NODE_ENV !== 'test' бол татгалзана.
+ */
+export async function waitUntilAuditRowsSealable(
+  db: { $queryRawUnsafe<T = unknown>(query: string, ...values: unknown[]): Promise<T> },
+  schema: string,
+  opts: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> {
+  if (process.env.NODE_ENV !== 'test') throw new Error('waitUntilAuditRowsSealable is test-only (NODE_ENV must be "test")');
+  if (!/^[a-z_][a-z0-9_]*$/.test(schema)) throw new Error(`invalid schema name: ${schema}`);
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const rows = await db.$queryRawUnsafe<{ ok: boolean }[]>(
+      `SELECT COALESCE((SELECT l.tx_id FROM "${schema}"."audit_log" l ORDER BY l.tx_id DESC LIMIT 1) < pg_snapshot_xmin(pg_current_snapshot()), true) AS ok`,
+    );
+    if (rows[0]?.ok) return;
+    if (Date.now() > deadline) throw new Error(`audit_log rows of "${schema}" are still above the xid horizon after ${timeoutMs} ms: a write transaction is open somewhere in the cluster`);
+    await new Promise((r) => setTimeout(r, opts.intervalMs ?? 50));
+  }
+}
+
 /** Өөрчлөгдсөн талбарыг л үлдээнэ (том JSON-г audit-д давхар хадгалахгүйн тулд). */
 export function auditDiff(before: Record<string, unknown> | null, after: Record<string, unknown> | null): { before: Record<string, unknown>; after: Record<string, unknown> } {
   const b: Record<string, unknown> = {};
