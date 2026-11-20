@@ -41,10 +41,16 @@ describe('requiredPermission (AML hit review — docs/05-compliance-aml.md §7)'
     expect(requiredPermission('GET', '/api/KYC/aml/hits')).toBe('aml:review');
     expect(requiredPermission('POST', '/api/kyc/aml/hits/00000000-0000-4000-8000-000000000001/review')).toBe('aml:review');
   });
-  it('screening, its detail and the per-customer latest result stay open to any signed-in user (kyc checks roles)', () => {
-    expect(requiredPermission('POST', '/api/kyc/aml/screen')).toBeNull();
+  it('a screening detail stays open to any signed-in user (kyc scopes it by org); look-alike prefixes are not policed', () => {
     expect(requiredPermission('GET', '/api/kyc/aml/screenings/s-1')).toBeNull();
     expect(requiredPermission('GET', '/api/kyc/aml/hitsx')).toBeNull();
+  });
+  // F7-1: any signed-in role could POST a screening for an arbitrary customerId, creating a forged blocking AML result
+  // (409 on the customer's real screening) and polluting the compliance queue. Only origination (G1 gate) screens.
+  it('F7-1: staff cannot submit a screening or read a customer\'s AML status through the proxy; hits/screenings the compliance UI uses stay reachable', () => {
+    for (const p of ['/api/kyc/aml/screen', '/api/KYC/aml/Screen', '/api/kyc/aml/screen/', '/api/kyc//aml/screen', '/api/kyc/aml/%73creen',
+      '/api/kyc/aml/customers/c-1/latest', '/api/kyc/aml/customers']) expect(isInternalOnly(p), p).toBe(true);
+    for (const p of ['/api/kyc/aml/hits', '/api/kyc/aml/hits/h-1/review', '/api/kyc/aml/screenings/s-1', '/api/kyc/aml/screens', '/api/kyc/aml/lists']) expect(isInternalOnly(p), p).toBe(false);
   });
 });
 
@@ -115,9 +121,13 @@ describe('isInternalOnly (staff proxy blocks internal sync paths)', () => {
     for (const p of ['/api/kyc/xyp/citizen', '/api/kyc/xyp/citizen/otp', '/api/KYC/XYP/Citizen/OTP', '/api/kyc//xyp/citizen/otp', '/api/kyc/xyp/citizen/']) expect(isInternalOnly(p), p).toBe(true);
     for (const p of ['/api/origination/customers/xyp-otp', '/api/origination/customers/xyp-fetch']) expect(isInternalOnly(p), p).toBe(false);
   });
-  it('file upload, base prices and the owner-less auto-valuation stay open to staff', () => {
-    expect(isInternalOnly('/api/dms/files')).toBe(false);
-    expect(isInternalOnly('/api/dms/files/abc/content')).toBe(false);
+  // F12-2: GET /api/dms/files/:id leaked name/size/sha256/uploader of any file in the org to every role. Upload (`POST /api/dms/files`) is the web's
+  // only dms call and must stay open; everything under /files/ is internal (staff read files via the scope-checking origination facade).
+  it('F12-2: dms file metadata and content are not served to staff, but the upload route (and look-alikes) stay open', () => {
+    for (const p of ['/api/dms/files/abc', '/api/dms/files/abc/content', '/api/DMS/Files/abc', '/api/dms//files/abc', '/api/dms/%66iles/abc', '/api/dms/files/a%20b']) expect(isInternalOnly(p), p).toBe(true);
+    for (const p of ['/api/dms/files', '/api/dms/files/', '/api/dms/files-x', '/api/dms/filesx/abc']) expect(isInternalOnly(p), p).toBe(false);
+  });
+  it('base prices and the owner-less auto-valuation stay open to staff', () => {
     expect(isInternalOnly('/api/dms/documents-x')).toBe(false);
     expect(isInternalOnly('/api/valuation/valuate/auto')).toBe(false);
     expect(isInternalOnly('/api/valuation/base-prices')).toBe(false);

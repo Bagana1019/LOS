@@ -61,13 +61,25 @@ export const INTERNAL_ONLY_PREFIXES: readonly string[] = [
   '/api/kyc/xyp/citizen', // + /citizen/otp: иргэний нэг удаагийн кодын хязгаар (SMS бөмбөгдөлт, кодыг таах), аудит нь origination-д (`customers/xyp-otp`, `xyp-fetch`) — шууд дуудвал тойрно
   '/api/scoring/underwrite', '/api/scoring/sosco/score', '/api/scoring/sosco/results',
   '/api/origination/internal', // H8: portal-bff → origination дотоод API (`/api/internal/portal/*`) — ажилтны proxy-гоор хэзээ ч биш
+  // F7-1: AML шалгалтыг origination л (G1 хаалт) kyc-д шууд илгээнэ. Ажилтан дурын customerId-д хуурамч шалгалт үүсгэж харилцагчийг түгжиж,
+  // compliance-ийн дарааллыг бохирдуулж болохгүй; `customers/:id/latest` нь AML төлвийг (tipping-off) дурын ажилтанд задруулна. Вэб дуудахгүй.
+  '/api/kyc/aml/screen', '/api/kyc/aml/customers',
 ];
+
+/**
+ * Угтвар өөрөө нээлттэй (жишээ нь `POST /api/dms/files` — вэбийн файл байршуулалт), харин ДООРХ замууд дотоод.
+ * F12-2: `GET /api/dms/files/:id` нь нэр/хэмжээ/sha256/оруулагчийг эрхийг үл харгалзан бүх ажилтанд өгдөг байсан.
+ * Ажилтан файлыг origination-ийн хүрээ шалгадаг фасадаар (`/api/origination/applications/:id/files/:fileId/content`) л авна; `/content` нь dms-д
+ * (`canReadFileContent`) бас хаалттай. Origination dms-ийг шууд (gateway-гүй) дууддаг тул нөлөөлөхгүй.
+ */
+export const INTERNAL_ONLY_CHILDREN: readonly string[] = ['/api/dms/files'];
 
 export function isInternalOnly(path: string): boolean {
   let p: string;
   try { p = decodeURIComponent(path); } catch { return true; } // задлагдахгүй зам: сервис руу дамжуулахгүй
   p = p.toLowerCase().replace(/\/{2,}/g, '/');
-  return INTERNAL_ONLY_PREFIXES.some((x) => p === x || p.startsWith(`${x}/`));
+  return INTERNAL_ONLY_PREFIXES.some((x) => p === x || p.startsWith(`${x}/`))
+    || INTERNAL_ONLY_CHILDREN.some((x) => p.startsWith(`${x}/`) && p.length > x.length + 1);
 }
 
 /**
