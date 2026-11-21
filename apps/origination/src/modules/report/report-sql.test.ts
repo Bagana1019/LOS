@@ -50,6 +50,21 @@ describe('report-sql', () => {
     expect(loanConditions({ ...baseSel, statuses: [] })).toHaveLength(1); // хоосон жагсаалт = төлвөөр хязгаарлахгүй
   });
 
+  it('loanConditions: disbursedBy → asOf өдрийн төгсгөл (UB) хүртэл олгогдсон; олгосон огноо тодорхойгүй (NULL) зээл хэвээр (F11-2)', () => {
+    const c = Prisma.join(loanConditions({ ...baseSel, disbursedBy: '2026-07-04' }), ' AND ');
+    expect(loanConditions({ ...baseSel, disbursedBy: '2026-07-04' })).toHaveLength(2);
+    expect(c.text).toContain('la.disbursed_at IS NULL OR la.disbursed_at <');
+    expect(c.values).toContain('2026-07-04T16:00:00.000'); // asOf+1 өдрийн UB 00:00 = asOf өдрийн 16:00 UTC (installmentsCte-тэй ижил хил)
+    expect(loanConditions({ ...baseSel, disbursedBy: null })).toHaveLength(1);
+    expect(loanConditions(baseSel)).toHaveLength(1);
+  });
+
+  it('selectionOf: disbursedBy зөвхөн өгөгдөхөд нэмэгдэнэ', () => {
+    const input = { scope: { orgId: 'o', branchId: null, officerId: null }, filters: { asOf: '2026-10-28', dateFrom: null, dateTo: null, branchId: null, officerId: null, productId: null, currency: null, status: null, provider: null, assetType: null, search: null } } as unknown as ReportInput;
+    expect(selectionOf(input, ['ACTIVE'], { disbursedBy: '2026-10-28' })).toMatchObject({ disbursedBy: '2026-10-28', statuses: ['ACTIVE'] });
+    expect(selectionOf(input, ['ACTIVE']).disbursedBy ?? null).toBeNull();
+  });
+
   it('searchCondition: LIKE-д escape хийсэн, регистр нь blind index-ээр яг таарна', () => {
     const c = searchCondition('50%');
     expect(c.values).toContain('%50\\%%');

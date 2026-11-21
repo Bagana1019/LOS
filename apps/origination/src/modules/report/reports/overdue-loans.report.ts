@@ -42,7 +42,7 @@ export const overdueLoans = sqlReport({
       if (range.max !== null) bucketConds.push(sql`t."dpd" <= ${range.max}`);
     }
     const base = sql`
-      WITH ${loansCte(selectionOf(input, REPAYING_STATUSES))}, ${installmentsCte({ asOf: f.asOf })},
+      WITH ${loansCte(selectionOf(input, REPAYING_STATUSES, { disbursedBy: f.asOf }))}, ${installmentsCte({ asOf: f.asOf })},
       od AS (
         SELECT i.application_id, MIN(i.due_date) AS oldest_due, COUNT(*)::int AS cnt,
           SUM(${OUT_PRINCIPAL}) AS od_principal, SUM(${OUT_INTEREST}) AS od_interest

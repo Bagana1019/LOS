@@ -36,7 +36,7 @@ export const upcomingRepayments = sqlReport({
     const to = f.dateTo ?? addDays(f.asOf, 30);
     const statuses = f.status ? [f.status] : REPAYING_STATUSES;
     const base = sql`
-      WITH ${loansCte(selectionOf(input, statuses))}, ${installmentsCte({ asOf: f.asOf, dueFrom: from, dueTo: to })}
+      WITH ${loansCte(selectionOf(input, statuses, { disbursedBy: f.asOf }))}, ${installmentsCte({ asOf: f.asOf, dueFrom: from, dueTo: to })}
       SELECT i.id AS "_id", ${LOAN_ID_COLUMNS}, l.phone AS "phone",
         i.seq AS "seq", ${dayText('i.due_date')} AS "dueDate", (i.due_date - ${f.asOf}::date) AS "daysUntilDue",
         i.interest AS "interest", i.principal AS "principal", (i.interest + i.principal) AS "total",
