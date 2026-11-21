@@ -12,6 +12,7 @@ import { ContractModule } from '../contract/contract.module';
 import { DMS_DOCGEN } from '../contract/dms-docgen.port';
 import { FakeDmsDocgen } from '../contract/testing/fake-dms-docgen';
 import { ErpSyncService } from '../erp-sync/erp-sync.service';
+import { NotificationService } from '../notification/notification.service';
 import { DisbursementModule } from './disbursement.module';
 import { CORE_LEASE_MS, DisbursementService } from './disbursement.service';
 
@@ -26,6 +27,8 @@ describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
   const approver = actors.approver('approver-1');
 
   beforeAll(async () => {
+    process.env.NOTIFICATION_QUEUE = 'inline'; // F5-12: DisbursementModule → NotificationModule (Redis-гүй, sweeper унтраасан)
+    process.env.NOTIFICATION_SWEEP = 'off';
     t = await createTestApp([ApplicationModule, ContractModule, DisbursementModule], (b) => b.overrideProvider(DMS_DOCGEN).useValue(dms).overrideProvider(CORE_LOAN_PORT).useFactory({ factory: () => ({ get mode() { return core.mode; }, openLoan: (r: never) => core.openLoan(r), findLoan: (k: string) => core.findLoan(k) }) }));
     await t.app.listen(0, '127.0.0.1');
     baseUrl = `http://127.0.0.1:${(t.app.getHttpServer().address() as AddressInfo).port}`;
@@ -679,5 +682,121 @@ describe.skipIf(!hasTestDb)('contract + disbursement (M11, DB)', () => {
     expect((await http().post(`${base(app.id)}/contract/signed`).set(officer).send({ fileId: 'nope' })).status).toBe(422);
     await http().post(`${base(app.id)}/contract/signed`).set(officer).send({ fileId: [...dms.files][0] });
     expect((await http().post(`${base(app.id)}/contract/generate`).set(officer)).status).toBe(409);
+  });
+
+  // ── F5-12: 4 нүдний хонхны мэдэгдэл — илгээхэд батлагчид, буцаахад илгээгч (maker)-т; төлвийн өөрчлөлттэй НЭГ транзакцид ──
+  describe('F5-12 олголтын мэдэгдэл (хонх)', () => {
+    // resetDb нь бүтээгдэхүүнийг устгахад түвшин (FK SetNull) "бүх бүтээгдэхүүн"-ийн түвшин болж үлддэг → тест бүрийн өмнө/дараа цэвэрлэнэ (approval.e2e-тэй адил).
+    const clearLevels = () => t.prisma.approvalLevel.deleteMany({ where: { orgId: ORG } });
+    beforeEach(clearLevels);
+    afterAll(clearLevels);
+    /** Origination-д олголт батлах боломжтой гэж мэдэгдэх хүмүүс: хүсэлтэд хамаарах түвшний userId гишүүд + санал өгсөн батлагч (iam дүрийн лавлах байхгүй). */
+    async function withApprovers(app: { id: string; productId: string | null }) {
+      const level = (levelNo: number, amountFrom: number, amountTo: number | null, members: string[]) =>
+        t.prisma.approvalLevel.create({ data: { orgId: ORG, productId: app.productId, levelNo, name: `L${levelNo}`, amountFrom, amountTo, slaHours: 24, members: { create: members.map((userId) => ({ orgId: ORG, userId })) } } });
+      await level(1, 0, 5_000_000, ['approver-1']);
+      await level(2, 5_000_000, 30_000_000, ['approver-3', 'officer-1']); // officer-1 = илгээгч: өөрт нь мэдэгдэхгүй
+      await level(3, 30_000_000, null, ['approver-9']); // 30M-д хамаарахгүй түвшин
+      const req = await t.prisma.approvalRequest.create({ data: { orgId: ORG, applicationId: app.id, version: 1, levelNo: 2, status: 'APPROVED' } });
+      await t.prisma.approvalVote.create({ data: { orgId: ORG, approvalRequestId: req.id, approverId: 'approver-2', decision: 'APPROVE' } });
+    }
+    const notes = (applicationId: string, type: string) => t.prisma.notification.findMany({ where: { applicationId, type }, orderBy: { userId: 'asc' } });
+    const submitReq = (appId: string, actor: Record<string, string> = officer) => http().post(`${base(appId)}/disbursement/submit`).set(actor);
+    const rejectReq = (appId: string, body: object, actor: Record<string, string> = approver) => http().post(`${base(appId)}/disbursement/reject`).set(actor).send(body);
+    const NAMED = ['approver-1', 'approver-2', 'approver-3'];
+
+    it('илгээхэд хүсэлтэд хамаарах түвшний гишүүд + санал өгсөн батлагчид DISBURSEMENT_SUBMITTED; илгээгчид, хамаарахгүй түвшинд очихгүй', async () => {
+      const app = await approvedApp();
+      await withApprovers(app);
+      await ready(app.id);
+      expect((await submitReq(app.id)).status).toBe(200);
+      const rows = await notes(app.id, 'DISBURSEMENT_SUBMITTED');
+      expect(rows.map((n) => n.userId)).toEqual(NAMED);
+      expect(rows[0]).toMatchObject({ orgId: ORG, applicationId: app.id, readAt: null });
+      expect(rows[0]!.payloadJson).toMatchObject({ applicationNo: app.appNo, amount: 30_000_000 });
+      expect(await t.prisma.notification.count({ where: { userId: { in: ['officer-1', 'approver-9'] } } })).toBe(0);
+    });
+
+    it('мэдэгдэх батлагч олдохгүй бол илгээлт амжилттай, мэдэгдэл үүсэхгүй', async () => {
+      const app = await approvedApp();
+      await ready(app.id);
+      expect((await submitReq(app.id)).status).toBe(200);
+      expect(await t.prisma.notification.count()).toBe(0);
+    });
+
+    it('илгээх амжилтгүй (G4 422) үед мэдэгдэл үүсэхгүй; давхар илгээх 409 нь мэдэгдлийг давхардуулахгүй', async () => {
+      const app = await approvedApp();
+      await withApprovers(app);
+      await http().put(`${base(app.id)}/disbursement`).set(officer).send({ bankCode: 'KHAN', accountNo: '5012345670', holderName: 'Бат-Эрдэнэ Дорж', disburseDate: '2026-11-05' });
+      expect((await submitReq(app.id)).status).toBe(422); // гэрээ гарын үсэггүй
+      expect(await t.prisma.notification.count()).toBe(0);
+      await ready(app.id);
+      expect((await submitReq(app.id)).status).toBe(200);
+      expect((await submitReq(app.id)).status).toBe(409);
+      expect(await notes(app.id, 'DISBURSEMENT_SUBMITTED')).toHaveLength(NAMED.length);
+    });
+
+    it('мэдэгдэл бичихэд алдаа гарвал илгээлт бүхлээрээ буцна (нэг транзакц): олголт DRAFT, хүсэлт APPROVED', async () => {
+      const app = await approvedApp();
+      await withApprovers(app);
+      await ready(app.id);
+      vi.spyOn(t.app.get(NotificationService), 'notifyUsers').mockRejectedValueOnce(new Error('db down'));
+      expect((await submitReq(app.id)).status).toBe(500);
+      expect(await appStatus(app.id)).toBe('APPROVED');
+      expect((await disb(app.id)).status).toBe('DRAFT');
+      expect(await t.prisma.notification.count()).toBe(0);
+    });
+
+    it('буцаахад ЗЭЗ-д тайлбартай DISBURSEMENT_REJECTED; батлагчид очихгүй; дахин илгээхэд батлагчдад дахин мэдэгдэнэ', async () => {
+      const app = await approvedApp();
+      await withApprovers(app);
+      await ready(app.id);
+      expect((await submitReq(app.id)).status).toBe(200);
+      expect((await rejectReq(app.id, { comment: 'Данс буруу' })).status).toBe(200);
+      const rows = await notes(app.id, 'DISBURSEMENT_REJECTED');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ userId: 'officer-1', orgId: ORG, applicationId: app.id, readAt: null });
+      expect(rows[0]!.payloadJson).toMatchObject({ applicationNo: app.appNo, comment: 'Данс буруу' });
+      expect(await t.prisma.notification.count({ where: { type: 'DISBURSEMENT_REJECTED', userId: { in: NAMED } } })).toBe(0);
+      expect((await submitReq(app.id)).status).toBe(200); // буцаасны дараа дахин илгээх
+      expect(await notes(app.id, 'DISBURSEMENT_SUBMITTED')).toHaveLength(NAMED.length * 2);
+    });
+
+    it('татгалзсан мэдэгдэл хүсэлтийн ЗЭЗ биш, олголтыг илгээсэн хүнд (maker) очно', async () => {
+      const app = await approvedApp();
+      await ready(app.id);
+      expect((await submitReq(app.id)).status).toBe(200);
+      await t.prisma.loanApplication.update({ where: { id: app.id }, data: { officerId: 'officer-9' } });
+      expect((await rejectReq(app.id, { comment: 'Дүн буруу' })).status).toBe(200);
+      expect((await notes(app.id, 'DISBURSEMENT_REJECTED')).map((n) => n.userId)).toEqual(['officer-1']);
+    });
+
+    it('буцаах амжилтгүй (илгээгээгүй ноорогт 409, тайлбаргүй 400) үед DISBURSEMENT_REJECTED үүсэхгүй', async () => {
+      const app = await approvedApp();
+      await ready(app.id);
+      expect((await rejectReq(app.id, { comment: 'x' })).status).toBe(409);
+      expect((await submitReq(app.id)).status).toBe(200);
+      expect((await rejectReq(app.id, {})).status).toBe(400);
+      expect(await notes(app.id, 'DISBURSEMENT_REJECTED')).toHaveLength(0);
+    });
+
+    it('илгээгч өөрөө (OFFICER+APPROVER дүртэй) буцаавал өөрт нь мэдэгдэл үүсэхгүй', async () => {
+      const both = { ...officer, 'x-roles': 'OFFICER,APPROVER' };
+      const app = await approvedApp();
+      await ready(app.id);
+      expect((await submitReq(app.id, both)).status).toBe(200);
+      expect((await rejectReq(app.id, { comment: 'өөрөө буцаав' }, both)).status).toBe(200);
+      expect(await t.prisma.notification.count()).toBe(0);
+    });
+
+    it('татгалзсан мэдэгдэл бичихэд алдаа гарвал буцаалт бүхлээрээ буцна (нэг транзакц): олголт SUBMITTED, хүсэлт DISBURSING', async () => {
+      const app = await approvedApp();
+      await ready(app.id);
+      expect((await submitReq(app.id)).status).toBe(200);
+      vi.spyOn(t.app.get(NotificationService), 'notifyUsers').mockRejectedValueOnce(new Error('db down'));
+      expect((await rejectReq(app.id, { comment: 'Данс буруу' })).status).toBe(500);
+      expect(await appStatus(app.id)).toBe('DISBURSING');
+      expect((await disb(app.id)).status).toBe('SUBMITTED');
+    });
   });
 });

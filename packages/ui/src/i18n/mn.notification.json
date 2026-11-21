@@ -9,6 +9,8 @@
   "notification.type.RETURNED": "Буцаагдсан хүсэлт",
   "notification.type.APPROVED": "Батлагдсан",
   "notification.type.DISBURSEMENT_APPROVED": "Олголт зөвшөөрөгдсөн",
+  "notification.type.DISBURSEMENT_SUBMITTED": "Олголт зөвшөөрөх хүсэлт",
+  "notification.type.DISBURSEMENT_REJECTED": "Олголт буцаагдсан",
   "notification.type.SLA_BREACH": "Шийдвэрлэх хугацаа хэтэрсэн",
   "notification.type.MENTION": "Таныг дурдсан",
   "notification.type.PAYMENT_DUE": "Төлбөрийн хугацаа ойртсон",
