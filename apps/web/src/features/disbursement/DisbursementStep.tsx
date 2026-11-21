@@ -1,12 +1,14 @@
 'use client';
 import { useState } from 'react';
-import { Alert, Button, Card, Descriptions, Flex, Form, Input, InputNumber, List, Modal, Radio, Skeleton, Tag, Typography, App as AntApp } from 'antd';
+import { Alert, Button, Card, Descriptions, Divider, Flex, Form, Input, InputNumber, List, Modal, Radio, Skeleton, Tag, Typography, App as AntApp } from 'antd';
 import type { DisbursementView, UpdateDisbursementRequest } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { useAuth } from '../../lib/auth/auth-context';
 import { formatDateTime, formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { useApproveDisbursement, useDisbursement, useRejectDisbursement, useSubmitDisbursement, useUpdateDisbursement } from './disbursement.api';
+import { ConfirmTerms, DisbursementTerms } from './DisbursementTerms';
+import { collapseHistory, historyLabel, lastRejection } from './disbursement.utils';
 
 interface Props { applicationId: string; onChanged?: () => void }
 type FormValues = { disburseAmount?: number; disburseDate?: string; bankCode?: string; accountNo?: string; holderName?: string; accountOwnerType?: 'SELF' | 'THIRD_PARTY' };
@@ -44,7 +46,12 @@ export function DisbursementStep({ applicationId, onChanged }: Props) {
     ...(v.bankCode ? { bankCode: v.bankCode } : {}), ...(v.accountNo ? { accountNo: v.accountNo } : {}), ...(v.holderName ? { holderName: v.holderName } : {}), ...(v.accountOwnerType ? { accountOwnerType: v.accountOwnerType } : {}),
   });
   const done = (key: string) => () => void message.success(t(key));
-  const error = update.error ?? submit.error ?? approve.error ?? reject.error;
+  const error = update.error ?? submit.error ?? approve.error; // reject-ийн алдаа татгалзах modal дотор гарна (F5-11): modal-ын ард хуудасны доод талд биш
+  const rejection = lastRejection(d.status, d.history);
+  const canApprove = perms.has('disbursement:approve');
+  const reasonMissing = comment.trim().length === 0;
+  const closeReject = () => { setRejecting(false); reject.reset(); };
+  const sendReject = () => { if (!reasonMissing) void reject.mutateAsync(comment.trim()).then(() => { setRejecting(false); setComment(''); done('disb.rejectedOk')(); }).catch(() => undefined); };
 
   return (
     <Flex vertical gap={16}>
@@ -52,15 +59,18 @@ export function DisbursementStep({ applicationId, onChanged }: Props) {
         <Typography.Title level={4} style={{ margin: 0 }}>{t('disb.title')}</Typography.Title>
         <Tag data-testid="disb-status">{t(`disb.status.${d.status}`)}</Tag>
       </Flex>
-      <Card size="small">
+      {rejection ? <Alert data-testid="disb-rejected-banner" type="error" showIcon message={t('disb.rejectedBanner')} description={rejection.note ?? undefined} /> : null}
+      {d.status === 'SUBMITTED' && !canApprove ? <Alert data-testid="disb-waiting" type="info" showIcon message={t('disb.waiting')} /> : null}
+      <Card size="small" data-testid="disb-summary">
         <Descriptions size="small" column={{ xs: 1, md: 2 }}>
           <Descriptions.Item label={t('disb.approved')}>{formatMnt(d.approvedAmount)}</Descriptions.Item>
           <Descriptions.Item label={t('disb.term')}>{d.termMonths}</Descriptions.Item>
           <Descriptions.Item label={t('disb.rate')}>{d.interestRate}</Descriptions.Item>
           <Descriptions.Item label={t('disb.type')}>{d.repaymentType}</Descriptions.Item>
-          <Descriptions.Item label={t('disb.account')}>{d.accountNoMasked ?? '—'} {d.holderName ?? ''}</Descriptions.Item>
           {d.coreLoanId ? <Descriptions.Item label={t('disb.core')}>{d.coreLoanId}</Descriptions.Item> : null}
         </Descriptions>
+        <Divider orientation="left" plain style={{ margin: '8px 0' }}>{t('disb.sum.title')}</Divider>
+        <DisbursementTerms d={d} />
         {d.nameCheck && !d.nameCheck.matched ? <Alert type="warning" showIcon style={{ marginTop: 8 }} message={t('disb.nameMismatch', { name: d.nameCheck.registeredName ?? '—' })} /> : null}
         {d.reconciliation && !d.reconciliation.ok ? <Alert type="warning" showIcon style={{ marginTop: 8 }} message={t('disb.diff', { fields: d.reconciliation.diffs.map((x) => x.field).join(', ') })} /> : null}
       </Card>
@@ -85,22 +95,26 @@ export function DisbursementStep({ applicationId, onChanged }: Props) {
         </Card>
       ) : null}
       <Flex gap={8} wrap>
-        {canEdit ? <Button type="primary" disabled={!d.canSubmit} loading={submit.isPending} data-testid="disb-submit" onClick={() => Modal.confirm({ title: t('disb.confirmSubmit'), okText: t('disb.submit'), cancelText: t('disb.cancel'), onOk: () => submit.mutateAsync().then(done('disb.submitted')).catch(() => undefined) })}>{t('disb.submit')}</Button> : null}
-        {pending && perms.has('disbursement:approve') ? (
+        {canEdit ? <Button type="primary" disabled={!d.canSubmit} loading={submit.isPending} data-testid="disb-submit" onClick={() => Modal.confirm({ title: t('disb.confirmSubmit'), content: <ConfirmTerms hint={t('disb.confirmSubmitHint')} d={d} />, okText: t('disb.submit'), cancelText: t('disb.cancel'), onOk: () => submit.mutateAsync().then(done('disb.submitted')).catch(() => undefined) })}>{t('disb.submit')}</Button> : null}
+        {pending && canApprove ? (
           <>
-            <Button type="primary" loading={approve.isPending} data-testid="disb-approve" onClick={() => Modal.confirm({ title: t('disb.confirmApprove'), okText: t('disb.approve'), cancelText: t('disb.cancel'), onOk: () => approve.mutateAsync(undefined).then(done('disb.approvedOk')).catch(() => undefined) })}>{t('disb.approve')}</Button>
+            <Button type="primary" loading={approve.isPending} data-testid="disb-approve" onClick={() => Modal.confirm({ title: t('disb.confirmApprove'), content: <ConfirmTerms hint={t('disb.confirmApproveHint')} d={d} />, okText: t('disb.approve'), cancelText: t('disb.cancel'), onOk: () => approve.mutateAsync(undefined).then(done('disb.approvedOk')).catch(() => undefined) })}>{t('disb.approve')}</Button>
             <Button danger data-testid="disb-reject" onClick={() => setRejecting(true)}>{t('disb.reject')}</Button>
           </>
         ) : null}
       </Flex>
       {error ? <ApiErrorAlert error={error} /> : null}
       {d.history.length ? (
-        <Card size="small" title={t('disb.history')}>
-          <List size="small" dataSource={d.history} renderItem={(h) => <List.Item>{formatDateTime(h.at)} · {h.action}{h.note ? ` — ${h.note}` : ''}</List.Item>} />
+        <Card size="small" title={t('disb.history')} data-testid="disb-history">
+          <List size="small" dataSource={collapseHistory(d.history)} renderItem={(h) => <List.Item data-testid="disb-history-row">{formatDateTime(h.at)} · {historyLabel(h.action)}{h.count > 1 ? ` ×${h.count}` : ''}{h.note ? ` — ${h.note}` : ''}</List.Item>} />
         </Card>
       ) : null}
-      <Modal open={rejecting} title={t('disb.reject')} okText={t('disb.reject')} cancelText={t('disb.cancel')} okButtonProps={{ danger: true, loading: reject.isPending }} onOk={() => void reject.mutateAsync(comment.trim() || undefined).then(() => { setRejecting(false); setComment(''); done('disb.rejectedOk')(); }).catch(() => undefined)} onCancel={() => setRejecting(false)}>
-        <Input.TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t('disb.rejectComment')} maxLength={1000} />
+      <Modal open={rejecting} title={t('disb.reject')} okText={t('disb.reject')} cancelText={t('disb.cancel')} okButtonProps={{ danger: true, loading: reject.isPending, disabled: reasonMissing }} onOk={sendReject} onCancel={closeReject}>
+        <Flex vertical gap={8}>
+          <Typography.Text type="secondary">{t('disb.rejectHint')}</Typography.Text>
+          <Input.TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder={t('disb.rejectReason')} maxLength={1000} aria-required />
+          {reject.error ? <ApiErrorAlert error={reject.error} /> : null}
+        </Flex>
       </Modal>
     </Flex>
   );
