@@ -29,6 +29,9 @@ export function describeApplicationError(e: unknown, fallbackKey: string): strin
   return t(fallbackKey);
 }
 
+/** F12-4: API 403 (эрхгүй). Давтан оролдсон ч өөрчлөгдөхгүй тул UI "Дахин оролдох"-ыг харуулахгүй. Сүлжээний алдаа (status 0), 5xx зэрэг бусад нь false. */
+export const isForbiddenError = (e: unknown): boolean => e instanceof ApiError && e.status === 403;
+
 /** "Мэдээлэл оруулах": хүсэлтийн эхний бүрдээгүй алхам руу. Серверийн алхамгүйгээр: `/los/loan-application/:id` нь redirect хийнэ. */
 export const resumeHref = (id: string): string => applicationHref(id);
 

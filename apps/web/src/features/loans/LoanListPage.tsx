@@ -1,11 +1,12 @@
 'use client';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Alert, Badge, Button, Flex, Input, Table, Tabs, Tag, Typography } from 'antd';
+import { Badge, Button, Flex, Input, Table, Tabs, Tag, Typography } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { SorterResult } from 'antd/es/table/interface';
 import { APPLICATION_PAGE_SIZES, ApplicationSort, type ApplicationRow, type ApplicationStatus } from '@los/contracts';
 import { formatMoney, t } from '../../lib/i18n';
 import { applicationHref } from '../applications/applications.utils';
+import { ListLoadError } from '../applications/ListLoadError';
 import { useApplicationList } from '../applications/useApplications';
 import { isLoanTab, LOAN_TABS, loanPaymentsHref } from './loans.utils';
 
@@ -83,7 +84,7 @@ export function LoanListPage() {
         {list.data ? <Text type="secondary" style={{ alignSelf: 'center' }}>{t('application.list.total', { total: list.data.total })}</Text> : null}
       </Flex>
 
-      {list.isError ? <Alert type="error" showIcon message={t('loan.list.error')} action={<Button size="small" onClick={() => void list.refetch()}>{t('application.list.retry')}</Button>} style={{ marginBottom: 12 }} /> : null}
+      {list.isError ? <ListLoadError error={list.error} errorKey="loan.list.error" forbiddenKey="loan.list.forbidden" onRetry={() => void list.refetch()} /> : null}
       <Table<ApplicationRow>
         rowKey="id"
         size="middle"
