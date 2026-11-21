@@ -1,10 +1,11 @@
 import { randomInt } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { ADMIN_BRANCH_BOUND_ROLES, incompatibleRolePair, type AdminBranchDto, type AdminUserDto, type AuditLogPage, type AuditLogQuery, type CreateBranchBody, type CreateUserBody, type UpdateBranchBody, type UpdateUserBody, type UserCredentialResult } from '@los/contracts';
+import { ADMIN_BRANCH_BOUND_ROLES, incompatibleRolePair, type AdminBranchDto, type AdminUserDto, type AuditActorOption, type AuditLogPage, type AuditLogQuery, type CreateBranchBody, type CreateUserBody, type UpdateBranchBody, type UpdateUserBody, type UserCredentialResult } from '@los/contracts';
 import { insertAuditRow } from '@los/database';
 import { DomainError, notFound } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
 import { hashPassword } from '../auth/password';
+import { containsInsensitive, matchActors } from './audit-filter';
 
 export interface Meta { correlationId: string | null; ip: string | null }
 type UserRow = { id: string; username: string; fullName: string; roles: string[]; branchId: string | null; isActive: boolean; lastLoginAt: Date | null; email: string | null; phone: string | null; mustChangePassword: boolean };
@@ -201,11 +202,17 @@ export class AdminService {
     return (await this.users(orgId)).find((u) => u.id === userId)!;
   }
 
+  /** F9-24 · Аудитын "Хэн" шүүлт: нэр/нэвтрэх нэрээр хайж id олно. Идэвхгүй ажилтан ч орно (хуучин мөрийг нэрээр нь хайхад). */
+  async auditActors(orgId: string, q: string | undefined): Promise<AuditActorOption[]> {
+    const users = await this.prisma.user.findMany({ where: { orgId }, select: { id: true, username: true, fullName: true } });
+    return matchActors(users, q);
+  }
+
   async audit(orgId: string, q: AuditLogQuery): Promise<AuditLogPage> {
     const where = {
       OR: [{ orgId }, { orgId: null }], // нэвтрэлтийн бүтэлгүй оролдлого org-гүй бичигддэг
-      ...(q.entity ? { entity: q.entity } : {}), ...(q.entityId ? { entityId: q.entityId } : {}), ...(q.actorId ? { actorId: q.actorId } : {}),
-      ...(q.action ? { action: q.action } : {}), ...(q.applicationId ? { applicationId: q.applicationId } : {}),
+      ...(q.entity ? { entity: containsInsensitive(q.entity) } : {}), ...(q.entityId ? { entityId: q.entityId } : {}), ...(q.actorId ? { actorId: q.actorId } : {}),
+      ...(q.action ? { action: containsInsensitive(q.action) } : {}), ...(q.applicationId ? { applicationId: q.applicationId } : {}),
       ...(q.from || q.to ? { at: { ...(q.from ? { gte: new Date(q.from) } : {}), ...(q.to ? { lte: new Date(q.to) } : {}) } } : {}),
     };
     const [total, rows] = await Promise.all([

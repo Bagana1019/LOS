@@ -1,6 +1,6 @@
 // M13 · Админ API. Gateway-ээр л: origination → `/origination/...`, өөрийн (iam) → `/admin/...`.
 import {
-  AdminBranchDto, AdminUserDto, ApprovalLevelDto, AuditLogPage, PricingTierSet, ProductAdminDto, SubmitChangeResult, UserCredentialResult,
+  AdminBranchDto, AdminUserDto, ApprovalLevelDto, AuditActorOption, AuditLogPage, PricingTierSet, ProductAdminDto, SubmitChangeResult, UserCredentialResult,
   type AuditLogQuery, type ChangePasswordBody, type ContractNumberTemplateBody, type CreateBranchBody, type CreateUserBody, type ProductCreateRequest, type ProductSetActiveRequest, type ProductUpdateRequest,
   type ReplaceApprovalLevelsRequest, type SavePricingTiersRequest, type UpdateBranchBody, type UpdateUserBody,
 } from '@los/contracts';
@@ -26,6 +26,8 @@ export const fetchBranches = () => apiFetch<AdminBranchDto[]>('/admin/branches',
 export const fetchUsers = () => apiFetch<AdminUserDto[]>('/admin/users', { schema: z.array(AdminUserDto) });
 export const assignUserBranch = (userId: string, branchId: string | null) => apiFetch<AdminUserDto>(`/admin/users/${userId}/branch`, { method: 'PUT', body: { branchId }, schema: AdminUserDto });
 export const fetchAuthAudit = (q: Partial<AuditLogQuery>) => apiFetch<AuditLogPage>(`/admin/audit-logs${qs(q)}`, { schema: AuditLogPage });
+/** F9-24 · "Хэн" шүүлт: нэр/нэвтрэх нэрээр хайж id олно (gateway iam, audit:read). */
+export const fetchAuditActors = (q: string) => apiFetch<AuditActorOption[]>(`/admin/audit-actors${qs({ q })}`, { schema: z.array(AuditActorOption) });
 
 // FR-13 · салбар, хэрэглэгчийн удирдлага (устгахгүй — идэвхгүй болгоно)
 const post = <T>(path: string, schema: z.ZodType<T>, body?: unknown) => apiFetch<T>(path, { method: 'POST', body, schema });
