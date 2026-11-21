@@ -1,3 +1,4 @@
+import { BsaResolveSuspicionsResponse } from '@los/contracts';
 import { expect, test, type Page } from '@playwright/test';
 import { expectClean } from './helpers';
 import { guardConsole, MockApi } from './mock-api';
@@ -14,15 +15,18 @@ async function setup(page: Page, o: Partial<BsaWorld> = {}) {
   return { api, guard, world };
 }
 
-/** Scoring-ийн жинхэнэ `ResolveResult` хэлбэр (`bsa-mock` нь `{ updated }` буцаадаг). */
-const realResolve = (api: MockApi, world: BsaWorld, result: (open: string[]) => { resolved: number; skipped: number }) =>
+/** Серверийн тоонууд: хэдэн дохио шийдвэрлэсэн/алгассан, хэдэн гүйлгээний ангилал үнэхээр солигдсон/чиглэл таарахгүй тул хэвээр үлдсэн. */
+type ServerCounts = Pick<BsaResolveSuspicionsResponse, 'resolved' | 'skipped' | 'changedTransactions' | 'unchangedTransactions'>;
+
+/** Scoring-ийн хариуг дууриана: хэлбэр нь `@los/contracts`-ийн схемээр баталгаажна, тоонуудыг тест өөрөө заана (дэлгэц дээрх мөрөөс үл хамаарна). */
+const realResolve = (api: MockApi, world: BsaWorld, result: (open: string[]) => ServerCounts) =>
   api.post(`${SC}/suspicions/resolve`, ({ body }) => {
     const req = body as { ids: string[]; action: string };
     world.resolves.push(body);
     const open = world.suspicions.filter((s) => req.ids.includes(s.id) && s.status === 'PENDING').map((s) => s.id);
     world.suspicions = world.suspicions.map((s) => (open.includes(s.id) ? { ...s, status: 'RESOLVED', action: req.action as 'APPROVE' } : s));
     const pending = world.suspicions.filter((s) => s.status === 'PENDING').length;
-    return { json: { ...result(open), pending, summary: null, repushRequired: false } };
+    return { json: BsaResolveSuspicionsResponse.parse({ ...result(open), pending, summary: null, repushRequired: false }) };
   });
 
 const goSuspicions = async (page: Page) => { await page.goto(ANALYSIS_URL); await page.getByRole('tab', { name: 'Сэжигтэй дохио' }).click(); };
@@ -56,7 +60,7 @@ test.describe('F6-1: BSA хуудас — хүсэлт рүү буцах зам 
 test.describe('F6-10: дохио шийдвэрлэсний үр дүнг хэлнэ', () => {
   test('reclassifying an income+expense pair says the income leg changed and the expense leg did not', async ({ page }) => {
     const { api, guard, world } = await setup(page);
-    realResolve(api, world, (open) => ({ resolved: open.length, skipped: 0 }));
+    realResolve(api, world, (open) => ({ resolved: open.length, skipped: 0, changedTransactions: 1, unchangedTransactions: 1 }));
     await goSuspicions(page);
     await pickRow(page, 'Дугуй гүйлгээ');
     await page.locator('.ant-select').filter({ has: page.locator('#bsa-reclassify-category') }).click();
@@ -72,7 +76,7 @@ test.describe('F6-10: дохио шийдвэрлэсний үр дүнг хэл
 
   test('the toast reports what the server resolved, not what was selected, and names the skipped ones', async ({ page }) => {
     const { api, world } = await setup(page);
-    realResolve(api, world, () => ({ resolved: 1, skipped: 1 }));
+    realResolve(api, world, () => ({ resolved: 1, skipped: 1, changedTransactions: 0, unchangedTransactions: 0 }));
     await goSuspicions(page);
     await pickRow(page, 'Өөрийн дансны шилжүүлэг');
     await pickRow(page, 'Орж ирээд шууд гарсан мөнгө');
@@ -81,5 +85,33 @@ test.describe('F6-10: дохио шийдвэрлэсний үр дүнг хэл
     await expect(t).toBeVisible();
     await expect(t).toContainText('1 дохио аль хэдийн шийдвэрлэгдсэн эсвэл олдоогүй тул алгасагдлаа');
     await expect(t).not.toContainText('гүйлгээний ангилал');
+  });
+
+  // «Дугуй гүйлгээ» нь дэлгэц дээр 2 гүйлгээтэй. Мессеж нь тэднээс биш, серверийн хэлсэн тооноос гарна.
+  const excludeCircular = async (page: Page) => {
+    await goSuspicions(page);
+    await pickRow(page, 'Дугуй гүйлгээ');
+    await page.getByRole('button', { name: 'Тооцооноос хасах', exact: true }).click();
+    await page.locator('.ant-popconfirm').getByRole('button', { name: 'Хасах', exact: true }).click();
+  };
+
+  test('the toast takes the changed-transaction count from the server, not from the rows on screen', async ({ page }) => {
+    const { api, world } = await setup(page);
+    realResolve(api, world, (open) => ({ resolved: open.length, skipped: 0, changedTransactions: 5, unchangedTransactions: 0 }));
+    await excludeCircular(page);
+    const t = toast(page).filter({ hasText: '1 дохиог тооцооноос хаслаа' });
+    await expect(t).toBeVisible();
+    await expect(t).toContainText('5 гүйлгээний ангилал солигдлоо');
+    await expect(t).not.toContainText('2 гүйлгээний ангилал');
+  });
+
+  test('when the server changed nothing the toast says so, even though the rows on screen hold transactions', async ({ page }) => {
+    const { api, world } = await setup(page);
+    realResolve(api, world, (open) => ({ resolved: open.length, skipped: 0, changedTransactions: 0, unchangedTransactions: 0 }));
+    await excludeCircular(page);
+    const t = toast(page).filter({ hasText: '1 дохиог тооцооноос хаслаа' });
+    await expect(t).toBeVisible();
+    await expect(t).toContainText('Гүйлгээний ангилал өөрчлөгдсөнгүй');
+    await expect(t).not.toContainText('солигдлоо');
   });
 });

@@ -7,7 +7,7 @@ import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { resolveFeedback } from './bsa.feedback';
 import { categoryGroups, categoryName, directionSummary, directionsOf, formatConfidence, type BsaCategory } from './bsa.helpers';
-import { readResolveOutcome, resolveImpact, type ResolveAction } from './bsa.resolve';
+import { resolveImpact, type ResolveAction } from './bsa.resolve';
 import { useCategories, useResolve, useSuspicions } from './useBsa';
 
 interface Props { applicationId: string; analysisId: string; draft: boolean }
@@ -50,17 +50,15 @@ export function SuspicionsTab({ applicationId, analysisId, draft }: Props) {
   const chosen = groups.some((g) => g.options.some((o) => o.value === category)) ? category : undefined;
   // F6-12 / F6-10: үр дүнг (серверийн шийдвэрлэсэн дохио, ангилал солигдсон гүйлгээ) хэлнэ; «Хүлээгдэж буй» шүүлтүүртэй үед мөр жагсаалтаас алга болдгийг тайлбарлана.
   const act = (action: ResolveAction) => {
-    const count = selected.length;
     const target = action === 'RECLASSIFY' ? cats.find((c) => c.code === chosen) : undefined;
     resolve.mutate(
       { ids: selected, action, ...(action === 'RECLASSIFY' && chosen ? { categoryCode: chosen } : {}), ...(comment.trim() ? { comment: comment.trim() } : {}) },
       {
-        onSuccess: (raw) => {
-          const outcome = readResolveOutcome(raw, count);
-          const impact = resolveImpact(action, selectedRows, target ? { code: target.code, direction: target.direction } : null);
+        onSuccess: (res) => {
+          const impact = resolveImpact(action, res, target?.direction ?? null);
           setSelected([]);
           setCategory(undefined);
-          void toast.success(resolveFeedback(action, outcome.resolved, { categoryName: target?.name ?? null, pendingFilter: status === 'PENDING', skipped: outcome.skipped, impact }));
+          void toast.success(resolveFeedback(action, res.resolved, { categoryName: target?.name ?? null, pendingFilter: status === 'PENDING', skipped: res.skipped, impact }));
         },
       },
     );

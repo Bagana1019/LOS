@@ -4,9 +4,9 @@
 //    (чиглэл таарсан гүйлгээнд л). Гар ангилал (manualOverride) нь дараагийн автомат ангилалд дарагдахгүй.
 //  - Бүгд НЭГ транзакцид: гүйлгээний ангилал → дохио шийдвэрлэх → дахин тооцоо (summary.pendingSuspiciousCount шинэчлэгдэнэ) → түүх.
 import { Inject, Injectable } from '@nestjs/common';
-import { BsaResolveSuspicionsRequest, BsaSuspicionListQuery, type BsaSuspicionCounts, type BsaSuspicionListResponse, type BsaSuspicionView, type BsaSummary, type SuspicionFlag } from '@los/contracts';
+import { BsaResolveSuspicionsRequest, BsaSuspicionListQuery, type BsaResolveSuspicionsResponse, type BsaSuspicionCounts, type BsaSuspicionListResponse, type BsaSuspicionView, type SuspicionFlag } from '@los/contracts';
 import type { z } from 'zod';
-import { BSA_REPOSITORY, BsaInvalidError, type BsaRepository, type BsaSuspicionRecord, type BsaTransactionRecord } from '../common/persistence';
+import { BSA_REPOSITORY, BsaInvalidError, type BsaAnalysisRecord, type BsaRepository, type BsaSuspicionRecord, type BsaTransactionRecord } from '../common/persistence';
 import type { RequestContext } from '../common/infra.ports';
 import { loadAnalysis } from '../import/access';
 import { BSA_CLOCK, type Clock } from '../import/import.defaults';
@@ -19,15 +19,12 @@ import { toTransactionView } from '../import/views';
 export const EXCLUDE_INCOME_CATEGORY = 'SUSPICIOUS_INCOME';
 export const EXCLUDE_EXPENSE_CATEGORY = 'SUSPICIOUS_EXPENSE';
 
-export interface ResolveResult {
-  resolved: number;
-  /** Олдоогүй эсвэл аль хэдийн шийдвэрлэгдсэн */
-  skipped: number;
-  pending: number;
-  summary: BsaSummary | null;
-  /** ANALYZED шинжилгээ өөрчлөгдсөн ⇒ LOS-д дахин «Системрүү татах» хэрэгтэй */
-  repushRequired: boolean;
-}
+/** Хариуны гэрээ нь `@los/contracts` дахь цорын ганц схем (web мөн тэрийг уншина) */
+export type ResolveResult = BsaResolveSuspicionsResponse;
+
+/** Ангилал солих алхмын үр дүн: `changed` = setManualCategory-ийн үнэхээр шинэчилсэн мөр; `unchanged` = чиглэл таарахгүй тул хэвээр үлдсэн */
+interface CategoryImpact { changed: number; unchanged: number }
+const NO_IMPACT: CategoryImpact = { changed: 0, unchanged: 0 };
 
 const ALL_FLAGS: readonly SuspicionFlag[] = ['OWN_ACCOUNT', 'CIRCULAR', 'INTER_ACCOUNT_FRAUD', 'QUICK_CASH', 'SPLIT_WITHDRAWAL', 'COLLUSION', 'STRUCTURING', 'GAMBLING'];
 
@@ -79,17 +76,7 @@ export class SuspicionReviewService {
       const txns = new Map((await r.transactions.loadAll(analysisId)).map((t) => [t.id, t]));
       const touched = [...new Set(open.flatMap((s) => s.transactionIds))].map((id) => txns.get(id)).filter((t): t is BsaTransactionRecord => t !== undefined && !t.isOwnTransfer);
 
-      if (input.action === 'EXCLUDE') {
-        await this.setCategory(r, analysisId, touched.filter((t) => t.direction === 'INCOME'), EXCLUDE_INCOME_CATEGORY, ctx.userId);
-        await this.setCategory(r, analysisId, touched.filter((t) => t.direction === 'EXPENSE'), EXCLUDE_EXPENSE_CATEGORY, ctx.userId);
-      } else if (input.action === 'RECLASSIFY') {
-        const code = input.categoryCode as string;
-        const cat = (await r.config.listCategories(analysis.orgId)).find((c) => c.code === code && c.isActive);
-        if (!cat) throw unprocessable('CATEGORY_INVALID');
-        const matching = touched.filter((t) => t.direction === cat.direction);
-        if (matching.length === 0) throw unprocessable('CATEGORY_INVALID');
-        await this.setCategory(r, analysisId, matching, code, ctx.userId);
-      }
+      const impact = await this.applyCategories(r, analysis, input, touched, ctx.userId);
 
       const resolved = await r.suspicions.resolve(analysisId, open.map((s) => s.id), {
         action: input.action, newCategoryCode: input.categoryCode ?? null, comment: input.comment ?? null, by: ctx.userId, at: this.clock.now(),
@@ -106,16 +93,37 @@ export class SuspicionReviewService {
         resolved,
         skipped: input.ids.length - resolved,
         pending: await r.suspicions.countPending(analysisId),
+        changedTransactions: impact.changed,
+        unchangedTransactions: impact.unchanged,
         summary: result.summary,
         repushRequired: analysis.status === 'ANALYZED',
       };
     });
   }
 
-  private async setCategory(r: BsaRepository, analysisId: string, rows: BsaTransactionRecord[], code: string, by: string): Promise<void> {
-    if (rows.length === 0) return;
+  /** `touched` = хүлээгдэж буй дохионы өөрийн дансных биш гүйлгээ. EXCLUDE хоёр чиглэлийг, RECLASSIFY зөвхөн ангиллын чиглэлтэйг солино; APPROVE юуг ч биш. */
+  private async applyCategories(r: BsaRepository, analysis: BsaAnalysisRecord, input: BsaResolveSuspicionsRequest, touched: BsaTransactionRecord[], by: string): Promise<CategoryImpact> {
+    if (input.action === 'EXCLUDE') {
+      const income = await this.setCategory(r, analysis.id, touched.filter((t) => t.direction === 'INCOME'), EXCLUDE_INCOME_CATEGORY, by);
+      const expense = await this.setCategory(r, analysis.id, touched.filter((t) => t.direction === 'EXPENSE'), EXCLUDE_EXPENSE_CATEGORY, by);
+      return { changed: income + expense, unchanged: 0 };
+    }
+    if (input.action === 'RECLASSIFY') {
+      const code = input.categoryCode as string;
+      const cat = (await r.config.listCategories(analysis.orgId)).find((c) => c.code === code && c.isActive);
+      if (!cat) throw unprocessable('CATEGORY_INVALID');
+      const matching = touched.filter((t) => t.direction === cat.direction);
+      if (matching.length === 0) throw unprocessable('CATEGORY_INVALID');
+      return { changed: await this.setCategory(r, analysis.id, matching, code, by), unchanged: touched.length - matching.length };
+    }
+    return NO_IMPACT;
+  }
+
+  /** Буцаах: репозиторийн үнэхээр шинэчилсэн мөрийн тоо */
+  private async setCategory(r: BsaRepository, analysisId: string, rows: BsaTransactionRecord[], code: string, by: string): Promise<number> {
+    if (rows.length === 0) return 0;
     try {
-      await r.transactions.setManualCategory(analysisId, rows.map((t) => t.id), code, by);
+      return await r.transactions.setManualCategory(analysisId, rows.map((t) => t.id), code, by);
     } catch (e) {
       if (e instanceof BsaInvalidError) throw unprocessable('CATEGORY_INVALID');
       throw e;

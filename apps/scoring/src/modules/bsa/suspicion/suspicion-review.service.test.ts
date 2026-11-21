@@ -131,3 +131,120 @@ describe('SuspicionReviewService.resolve', () => {
     expect(res.repushRequired).toBe(true);
   });
 });
+
+// F6-10 follow-up: the response counts what the server REALLY updated (setManualCategory's own count), so the web never re-derives it.
+describe('SuspicionReviewService.resolve: transaction impact', () => {
+  // Орж ирээд ойролцоо дүнтэй буцсан = CIRCULAR: нэг орлого + нэг зарлага (нэг дохио, хоёр чиглэл)
+  const PAIR: Row[] = [
+    { txnDate: '2026-05-01', direction: 'INCOME', amount: 1_000_000, description: 'Шилжүүлэг', counterpartyAccount: 'A1' },
+    { txnDate: '2026-05-02', direction: 'EXPENSE', amount: 1_010_000, description: 'Шилжүүлэг', counterpartyAccount: 'A1' },
+  ];
+  const INCOME_CATEGORY = 'SALARY';
+  const EXPENSE_CATEGORY = 'LOAN_PAYMENT';
+
+  async function circularPair(extra: Row[] = []) {
+    const h = await createHarness({ realSuspicion: true });
+    const id = await seed(h, [...BASE, ...PAIR, ...extra]);
+    const signal = (await h.review.list(OFFICER, id, {})).items.find((i) => i.flag === 'CIRCULAR');
+    expect(signal, 'fixture must contain a CIRCULAR signal').toBeDefined();
+    const txn = async (direction: 'INCOME' | 'EXPENSE') => (await h.repo.transactions.loadAll(id)).find((t) => signal!.transactionIds.includes(t.id) && t.direction === direction)!;
+    return { h, id, signal: signal!, income: await txn('INCOME'), expense: await txn('EXPENSE'), reload: txn };
+  }
+  const row = async (h: Harness, id: string, txnId: string) => (await h.repo.transactions.loadAll(id)).find((t) => t.id === txnId)!;
+
+  it('RECLASSIFY to an income category on an income+expense pair: 1 changed, 1 left because its direction does not match', async () => {
+    const { h, id, signal, income, expense } = await circularPair();
+    const res = await h.review.resolve(OFFICER, id, { ids: [signal.id], action: 'RECLASSIFY', categoryCode: INCOME_CATEGORY });
+    expect(res).toMatchObject({ resolved: 1, skipped: 0, changedTransactions: 1, unchangedTransactions: 1 });
+    expect(await row(h, id, income.id)).toMatchObject({ categoryCode: INCOME_CATEGORY, manualOverride: true });
+    expect(await row(h, id, expense.id)).toMatchObject({ categoryCode: expense.categoryCode, manualOverride: false });
+  });
+
+  it('RECLASSIFY to an expense category on the same pair: the income leg is the one left unchanged', async () => {
+    const { h, id, signal, income, expense } = await circularPair();
+    const res = await h.review.resolve(OFFICER, id, { ids: [signal.id], action: 'RECLASSIFY', categoryCode: EXPENSE_CATEGORY });
+    expect(res).toMatchObject({ resolved: 1, changedTransactions: 1, unchangedTransactions: 1 });
+    expect(await row(h, id, expense.id)).toMatchObject({ categoryCode: EXPENSE_CATEGORY, manualOverride: true });
+    expect(await row(h, id, income.id)).toMatchObject({ categoryCode: income.categoryCode, manualOverride: false });
+  });
+
+  it('RECLASSIFY where every touched transaction matches the direction: all changed, none left', async () => {
+    const h = await createHarness({ realSuspicion: true });
+    const id = await seed(h, [...BASE, GAMBLING, { ...GAMBLING, txnDate: '2026-05-11', amount: 90_000, description: 'Casino' }]);
+    const ids = (await h.review.list(OFFICER, id, {})).items.map((i) => i.id);
+    expect(ids).toHaveLength(2);
+    const res = await h.review.resolve(OFFICER, id, { ids, action: 'RECLASSIFY', categoryCode: EXPENSE_CATEGORY });
+    expect(res).toMatchObject({ resolved: 2, changedTransactions: 2, unchangedTransactions: 0 });
+  });
+
+  it('RECLASSIFY where nothing matches the direction is still rejected and changes nothing', async () => {
+    const h = await createHarness({ realSuspicion: true });
+    const id = await seed(h, [...BASE, GAMBLING]);
+    const [s] = (await h.review.list(OFFICER, id, {})).items;
+    await expect(h.review.resolve(OFFICER, id, { ids: [s!.id], action: 'RECLASSIFY', categoryCode: INCOME_CATEGORY })).rejects.toMatchObject({ bsaCode: 'CATEGORY_INVALID' });
+    expect((await h.repo.transactions.loadAll(id)).filter((t) => t.manualOverride)).toHaveLength(0);
+    expect((await h.review.list(OFFICER, id, {})).counts.pending).toBe(1);
+  });
+
+  it('EXCLUDE changes both directions: 2 changed, none left', async () => {
+    const { h, id, signal, income, expense } = await circularPair();
+    const res = await h.review.resolve(OFFICER, id, { ids: [signal.id], action: 'EXCLUDE' });
+    expect(res).toMatchObject({ resolved: 1, changedTransactions: 2, unchangedTransactions: 0 });
+    expect((await row(h, id, income.id)).categoryCode).toBe('SUSPICIOUS_INCOME');
+    expect((await row(h, id, expense.id)).categoryCode).toBe('SUSPICIOUS_EXPENSE');
+  });
+
+  it('APPROVE changes no transaction, so both counts are 0', async () => {
+    const { h, id, signal } = await circularPair();
+    const res = await h.review.resolve(OFFICER, id, { ids: [signal.id], action: 'APPROVE' });
+    expect(res).toMatchObject({ resolved: 1, changedTransactions: 0, unchangedTransactions: 0 });
+    expect((await h.repo.transactions.loadAll(id)).filter((t) => t.manualOverride)).toHaveLength(0);
+  });
+
+  it('the reported change equals the rows really written (ground truth, not a prediction)', async () => {
+    const { h, id, signal } = await circularPair();
+    const res = await h.review.resolve(OFFICER, id, { ids: [signal.id], action: 'EXCLUDE' });
+    expect((await h.repo.transactions.loadAll(id)).filter((t) => t.manualOverride)).toHaveLength(res.changedTransactions);
+  });
+
+  it('OWN_ACCOUNT: the auto-resolved own-transfer signal is skipped and its transactions are neither changed nor counted', async () => {
+    // Өөрийн данс хоорондын шилжүүлэг = өөр хуулгын ижил өдөр, ижил дүнтэй эсрэг хос (BSA-BR-5)
+    const own: Row[] = [
+      { txnDate: '2026-05-28', direction: 'INCOME', amount: 500_000, description: 'Шилжүүлэг' },
+      { txnDate: '2026-05-28', direction: 'EXPENSE', amount: 500_000, description: 'Шилжүүлэг', statementKey: 'stmt-2' },
+    ];
+    const h = await createHarness({ realSuspicion: true });
+    const id = await seed(h, [...BASE, ...own, GAMBLING]);
+    const items = (await h.review.list(OFFICER, id, {})).items;
+    const ownSignal = items.find((i) => i.flag === 'OWN_ACCOUNT');
+    const gambling = items.find((i) => i.flag === 'GAMBLING');
+    expect(ownSignal, 'fixture must contain an OWN_ACCOUNT signal').toMatchObject({ status: 'RESOLVED' });
+    expect(gambling).toMatchObject({ status: 'PENDING' });
+
+    const res = await h.review.resolve(OFFICER, id, { ids: [ownSignal!.id, gambling!.id], action: 'EXCLUDE' });
+    expect(res).toMatchObject({ resolved: 1, skipped: 1, changedTransactions: 1, unchangedTransactions: 0 });
+    for (const txnId of ownSignal!.transactionIds) expect(await row(h, id, txnId)).toMatchObject({ isOwnTransfer: true, manualOverride: false });
+  });
+
+  it('OWN_ACCOUNT: an own-account transfer inside a pending signal is left alone and not counted as changed or unchanged', async () => {
+    const { h, id, signal, expense } = await circularPair();
+    await h.repo.transactions.updateClassifications(id, [{ id: expense.id, categoryCode: 'NON_EXPENSE', categoryGroup: 'F', confidence: 100, channel: 'TRANSFER', isOwnTransfer: true }]);
+    const res = await h.review.resolve(OFFICER, id, { ids: [signal.id], action: 'EXCLUDE' });
+    expect(res).toMatchObject({ resolved: 1, changedTransactions: 1, unchangedTransactions: 0 });
+    expect(await row(h, id, expense.id)).toMatchObject({ categoryCode: 'NON_EXPENSE', isOwnTransfer: true, manualOverride: false });
+  });
+
+  it('a transaction shared by two selected signals is changed (and counted) once', async () => {
+    const h = await createHarness();
+    const id = await seed(h, [...BASE, ...PAIR, { txnDate: '2026-05-03', direction: 'EXPENSE', amount: 20_000, description: 'Бэлэн авсан' }]);
+    const [inc, exp1, exp2] = (await h.repo.transactions.loadAll(id)).filter((t) => t.txnDate >= '2026-05-01' && t.txnDate <= '2026-05-03').sort((a, b) => a.txnDate.localeCompare(b.txnDate));
+    await h.memory.suspicions.sync(id, [
+      { detectKey: 'k-circular', flag: 'CIRCULAR', transactionIds: [inc!.id, exp1!.id], confidence: 80, autoResolved: false },
+      { detectKey: 'k-quick', flag: 'QUICK_CASH', transactionIds: [inc!.id, exp2!.id], confidence: 70, autoResolved: false },
+    ]);
+    const ids = (await h.review.list(OFFICER, id, {})).items.map((i) => i.id);
+    expect(ids).toHaveLength(2);
+    const res = await h.review.resolve(OFFICER, id, { ids, action: 'EXCLUDE' });
+    expect(res).toMatchObject({ resolved: 2, changedTransactions: 3, unchangedTransactions: 0 });
+  });
+});
