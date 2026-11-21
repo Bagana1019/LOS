@@ -127,6 +127,8 @@
   "letters.title": "Албан бичиг",
   "letters.create": "Албан бичиг үүсгэх",
   "letters.created": "Албан бичиг үүслээ",
+  "letters.createdNo": "Албан бичиг №{no} үүслээ",
+  "letters.new": "Шинэ",
   "letters.empty": "Албан бичиг үүсээгүй байна.",
   "letters.hint": "Албан бичгийг гэрээ үүссэний дараа үүсгэнэ.",
   "letters.printed": "Хэвлэсэн",
