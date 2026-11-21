@@ -1,15 +1,18 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
 import { PLACEHOLDER_CATALOG, type ContractTemplateType, type ContractTemplateView, type RenderTemplateRequest, type RenderTemplateResponse, type RequestContext } from '@los/contracts';
 import { DomainError } from '@los/nest-common';
 import type { ContractTemplate } from '.prisma/client-dms';
 import { PrismaService } from '../../prisma.service';
 import { FileService, type UploadedFile } from '../file/file.service';
-import { OBJECT_STORAGE, type ObjectStorage } from '../file/storage';
+import { OBJECT_STORAGE, isObjectMissing, type ObjectStorage } from '../file/storage';
 import { extractPlaceholders, fillDocx } from './docx-renderer';
 import { demoLoanContractDocx, demoOfficialLetterDocx } from './demo-template';
 import { PDF_CONVERTER, type PdfConverter } from './pdf-converter';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+/** F4-2: идэвхтэй загварын мөр бий ч docx объект storage-д алга. 422 — origination 4xx-ийн code/message-ийг UI хүртэл дамжуулдаг (5xx бол ерөнхий 502 болно). */
+export const TEMPLATE_FILE_MISSING = 'TEMPLATE_FILE_MISSING';
+export const TEMPLATE_FILE_MISSING_MESSAGE = 'Гэрээний загварын файл олдсонгүй — админд мэдэгдэнэ үү';
 /** Давталтын доторх талбарууд — каталогийн түлхүүр биш ч "тодорхойгүй" гэж үзэхгүй. */
 export const LOOP_FIELDS = ['no', 'due_date', 'principal', 'interest', 'total', 'balance', 'description', 'value', 'registry_no'] as const;
 const KNOWN = new Set<string>([...PLACEHOLDER_CATALOG.map((p) => p.key), ...LOOP_FIELDS]);
@@ -22,6 +25,8 @@ export const toTemplateView = (t: ContractTemplate): ContractTemplateView => {
 /** FR-11.1/11.2: гэрээ, ЭТХ, албан бичгийн docx загвар (түүх: version), placeholder каталог, загвараас PDF үүсгэх. */
 @Injectable()
 export class TemplateService {
+  private readonly log = new Logger(TemplateService.name);
+
   constructor(
     private readonly db: PrismaService,
     private readonly files: FileService,
@@ -80,7 +85,7 @@ export class TemplateService {
 
   async render(ctx: RequestContext, req: RenderTemplateRequest): Promise<RenderTemplateResponse> {
     const t = await this.resolve(ctx, req);
-    const docx = await this.read(t.docxFileId, ctx);
+    const docx = await this.read(t, ctx);
     const filled = fillDocx(docx, req.data);
     const pdf = await this.pdf.convert(filled);
     const base = (req.fileBaseName ?? 'document').replace(/[^\p{L}\p{N}_.-]+/gu, '_').slice(0, 80);
@@ -111,11 +116,16 @@ export class TemplateService {
     throw new DomainError('TEMPLATE_NOT_CONFIGURED', 'Энэ төрлийн идэвхтэй загвар тохируулаагүй байна (Тохиргоо → Загвар)', 422, { type: req.type });
   }
 
-  private async read(fileId: string, ctx: RequestContext): Promise<Buffer> {
-    const { row, stream } = await this.files.open(ctx, fileId);
-    void row;
-    const chunks: Buffer[] = [];
-    for await (const c of stream) chunks.push(Buffer.from(c as Buffer));
-    return Buffer.concat(chunks);
+  private async read(t: ContractTemplate, ctx: RequestContext): Promise<Buffer> {
+    try {
+      const { stream } = await this.files.open(ctx, t.docxFileId);
+      const chunks: Buffer[] = [];
+      for await (const c of stream) chunks.push(Buffer.from(c as Buffer));
+      return Buffer.concat(chunks);
+    } catch (e) {
+      if (!isObjectMissing(e)) throw e; // бусад storage алдаа (холболт г.м) өөрчлөгдөхгүй: 500 → origination-д 502
+      this.log.error(`template docx missing in object storage (templateId=${t.id}, fileId=${t.docxFileId}, correlationId=${ctx.correlationId ?? '-'}); re-upload the template in Settings`);
+      throw new DomainError(TEMPLATE_FILE_MISSING, TEMPLATE_FILE_MISSING_MESSAGE, 422, { templateId: t.id, fileId: t.docxFileId });
+    }
   }
 }

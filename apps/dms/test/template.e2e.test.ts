@@ -5,9 +5,10 @@ import { ContractTemplateView, RenderTemplateResponse } from '@los/contracts';
 import { SEED } from '@los/database';
 import { PDFDocument } from 'pdf-lib';
 import request from 'supertest';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma.service';
+import { OBJECT_STORAGE, type MemoryStorage } from '../src/modules/file/storage';
 import { demoLoanContractDocx } from '../src/modules/template/demo-template';
 import { extractTextRuns } from '../src/modules/esign/pdf/pdf-inspect';
 
@@ -90,6 +91,52 @@ describe.skipIf(!HAS_DB)('dms templates (FR-11: /api/templates)', () => {
     expect(r1.templateId).toBe(prod.id);
     const r2 = RenderTemplateResponse.parse((await api().post('/api/templates/render').set(as('officerA')).send({ type: 'LOAN_CONTRACT', productId: SEED.products.vehicle, data: {} })).body);
     expect(r2.templateId).not.toBe(prod.id);
+  });
+
+  // F4-2: dms restarts with STORAGE_DRIVER=memory → the contract_template row stays active but its docx blob is gone (NoSuchKey).
+  describe('template docx lost from object storage (F4-2)', () => {
+    const MISSING_MESSAGE = 'Гэрээний загварын файл олдсонгүй — админд мэдэгдэнэ үү';
+    const storage = () => app.get<MemoryStorage>(OBJECT_STORAGE);
+    const render = () => api().post('/api/templates/render').set(as('officerA')).send({ type: 'LOAN_CONTRACT', data: {} });
+    const uploadContract = async () => ContractTemplateView.parse((await upload('admin', { type: 'LOAN_CONTRACT', name: 'Гэрээ' })).body);
+    const loseBlob = async (tpl: ContractTemplateView) => {
+      const file = await db.file.findUniqueOrThrow({ where: { id: tpl.docxFileId } });
+      expect(storage().objects.delete(file.storageKey)).toBe(true);
+    };
+
+    it('answers 422 TEMPLATE_FILE_MISSING with the admin-facing message and the ids needed to find the template', async () => {
+      const tpl = await uploadContract();
+      await loseBlob(tpl);
+      const res = await render();
+      expect(res.status, JSON.stringify(res.body)).toBe(422);
+      expect(res.body).toMatchObject({ code: 'TEMPLATE_FILE_MISSING', message: MISSING_MESSAGE, details: { templateId: tpl.id, fileId: tpl.docxFileId } });
+    });
+
+    it('stores nothing: the failed render leaves no docx/pdf file rows behind', async () => {
+      const tpl = await uploadContract();
+      await loseBlob(tpl);
+      const before = await db.file.count();
+      expect((await render()).status).toBe(422);
+      expect(await db.file.count()).toBe(before);
+    });
+
+    it('a storage failure other than NoSuchKey is not relabelled as a missing template file', async () => {
+      await uploadContract();
+      const down = vi.spyOn(storage(), 'get').mockRejectedValueOnce(Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:9000'), { code: 'ECONNREFUSED' }));
+      const res = await render();
+      down.mockRestore();
+      expect(res.status).toBeGreaterThanOrEqual(500);
+      expect(res.body.code).not.toBe('TEMPLATE_FILE_MISSING');
+    });
+
+    it('after the admin re-uploads the template, rendering works again', async () => {
+      await loseBlob(await uploadContract());
+      expect((await render()).status).toBe(422);
+      const fresh = await uploadContract();
+      const ok = await render();
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+      expect(RenderTemplateResponse.parse(ok.body).templateId).toBe(fresh.id);
+    });
   });
 
   it('installs DEMO templates idempotently', async () => {

@@ -12,6 +12,9 @@ export interface ObjectStorage {
 }
 export const OBJECT_STORAGE = Symbol('OBJECT_STORAGE');
 
+/** Объект байхгүй (S3 `NoSuchKey`). MemoryStorage ба minio-ийн `S3Error` хоёул `code`-д ийм утга тавьдаг; мессежээр таниахгүй. */
+export const isObjectMissing = (e: unknown): boolean => typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'NoSuchKey';
+
 export class MinioStorage implements ObjectStorage {
   private readonly client: Client;
   constructor(readonly bucket: string, env: NodeJS.ProcessEnv = process.env) {
