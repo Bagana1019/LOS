@@ -131,8 +131,10 @@ describe.skipIf(!hasTestDb)('decision page risk summary (DB)', () => {
   it('ЗЭЗ (хүсэлтийг үүсгэсэн) ч мөн адил харна; өөр салбарын ажилтан хандаж чадахгүй (эрх хэвээр)', async () => {
     const { app } = await inApproval();
     expect((await view(app.id, officer)).summary.risk?.method).toBe('A_SALARY');
-    const outsider = await http().get(`/api/applications/${app.id}/decision`).set(actors.officer('officer-9', 'branch-2'));
+    // The error body echoes the correlation id. A random UUID contains "712" by chance (~0.7%), which made this test flaky in CI:
+    // send an id that DOES contain it so the check below only passes if the risk score itself is absent from the payload.
+    const outsider = await http().get(`/api/applications/${app.id}/decision`).set(actors.officer('officer-9', 'branch-2')).set('X-Correlation-Id', 'corr-7120-outsider');
     expect([403, 404]).toContain(outsider.status);
-    expect(JSON.stringify(outsider.body)).not.toContain('712');
+    expect(JSON.stringify({ ...outsider.body, correlationId: undefined })).not.toContain('712');
   });
 });
