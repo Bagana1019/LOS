@@ -19,10 +19,10 @@ describe.skipIf(!hasTestDb)('notification: загвар, хүргэлтийн б
       }
     });
 
-    it('кодонд суулгасан 24 загвар (isBuiltin, id=null), type/channel дарааллаар', async () => {
+    it('кодонд суулгасан 26 загвар (isBuiltin, id=null), type/channel дарааллаар', async () => {
       const res = await env.http().get('/api/notifications/templates').set(actors.admin()).expect(200);
       const views = TemplateView.array().parse(res.body);
-      expect(views).toHaveLength(24);
+      expect(views).toHaveLength(26);
       expect(views.every((v) => v.id === null && v.isBuiltin && v.isActive && v.locale === 'mn')).toBe(true);
       expect(views[0]).toMatchObject({ type: 'APPROVAL_REQUESTED', channel: 'IN_APP' });
       const approved = views.filter((v) => v.type === 'APPROVED').map((v) => v.channel);
@@ -39,7 +39,7 @@ describe.skipIf(!hasTestDb)('notification: загвар, хүргэлтийн б
       expect(await env.t.prisma.notificationTemplate.count()).toBe(1);
       expect(await env.t.prisma.notificationTemplate.findFirstOrThrow()).toMatchObject({ orgId: ORG, createdBy: 'admin-9', updatedBy: 'admin-1', body: 'Шинэ {{amount}}' });
       const list = TemplateView.array().parse((await env.http().get('/api/notifications/templates').set(actors.admin())).body);
-      expect(list).toHaveLength(24);
+      expect(list).toHaveLength(26);
       expect(list.find((v) => v.type === 'PAYMENT_DUE' && v.channel === 'SMS')).toMatchObject({ id: created.id, body: 'Шинэ {{amount}}' });
     });
 
@@ -90,7 +90,7 @@ describe.skipIf(!hasTestDb)('notification: загвар, хүргэлтийн б
     it('өөр locale-ийн override нь тусдаа мөр (isBuiltin=false)', async () => {
       const en = TemplateView.parse((await env.http().put('/api/notifications/templates').set(actors.admin()).send({ type: 'APPROVED', channel: 'SMS', locale: 'en', body: 'Approved {{contractNo}}' }).expect(200)).body);
       expect(en).toMatchObject({ locale: 'en', isBuiltin: false });
-      expect(TemplateView.array().parse((await env.http().get('/api/notifications/templates').set(actors.admin())).body)).toHaveLength(25);
+      expect(TemplateView.array().parse((await env.http().get('/api/notifications/templates').set(actors.admin())).body)).toHaveLength(27);
     });
   });
 

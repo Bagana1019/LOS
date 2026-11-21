@@ -85,9 +85,14 @@ export function truncate(text: string | null | undefined, max: number): string {
 export const shortId = (id: string, length = 8): string => (id.length <= length ? id : id.slice(0, length));
 
 // ── ажилтны хонх (in-app) ────────────────────────────────────────────────────────────
-/** Хүсэлттэй холбоотой мэдэгдэл дарахад очих хуудас (brief: шийдвэрийн алхам). Хүсэлтгүй бол null. */
-export function notificationHref(n: Pick<NotificationView, 'applicationId'>): string | null {
-  return n.applicationId ? `/los/loan-application/${encodeURIComponent(n.applicationId)}/decision` : null;
+/** F5-12: олголтыг батлах/буцаах мэдэгдэл — хүсэлтийн "Олгох" алхам руу очно (бусад нь шийдвэрийн алхам). */
+const DISBURSE_STEP_TYPES: readonly NotificationType[] = ['DISBURSEMENT_SUBMITTED', 'DISBURSEMENT_REJECTED'];
+
+/** Хүсэлттэй холбоотой мэдэгдэл дарахад очих хуудас (анхдагч: шийдвэрийн алхам; олголтын мэдэгдэл: олголтын алхам). Хүсэлтгүй бол null. */
+export function notificationHref(n: Pick<NotificationView, 'applicationId' | 'type'>): string | null {
+  if (!n.applicationId) return null;
+  const step = DISBURSE_STEP_TYPES.includes(n.type) ? 'disburse' : 'decision';
+  return `/los/loan-application/${encodeURIComponent(n.applicationId)}/${step}`;
 }
 
 /** Хонхны жагсаалтын мөр. Гарчиг хоосон бол (загвар байхгүй) төрлийн нэрийг ашиглана. */

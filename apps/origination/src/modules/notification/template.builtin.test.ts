@@ -8,7 +8,7 @@ import { findInvalidPlaceholders, renderText, smsSegments } from './template.ren
 const WORST = { borrowerName: 'Бат-Эрдэнэ', amount: 120_000_000, currency: 'MNT', dueDate: '2026-10-28', contractNo: 'BZ-2026-000123', applicationNo: 'APP-2026-000123', daysOverdue: 120, comment: '' };
 
 describe('кодонд суулгасан загварууд', () => {
-  it('9 төрөл бүрт IN_APP загвар байна (хонх)', () => {
+  it('11 төрөл бүрт IN_APP загвар байна (хонх)', () => {
     for (const type of NotificationType) {
       const t = builtinTemplate(type, 'IN_APP', 'mn');
       expect(t, type).not.toBeNull();
@@ -27,10 +27,23 @@ describe('кодонд суулгасан загварууд', () => {
     expect(builtinTemplate('APPROVED', 'SMS', 'en')).toBeNull();
   });
 
-  it('нийт 9 + 15 = 24 загвар, type×channel давхардалгүй', () => {
+  it('нийт 11 + 15 = 26 загвар, type×channel давхардалгүй', () => {
     const all = builtinTemplates();
-    expect(all).toHaveLength(24);
-    expect(new Set(all.map((t) => `${t.type}|${t.channel}`)).size).toBe(24);
+    expect(all).toHaveLength(26);
+    expect(new Set(all.map((t) => `${t.type}|${t.channel}`)).size).toBe(26);
+  });
+
+  it('F5-12: олголт илгээсэн/татгалзсан загвар зөвхөн ажилтны хонхонд; татгалзсанд батлагчийн тайлбар орно', () => {
+    const vars = { applicationNo: 'APP-00001', amount: 30_000_000, currency: 'MNT', comment: 'Данс буруу' };
+    for (const type of ['DISBURSEMENT_SUBMITTED', 'DISBURSEMENT_REJECTED'] as const) {
+      expect(CUSTOMER_TYPES as readonly string[]).not.toContain(type);
+      for (const ch of ['SMS', 'EMAIL', 'PUSH'] as const) expect(builtinTemplate(type, ch, 'mn'), `${type}/${ch}`).toBeNull();
+      const t = builtinTemplate(type, 'IN_APP', 'mn')!;
+      expect(findInvalidPlaceholders(t.subject, t.body), type).toEqual([]);
+      expect(renderText(t.body, vars), type).toContain('APP-00001');
+    }
+    expect(builtinTemplate('DISBURSEMENT_SUBMITTED', 'IN_APP', 'mn')!.subject).toBe('Олголт зөвшөөрөх хүсэлт ирлээ');
+    expect(renderText(builtinTemplate('DISBURSEMENT_REJECTED', 'IN_APP', 'mn')!.body, vars)).toContain('Тайлбар: Данс буруу');
   });
 
   it('зөвхөн зөвшөөрөгдсөн placeholder ашигласан; EMAIL/PUSH/IN_APP-д гарчигтай, SMS-д гарчиггүй', () => {
