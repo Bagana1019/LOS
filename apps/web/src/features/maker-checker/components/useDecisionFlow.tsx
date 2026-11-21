@@ -3,6 +3,7 @@ import { useState, type ReactNode } from 'react';
 import type { ChangeRequestDto } from '@los/contracts';
 import { useDecision, type DecisionKind } from '../hooks';
 import { isConflict } from '../errors';
+import { rangeWarnings } from '../range-warnings';
 import { ApproveModal } from './ApproveModal';
 import { RejectModal } from './RejectModal';
 
@@ -54,9 +55,12 @@ export function useDecisionFlow(): { handlers: DecisionHandlers; modals: ReactNo
     onCancel: (dto) => void run('cancel', dto),
   };
 
+  // F9-5: odd product values are flagged right in the approve dialog too (rows can approve without opening the drawer).
+  const approveWarnings = dialog?.kind === 'approve' ? rangeWarnings(dialog.dto) : [];
+
   const modals = (
     <>
-      <ApproveModal open={dialog?.kind === 'approve'} loading={approve.isPending} onSubmit={submit} onCancel={() => setDialog(null)} />
+      <ApproveModal open={dialog?.kind === 'approve'} loading={approve.isPending} warnings={approveWarnings} onSubmit={submit} onCancel={() => setDialog(null)} />
       <RejectModal open={dialog?.kind === 'reject'} loading={reject.isPending} onSubmit={submit} onCancel={() => setDialog(null)} />
     </>
   );

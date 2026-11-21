@@ -2,6 +2,7 @@ import { Writable } from 'node:stream';
 import ExcelJS from 'exceljs';
 import type { ReportColumn, ReportRow } from '@los/contracts';
 import { yieldToEventLoop } from './concurrency';
+import { formatUbDateTime } from './report-dates';
 import { labelOf } from './report-labels';
 
 // NFR-9: тайлангийн Excel. Гарчгийн 4 мөр (нэр, огноо, шүүлт, үүсгэсэн), 5-р мөр хүснэгтийн толгой (bold, freeze, autofilter), дараа нь өгөгдөл, төгсгөлд нийлбэр.
@@ -61,7 +62,7 @@ function titleLines(meta: ExportMeta): string[] {
     mock ? `${meta.title} — ${MOCK_DATA_NOTICE}` : meta.title,
     `Огноо (байдлаар): ${meta.asOf}${mock ? ' (mock өгөгдөл огнооноос хамаарахгүй)' : ''}`,
     `Шүүлт: ${meta.filterLines.length ? meta.filterLines.join('; ') : '—'}`,
-    `Үүсгэсэн: ${meta.generatedAt}${mock ? `; Эх сурвалж: ${MOCK_DATA_NOTICE}` : meta.dataSource === 'core' ? '; Эх сурвалж: Core' : ''}`,
+    `Үүсгэсэн: ${formatUbDateTime(meta.generatedAt)}${mock ? `; Эх сурвалж: ${MOCK_DATA_NOTICE}` : meta.dataSource === 'core' ? '; Эх сурвалж: Core' : ''}`,
   ];
 }
 

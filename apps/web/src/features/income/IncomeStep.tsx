@@ -1,10 +1,12 @@
 'use client';
 import { useState } from 'react';
-import { Alert, Button, Card, DatePicker, Empty, Flex, Form, Input, InputNumber, Select, Skeleton, Statistic, Table, Tag, Typography } from 'antd';
+import { App as AntApp, Alert, Button, Card, DatePicker, Empty, Flex, Form, Input, Select, Skeleton, Statistic, Table, Tag, Typography } from 'antd';
 import type { IncomeBorrowerView } from '@los/contracts';
+import { MAX_MONEY, MoneyInput, moneyRules, useSingleFlight } from '../../components/form';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
+import { FormError } from './FormError';
 import { useAddManual, useAddSalary, useCalculate, useFetchNdsh, useIncome, useRefreshIncome, useRemoveManual, useRemoveSalary, useSetExpenses } from './useIncome';
 
 interface Props {
@@ -12,6 +14,11 @@ interface Props {
   /** Орлого өөрчлөгдсөний дараа — wizard-н алхмуудын төлөвийг дахин татна. */
   onChanged?: () => void;
 }
+
+/** Давхар илгээлтээс хамгаалж ажиллуулна (F2-14). Алдаа нь mutation-ий `error`-оор формын доор харагдана (ApiErrorAlert) — энд дахин throw хийхгүй. */
+const submitOnce = (flight: ReturnType<typeof useSingleFlight>, task: () => Promise<unknown>): void => {
+  void flight(task).catch(() => undefined);
+};
 
 /** Wizard-н 3-р алхам "Орлого" (`/los/loan-application/:id/income`): цалин (НДШ/гар), сарын дундаж, гар орлого, зардал; бизнес = BSA placeholder. FR-4. */
 export function IncomeStep({ applicationId, onChanged }: Props) {
@@ -49,7 +56,18 @@ function BorrowerIncome({ applicationId, borrower: b, onChanged }: { application
   const expenses = useSetExpenses(applicationId, onChanged);
   const [period, setPeriod] = useState<[string, string] | null>(b.summary.periodFrom && b.summary.periodTo ? [b.summary.periodFrom, b.summary.periodTo] : null);
   const required = [{ required: true, message: t('income.form.required') }];
-  const errors = [ndsh, removeSalary, addSalary, calc, addManual, removeManual, expenses].map((m) => m.error).find(Boolean);
+  // Нэмэх/зардлын форм бүр өөрийн алдааг (409 SALARY_MONTH_DUPLICATE гэх мэт серверийн мессеж) формынхоо доор харуулна; бусад нь дээд талд.
+  const errors = [ndsh, removeSalary, calc, removeManual].map((m) => m.error).find(Boolean);
+  // Нэмсний дараа форм цэвэрлэгдэнэ (key солигдоно) — ижил мөрийг санамсаргүй дахин нэмж болохгүй. Форм бүр өөрийн синхрон түгжээтэй.
+  const [salaryFormKey, setSalaryFormKey] = useState(0);
+  const [manualFormKey, setManualFormKey] = useState(0);
+  const salaryFlight = useSingleFlight();
+  const manualFlight = useSingleFlight();
+  const expensesFlight = useSingleFlight();
+  const { message } = AntApp.useApp();
+  // Амжилттай нэмсний дараа форм цэвэрлэгдэж, мэдэгдэл гарна (F2-13).
+  const salaryAdded = () => { setSalaryFormKey((k) => k + 1); void message.success(t('income.toast.salaryAdded')); };
+  const manualAdded = () => { setManualFormKey((k) => k + 1); void message.success(t('income.toast.manualAdded')); };
   const s = b.summary;
 
   return (
@@ -72,12 +90,13 @@ function BorrowerIncome({ applicationId, borrower: b, onChanged }: { application
           { title: t('income.salary.source'), dataIndex: 'source', render: (v: 'NDSH' | 'MANUAL') => t(`income.salary.source.${v}`) },
           { key: 'x', render: (_: unknown, r) => (r.source === 'MANUAL' ? <Button size="small" danger onClick={() => removeSalary.mutate(r.id)}>{t('income.salary.remove')}</Button> : null) },
         ]} />
-        <Form layout="inline" onFinish={(v: { month: string; employer?: string; salary: number }) => addSalary.mutate({ customerId: b.customerId, employer: v.employer, year: Number(v.month.slice(0, 4)), month: Number(v.month.slice(5, 7)), salary: v.salary })}>
+        <Form key={`salary-${salaryFormKey}`} layout="inline" onFinish={(v: { month: string; employer?: string; salary: number }) => submitOnce(salaryFlight, () => addSalary.mutateAsync({ customerId: b.customerId, employer: v.employer, year: Number(v.month.slice(0, 4)), month: Number(v.month.slice(5, 7)), salary: v.salary }).then(salaryAdded))}>
           <Form.Item name="month" rules={required} getValueFromEvent={(d: { format: (f: string) => string } | null) => d?.format('YYYY-MM')} getValueProps={() => ({})}><DatePicker picker="month" placeholder={t('income.salary.period')} /></Form.Item>
           <Form.Item name="employer"><Input placeholder={t('income.salary.employer')} /></Form.Item>
-          <Form.Item name="salary" rules={required}><InputNumber min={1} placeholder={t('income.salary.amount')} style={{ width: 160 }} /></Form.Item>
-          <Form.Item><Button htmlType="submit" loading={addSalary.isPending}>{t('income.salary.add')}</Button></Form.Item>
+          <Form.Item name="salary" validateFirst rules={moneyRules({ required: t('income.form.required'), positive: true, max: MAX_MONEY, label: t('income.salary.amount') })}><MoneyInput placeholder={t('income.salary.amount')} style={{ width: 160 }} /></Form.Item>
+          <Form.Item><Button htmlType="submit" loading={addSalary.isPending} disabled={addSalary.isPending}>{t('income.salary.add')}</Button></Form.Item>
         </Form>
+        <FormError error={addSalary.error} testId="income-salary-error" />
 
         <Typography.Title level={5} style={{ margin: 0 }}>{t('income.calc.title')}</Typography.Title>
         <Flex gap={12} align="center" wrap>
@@ -100,21 +119,23 @@ function BorrowerIncome({ applicationId, borrower: b, onChanged }: { application
           { title: t('income.manual.note'), dataIndex: 'note' },
           { key: 'x', render: (_: unknown, r) => <Button size="small" danger onClick={() => removeManual.mutate(r.id)}>{t('income.salary.remove')}</Button> },
         ]} />
-        <Form layout="inline" initialValues={{ type: 'RENT' }} onFinish={(v: { type: 'RENT' | 'PENSION' | 'OTHER'; monthlyAmount: number; note?: string }) => addManual.mutate({ customerId: b.customerId, ...v })}>
+        <Form key={`manual-${manualFormKey}`} layout="inline" initialValues={{ type: 'RENT' }} onFinish={(v: { type: 'RENT' | 'PENSION' | 'OTHER'; monthlyAmount: number; note?: string }) => submitOnce(manualFlight, () => addManual.mutateAsync({ customerId: b.customerId, ...v }).then(manualAdded))}>
           <Form.Item name="type"><Select style={{ width: 140 }} options={(['RENT', 'PENSION', 'OTHER'] as const).map((v) => ({ value: v, label: t(`income.manual.type.${v}`) }))} /></Form.Item>
-          <Form.Item name="monthlyAmount" rules={required}><InputNumber min={1} placeholder={t('income.manual.monthly')} style={{ width: 160 }} /></Form.Item>
+          <Form.Item name="monthlyAmount" validateFirst rules={moneyRules({ required: t('income.form.required'), positive: true, max: MAX_MONEY, label: t('income.manual.monthly') })}><MoneyInput placeholder={t('income.manual.monthly')} style={{ width: 160 }} /></Form.Item>
           <Form.Item name="note"><Input placeholder={t('income.manual.note')} /></Form.Item>
-          <Form.Item><Button htmlType="submit" loading={addManual.isPending}>{t('income.manual.add')}</Button></Form.Item>
+          <Form.Item><Button htmlType="submit" loading={addManual.isPending} disabled={addManual.isPending}>{t('income.manual.add')}</Button></Form.Item>
         </Form>
+        <FormError error={addManual.error} testId="income-manual-error" />
         {b.manualMonthlyTotal > 0 ? <Typography.Text type="secondary">{t('income.manual.total', { amount: formatMnt(b.manualMonthlyTotal) })}</Typography.Text> : null}
 
         <Typography.Title level={5} style={{ margin: 0 }}>{t('income.expense.title')}</Typography.Title>
         <Form layout="inline" key={`${s.householdExpenseMonthly}-${s.businessExpenseMonthly}`} initialValues={{ household: s.householdExpenseMonthly ?? undefined, business: s.businessExpenseMonthly ?? undefined }}
-          onFinish={(v: { household?: number; business?: number }) => expenses.mutate({ customerId: b.customerId, body: { householdExpenseMonthly: v.household ?? undefined, businessExpenseMonthly: v.business ?? undefined } })}>
-          <Form.Item name="household"><InputNumber min={0} placeholder={t('income.expense.household')} style={{ width: 200 }} /></Form.Item>
-          <Form.Item name="business"><InputNumber min={0} placeholder={t('income.expense.business')} style={{ width: 200 }} /></Form.Item>
-          <Form.Item><Button htmlType="submit" loading={expenses.isPending}>{t('income.expense.save')}</Button></Form.Item>
+          onFinish={(v: { household?: number; business?: number }) => submitOnce(expensesFlight, () => expenses.mutateAsync({ customerId: b.customerId, body: { householdExpenseMonthly: v.household ?? undefined, businessExpenseMonthly: v.business ?? undefined } }))}>
+          <Form.Item name="household" validateFirst rules={moneyRules({ max: MAX_MONEY, label: t('income.expense.household') })}><MoneyInput placeholder={t('income.expense.household')} style={{ width: 200 }} /></Form.Item>
+          <Form.Item name="business" validateFirst rules={moneyRules({ max: MAX_MONEY, label: t('income.expense.business') })}><MoneyInput placeholder={t('income.expense.business')} style={{ width: 200 }} /></Form.Item>
+          <Form.Item><Button htmlType="submit" loading={expenses.isPending} disabled={expenses.isPending}>{t('income.expense.save')}</Button></Form.Item>
         </Form>
+        <FormError error={expenses.error} testId="income-expenses-error" />
 
         <Alert type="info" showIcon message={t('income.business.title')} description={b.business.message} />
       </Flex>

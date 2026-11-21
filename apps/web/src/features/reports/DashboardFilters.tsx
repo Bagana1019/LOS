@@ -3,7 +3,10 @@ import { useEffect, useState } from 'react';
 import { Button, Flex, Input, Select, Typography } from 'antd';
 import { t } from '../../lib/i18n';
 import { CURRENCIES, DEFAULT_DASHBOARD_FILTERS, sameDashboardFilters, type DashboardFilters as Filters } from './dashboard.utils';
+import { LookupSelect } from './LookupSelect';
+import { directoryFieldModel } from './report-lookups';
 import { isIsoDate } from './reports.utils';
+import { useLookups } from './useLookups';
 
 interface Props {
   value: Filters;
@@ -11,13 +14,16 @@ interface Props {
   onApply: (next: Filters) => void;
 }
 
-/** Dashboard-ын шүүлт: огноо (байдлаар), валют (холихгүй), салбар. Хүрээнээс гадуур салбарыг сервер үл тооно — үр дүнгийн "Хүрээ" мөрөнд бодит хүрээ харагдана. */
+/** Dashboard-ын шүүлт: огноо (байдлаар), валют (холихгүй), салбар (нэрээр сонгоно, утга = id). Хүрээнээс гадуур салбарыг сервер үл тооно — үр дүнгийн "Хүрээ" мөрөнд бодит хүрээ харагдана. */
 export function DashboardFilters({ value, busy, onApply }: Props) {
   const [draft, setDraft] = useState<Filters>(value);
   const serial = JSON.stringify(value);
   useEffect(() => {
     setDraft(JSON.parse(serial) as Filters);
   }, [serial]);
+
+  const lookups = useLookups();
+  const branch = directoryFieldModel('branch', draft.branchId ?? '', lookups);
 
   const asOfInvalid = draft.asOf !== null && !isIsoDate(draft.asOf);
   const next: Filters = { asOf: draft.asOf && isIsoDate(draft.asOf) ? draft.asOf : null, currency: draft.currency, branchId: draft.branchId?.trim() ? draft.branchId.trim() : null };
@@ -42,7 +48,17 @@ export function DashboardFilters({ value, busy, onApply }: Props) {
         </Flex>
         <Flex vertical gap={4}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}><label htmlFor="dashboard-branch">{t('report.dashboard.filter.branch')}</label></Typography.Text>
-          <Input id="dashboard-branch" allowClear maxLength={100} style={{ width: 200 }} value={draft.branchId ?? ''} onChange={(e) => setDraft((d) => ({ ...d, branchId: e.target.value || null }))} onPressEnter={apply} />
+          <LookupSelect
+            id="dashboard-branch"
+            label={t('report.dashboard.filter.branch')}
+            kind="branch"
+            value={draft.branchId ?? ''}
+            options={branch.options}
+            notFound={branch.notFound}
+            status={lookups.status}
+            width={200}
+            onChange={(v) => setDraft((d) => ({ ...d, branchId: v || null }))}
+          />
         </Flex>
         <Button type="primary" onClick={apply} loading={busy} disabled={asOfInvalid}>{t('report.filters.apply')}</Button>
         <Button onClick={() => onApply(DEFAULT_DASHBOARD_FILTERS)} disabled={sameDashboardFilters(value, DEFAULT_DASHBOARD_FILTERS) && sameDashboardFilters(next, DEFAULT_DASHBOARD_FILTERS)}>{t('report.filters.reset')}</Button>

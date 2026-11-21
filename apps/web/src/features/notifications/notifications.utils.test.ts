@@ -95,9 +95,23 @@ describe('текст', () => {
 
 describe('ажилтны хонх', () => {
   it('notificationHref — хүсэлттэй бол шийдвэрийн алхам, үгүй бол null', () => {
-    expect(notificationHref({ applicationId: 'app-1' })).toBe('/los/loan-application/app-1/decision');
-    expect(notificationHref({ applicationId: 'a/b c' })).toBe('/los/loan-application/a%2Fb%20c/decision');
-    expect(notificationHref({ applicationId: null })).toBeNull();
+    expect(notificationHref({ applicationId: 'app-1', type: 'RETURNED' })).toBe('/los/loan-application/app-1/decision');
+    expect(notificationHref({ applicationId: 'a/b c', type: 'APPROVAL_REQUESTED' })).toBe('/los/loan-application/a%2Fb%20c/decision');
+    expect(notificationHref({ applicationId: null, type: 'RETURNED' })).toBeNull();
+  });
+
+  it('notificationHref — олголтын илгээсэн/татгалзсан мэдэгдэл олголтын алхам руу (F5-12); бусад төрөл хэвээр', () => {
+    for (const type of ['DISBURSEMENT_SUBMITTED', 'DISBURSEMENT_REJECTED'] as const) {
+      expect(notificationHref({ applicationId: 'app-1', type })).toBe('/los/loan-application/app-1/disburse');
+      expect(notificationHref({ applicationId: 'a/b c', type })).toBe('/los/loan-application/a%2Fb%20c/disburse');
+      expect(notificationHref({ applicationId: null, type })).toBeNull();
+    }
+    expect(notificationHref({ applicationId: 'app-1', type: 'DISBURSEMENT_APPROVED' })).toBe('/los/loan-application/app-1/decision');
+  });
+
+  it('toBellItem — олголтын мэдэгдлийн төрлийн шошго монголоор (гарчиг хоосон үед) (F5-12)', () => {
+    expect(toBellItem(notification({ type: 'DISBURSEMENT_SUBMITTED', title: '' }), NOW, tr).title).toBe('Олголт зөвшөөрөх хүсэлт');
+    expect(toBellItem(notification({ type: 'DISBURSEMENT_REJECTED', title: ' ' }), NOW, tr).title).toBe('Олголт буцаагдсан');
   });
 
   it('toBellItem — уншсан эсэх, гарчиг хоосон бол төрлийн нэр', () => {

@@ -1,9 +1,13 @@
 'use client';
-import { useMemo, useState } from 'react';
-import { App, Alert, Button, Checkbox, Drawer, Flex, Form, Input, InputNumber, Modal, Select, Skeleton, Space, Table, Tag, Typography } from 'antd';
+import { useMemo, useState, type CSSProperties } from 'react';
+import { App, Alert, Button, Checkbox, Drawer, Flex, Form, Input, Modal, Select, Skeleton, Space, Table, Tag, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { PRODUCT_TARGET_TYPE, type ProductAdminDto } from '@los/contracts';
+import { MoneyInput, PercentInput, moneyRules, percentRules } from '../../components/form';
 import { t, formatMoney } from '../../lib/i18n';
+import { PlainNumberInput } from './PlainNumberInput';
+import { plainNumberRules } from './plain-number-rules';
+import { productCodeRules, productNameRules, productTypeRules } from './product-text-rules';
 import { errorText } from './admin.utils';
 import { useProductMutation, useProducts } from './admin.hooks';
 import { BackLink } from './SettingsHome';
@@ -11,6 +15,9 @@ import { PendingChangeNotice, ReasonField, reasonOk, submittedText } from './Fou
 import { ASSET_TYPES, EMPTY_FORM, formToProduct, productToForm, type ProductFormValues } from './product-form';
 
 type Editing = { mode: 'create' } | { mode: 'update'; product: ProductAdminDto };
+
+/** Бүтээгдэхүүний дүнгийн дээд хязгаар = гэрээний `ProductEditable.money` (1e15). */
+const PRODUCT_MONEY_MAX = 1e15;
 
 /** Бүтээгдэхүүний админ (FR-13, BR-6). Үүсгэх/засах/идэвхгүй болгох бүр 4 нүдний санал (Q-124); устгахгүй. */
 export function ProductsPage() {
@@ -96,47 +103,64 @@ function ProductDrawer({ editing, pending, onClose, onSubmit }: { editing: Editi
   const [error, setError] = useState<string | null>(null);
   const isNew = editing.mode === 'create';
   const initial = isNew ? EMPTY_FORM : productToForm(editing.product);
-  const submit = () => {
+  // Шалгалт: талбар бүрийн дүрэм (`form.submit()` → алдаатай бол onFinishFailed). Тоон талбарт антд-ийн чимээгүй засвар байхгүй (F9-2).
+  const onFinish = () => {
+    if (!reasonOk(reason)) return;
     const r = isNew ? formToProduct(form.getFieldsValue(true), 'create') : formToProduct(form.getFieldsValue(true), 'update');
     if (!r.ok) { setError(r.error); return; }
     setError(null);
     onSubmit(r.value, reason.trim());
   };
-  const num = (name: keyof ProductFormValues, label: string, props: { min?: number; max?: number; step?: number; addonAfter?: string } = {}) => (
-    <Form.Item name={name} label={label}><InputNumber style={{ width: '100%' }} {...props} /></Form.Item>
+  const requiredMessage = (short: string) => ({ required: t('admin.num.required', { field: short }) });
+  const money = (name: keyof ProductFormValues, label: string, short: string, o: { required?: boolean; positive?: boolean } = {}) => (
+    <Form.Item name={name} label={label} validateFirst rules={moneyRules({ label: short, positive: o.positive, max: PRODUCT_MONEY_MAX, ...(o.required ? requiredMessage(short) : {}) })}>
+      <MoneyInput style={{ width: '100%' }} />
+    </Form.Item>
+  );
+  // Хүү (жилийн %) хоёр талдаа хувь; бусад бутархай талбар форм дээр хувь, API-д бутархай (product-form.ts).
+  const percent = (name: string | string[], label: string, short: string, o: { required?: boolean; maxDecimals?: number; style?: CSSProperties } = {}) => (
+    <Form.Item name={name} label={label} validateFirst style={o.style} rules={percentRules({ label: short, max: 100, maxDecimals: o.maxDecimals ?? 2, ...(o.required ? requiredMessage(short) : {}) })}>
+      <PercentInput style={{ width: '100%' }} />
+    </Form.Item>
+  );
+  const plain = (name: keyof ProductFormValues, label: string, short: string, o: { min: number; max: number; integer?: boolean; required?: boolean; maxDecimals?: number }) => (
+    <Form.Item name={name} label={label} validateFirst rules={plainNumberRules({ label: short, ...o })}>
+      <PlainNumberInput style={{ width: '100%' }} />
+    </Form.Item>
   );
   return (
     <Drawer open width={640} onClose={onClose} title={isNew ? t('admin.products.add') : t('admin.products.edit_title', { code: editing.mode === 'update' ? editing.product.code : '' })}
       footer={(
         <Flex justify="end" gap={8}>
           <Button onClick={onClose}>{t('admin.common.cancel')}</Button>
-          <Button type="primary" loading={pending} disabled={!reasonOk(reason)} onClick={submit}>{t('admin.four_eyes.submit')}</Button>
+          <Button type="primary" loading={pending} disabled={!reasonOk(reason)} onClick={() => form.submit()}>{t('admin.four_eyes.submit')}</Button>
         </Flex>
       )}>
-      <Form<ProductFormValues> form={form} layout="vertical" initialValues={initial}>
+      <Form<ProductFormValues> form={form} layout="vertical" initialValues={initial} onFinish={onFinish} onFinishFailed={() => setError(t('admin.products.fix_errors'))} scrollToFirstError>
         <Flex gap={12} wrap>
-          <Form.Item name="code" label={t('admin.products.col.code')} style={{ flex: 1, minWidth: 160 }}><Input disabled={!isNew} maxLength={32} placeholder="SME_PLUS" /></Form.Item>
-          <Form.Item name="productType" label={t('admin.products.col.type')} style={{ flex: 1, minWidth: 160 }}><Input disabled={!isNew} maxLength={32} placeholder="BUSINESS" /></Form.Item>
+          {/* F9-3: код/төрөл зөвхөн үүсгэхэд шалгагдана (үүссэний дараа солигдохгүй); алдаа талбар бүрт Монголоор, нэгэн зэрэг */}
+          <Form.Item name="code" label={t('admin.products.col.code')} style={{ flex: 1, minWidth: 160 }} validateFirst rules={isNew ? productCodeRules() : undefined} extra={isNew ? t('admin.products.code.help') : undefined}><Input disabled={!isNew} maxLength={32} placeholder="SME_PLUS" /></Form.Item>
+          <Form.Item name="productType" label={t('admin.products.col.type')} style={{ flex: 1, minWidth: 160 }} validateFirst rules={isNew ? productTypeRules() : undefined} extra={isNew ? t('admin.products.type.help') : undefined}><Input disabled={!isNew} maxLength={32} placeholder="BUSINESS" /></Form.Item>
           <Form.Item name="currency" label={t('admin.products.currency')} style={{ width: 110 }}><Select disabled={!isNew} options={[{ value: 'MNT' }, { value: 'USD' }]} /></Form.Item>
         </Flex>
-        <Form.Item name="name" label={t('admin.products.col.name')}><Input maxLength={200} /></Form.Item>
+        <Form.Item name="name" label={t('admin.products.col.name')} validateFirst rules={productNameRules()}><Input maxLength={200} /></Form.Item>
         <Flex gap={12} wrap>
-          <div style={{ flex: 1, minWidth: 200 }}>{num('minAmount', t('admin.products.min_amount'), { min: 0, step: 100_000 })}</div>
-          <div style={{ flex: 1, minWidth: 200 }}>{num('maxAmount', t('admin.products.max_amount'), { min: 0, step: 100_000 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('minTerm', t('admin.products.min_term'), { min: 1, max: 600 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('maxTerm', t('admin.products.max_term'), { min: 1, max: 600 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('minRate', t('admin.products.min_rate'), { min: 0, max: 100, step: 0.5 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('maxRate', t('admin.products.max_rate'), { min: 0, max: 100, step: 0.5 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('defaultFeeRate', t('admin.products.fee'), { min: 0, max: 1, step: 0.005 })}</div>
+          <div style={{ flex: 1, minWidth: 200 }}>{money('minAmount', t('admin.products.min_amount'), t('admin.products.f.min_amount'), { required: true, positive: true })}</div>
+          <div style={{ flex: 1, minWidth: 200 }}>{money('maxAmount', t('admin.products.max_amount'), t('admin.products.f.max_amount'), { required: true, positive: true })}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{plain('minTerm', t('admin.products.min_term'), t('admin.products.f.min_term'), { min: 1, max: 600, integer: true, required: true })}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{plain('maxTerm', t('admin.products.max_term'), t('admin.products.f.max_term'), { min: 1, max: 600, integer: true, required: true })}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{percent('minRate', t('admin.products.min_rate'), t('admin.products.f.min_rate'), { required: true, maxDecimals: 4 })}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{percent('maxRate', t('admin.products.max_rate'), t('admin.products.f.max_rate'), { required: true, maxDecimals: 4 })}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{percent('defaultFeeRate', t('admin.products.f.fee'), t('admin.products.f.fee'))}</div>
         </Flex>
         <Form.Item name="requiresCollateral" valuePropName="checked"><Checkbox>{t('admin.products.requires_collateral')}</Checkbox></Form.Item>
         <Flex gap={12} wrap>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('maxLtv', t('admin.products.max_ltv'), { min: 0, max: 1, step: 0.05 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('maxDti', t('admin.products.max_dti'), { min: 0, max: 1, step: 0.05 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('minDscr', t('admin.products.min_dscr'), { min: 0, max: 100, step: 0.05 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('calcWeightThreshold', t('admin.products.calc_weight'), { min: 0, max: 1, step: 0.05 })}</div>
-          <div style={{ flex: 1, minWidth: 200 }}>{num('externalValuationThreshold', t('admin.products.ext_valuation'), { min: 0, step: 1_000_000 })}</div>
-          <div style={{ flex: 1, minWidth: 140 }}>{num('costOfGoodsRate', t('admin.products.cogs'), { min: 0, max: 1, step: 0.05 })}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{percent('maxLtv', t('admin.products.f.max_ltv'), t('admin.products.f.max_ltv'))}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{percent('maxDti', t('admin.products.f.max_dti'), t('admin.products.f.max_dti'))}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{plain('minDscr', t('admin.products.min_dscr'), t('admin.products.f.min_dscr'), { min: 0, max: 100 })}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{percent('calcWeightThreshold', t('admin.products.f.calc_weight'), t('admin.products.f.calc_weight'))}</div>
+          <div style={{ flex: 1, minWidth: 200 }}>{money('externalValuationThreshold', t('admin.products.ext_valuation'), t('admin.products.f.ext_valuation'))}</div>
+          <div style={{ flex: 1, minWidth: 140 }}>{percent('costOfGoodsRate', t('admin.products.f.cogs'), t('admin.products.f.cogs'))}</div>
         </Flex>
         <Form.Item name="contractTemplateId" label={t('admin.products.contract_template')}><Input maxLength={64} /></Form.Item>
 
@@ -157,10 +181,10 @@ function ProductDrawer({ editing, pending, onClose, onSubmit }: { editing: Editi
           )}
         </Form.List>
 
-        <Typography.Title level={5}>{t('admin.products.haircut')}</Typography.Title>
+        <Typography.Title level={5}>{t('admin.products.f.haircut')} (%)</Typography.Title>
         <Flex gap={12} wrap style={{ marginBottom: 16 }}>
           {ASSET_TYPES.map((a) => (
-            <Form.Item key={a} name={['haircut', a]} label={t(`admin.products.asset.${a}`)} style={{ width: 150, margin: 0 }}><InputNumber style={{ width: '100%' }} min={0} max={1} step={0.05} /></Form.Item>
+            <div key={a} style={{ width: 150 }}>{percent(['haircut', a], t(`admin.products.asset.${a}`), t(`admin.products.asset.${a}`), { style: { margin: 0 } })}</div>
           ))}
         </Flex>
         <Form.Item name="collateralChecklistText" label={t('admin.products.collateral_checklist')} extra={t('admin.products.collateral_checklist.hint')}>

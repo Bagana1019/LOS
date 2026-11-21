@@ -59,5 +59,7 @@
   "income.business.title": "Бизнесийн орлого",
 
   "income.form.required": "Заавал бөглөнө",
-  "income.toast.saved": "Хадгалагдлаа"
+  "income.toast.saved": "Хадгалагдлаа",
+  "income.toast.salaryAdded": "Цалин нэмэгдлээ",
+  "income.toast.manualAdded": "Орлого нэмэгдлээ"
 }

@@ -148,14 +148,27 @@ export interface ReportViewState extends SortState {
 
 export interface ParamReader { get(name: string): string | null }
 
-/** Шүүлтийн утгыг тайлангийн тодорхойлолтоор баталгаажуулна. Буруу/хоосон бол null (URL-аас орж ирсэн утгад итгэхгүй). */
-export function normalizeFilterValue(filter: Pick<ReportFilterDef, 'type' | 'options'>, raw: string | null | undefined): string | null {
+/** id-аар сонгодог лавлах шүүлтүүд (F11-1): салбар, ЗЭЗ, бүтээгдэхүүн. Утга нь id, харагдах нэр нь лавлахаас. */
+export type LookupKind = 'branch' | 'officer' | 'product';
+const LOOKUP_KIND_BY_KEY: Readonly<Record<string, LookupKind>> = { branchId: 'branch', officerId: 'officer', productId: 'product' };
+export function lookupKindOf(filterKey: string): LookupKind | null {
+  return Object.prototype.hasOwnProperty.call(LOOKUP_KIND_BY_KEY, filterKey) ? (LOOKUP_KIND_BY_KEY[filterKey] ?? null) : null;
+}
+
+/**
+ * Шүүлтийн утгыг тайлангийн тодорхойлолтоор баталгаажуулна. Буруу/хоосон бол null (URL-аас орж ирсэн утгад итгэхгүй).
+ * Лавлах шүүлтийн (`lookupKindOf`) танихгүй id-г хаяхгүй: чимээгүй хаявал бүх мөр шүүлтгүй гарч "шүүгдсэн" мэт харагддаг тул UI "олдсонгүй" гэж харуулна.
+ */
+export function normalizeFilterValue(filter: Pick<ReportFilterDef, 'type' | 'options'> & { key?: string }, raw: string | null | undefined): string | null {
   const v = (raw ?? '').trim();
   if (!v) return null;
   switch (filter.type) {
     case 'date': return isIsoDate(v) ? v : null;
     case 'number': return Number.isFinite(Number(v)) ? v : null;
-    case 'select': return !filter.options || filter.options.some((o) => o.value === v) ? v : null;
+    case 'select': {
+      if (!filter.options || filter.options.some((o) => o.value === v)) return v;
+      return filter.key !== undefined && lookupKindOf(filter.key) !== null ? v.slice(0, MAX_TEXT_LENGTH) : null;
+    }
     default: return v.slice(0, MAX_TEXT_LENGTH);
   }
 }

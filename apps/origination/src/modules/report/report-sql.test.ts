@@ -3,6 +3,7 @@ import { agingBucket } from '@los/calc';
 import { AgingBucket } from '@los/contracts';
 import { blindIndex } from '@los/database';
 import { Prisma } from '.prisma/client-origination';
+import { searchWords } from './report-search';
 import { AGING_DPD_RANGES, and, escapeLike, ident, installmentsCte, loanConditions, searchCondition, selectionOf, sql, type LoanSelection } from './report-sql';
 import type { ReportInput } from './report-types';
 
@@ -41,7 +42,8 @@ describe('report-sql', () => {
     expect(c.text).not.toContain('org-1');
     expect(c.values).toContain(evil);
     expect(c.values).toContain('org-1');
-    expect(c.values).toEqual(expect.arrayContaining(['ACTIVE', 'MIGRATED', 'MNT', `%${escapeLike(evil)}%`, blindIndex(evil)]));
+    // F11-3: хайлт үг тус бүрээр — үг бүр escape хийгдсэн тусдаа параметр, бүтэн хэллэг нь зөвхөн регистрийн blind index-д
+    expect(c.values).toEqual(expect.arrayContaining(['ACTIVE', 'MIGRATED', 'MNT', ...searchWords(evil).map((w) => `%${escapeLike(w)}%`), blindIndex(evil)]));
   });
 
   it('loanConditions: сонгосон шүүлт л нөхцөл нэмнэ', () => {
@@ -50,12 +52,45 @@ describe('report-sql', () => {
     expect(loanConditions({ ...baseSel, statuses: [] })).toHaveLength(1); // хоосон жагсаалт = төлвөөр хязгаарлахгүй
   });
 
+  it('loanConditions: disbursedBy → asOf өдрийн төгсгөл (UB) хүртэл олгогдсон; олгосон огноо тодорхойгүй (NULL) зээл хэвээр (F11-2)', () => {
+    const c = Prisma.join(loanConditions({ ...baseSel, disbursedBy: '2026-07-04' }), ' AND ');
+    expect(loanConditions({ ...baseSel, disbursedBy: '2026-07-04' })).toHaveLength(2);
+    expect(c.text).toContain('la.disbursed_at IS NULL OR la.disbursed_at <');
+    expect(c.values).toContain('2026-07-04T16:00:00.000'); // asOf+1 өдрийн UB 00:00 = asOf өдрийн 16:00 UTC (installmentsCte-тэй ижил хил)
+    expect(loanConditions({ ...baseSel, disbursedBy: null })).toHaveLength(1);
+    expect(loanConditions(baseSel)).toHaveLength(1);
+  });
+
+  it('selectionOf: disbursedBy зөвхөн өгөгдөхөд нэмэгдэнэ', () => {
+    const input = { scope: { orgId: 'o', branchId: null, officerId: null }, filters: { asOf: '2026-10-28', dateFrom: null, dateTo: null, branchId: null, officerId: null, productId: null, currency: null, status: null, provider: null, assetType: null, search: null } } as unknown as ReportInput;
+    expect(selectionOf(input, ['ACTIVE'], { disbursedBy: '2026-10-28' })).toMatchObject({ disbursedBy: '2026-10-28', statuses: ['ACTIVE'] });
+    expect(selectionOf(input, ['ACTIVE']).disbursedBy ?? null).toBeNull();
+  });
+
   it('searchCondition: LIKE-д escape хийсэн, регистр нь blind index-ээр яг таарна', () => {
     const c = searchCondition('50%');
     expect(c.values).toContain('%50\\%%');
     expect(c.values).toContain(blindIndex('50%'));
     expect(c.text).toContain('register_no_hash');
     expect(c.text).not.toContain('50%');
+  });
+
+  it('searchCondition (F11-3): үг тус бүр (escape-тэй) овог/нэр/дугаарт AND-ээр; бүтэн хэллэг биш; регистр нь бүтнээр blind index', () => {
+    const c = searchCondition('Батсайхан  Оюунчимэг');
+    expect(c.values.filter((v) => v === '%Батсайхан%')).toHaveLength(4); // гэрээ, хүсэлт, нэр, овог
+    expect(c.values.filter((v) => v === '%Оюунчимэг%')).toHaveLength(4);
+    expect(c.values).not.toContain('%Батсайхан  Оюунчимэг%');
+    expect(c.values).not.toContain('%Батсайхан Оюунчимэг%');
+    expect(c.values).toContain(blindIndex('Батсайхан Оюунчимэг'));
+    expect(c.text).toContain('c.first_name ILIKE');
+    expect(c.text).toContain('c.last_name ILIKE');
+    expect(c.text.match(/\) AND \(/g)).toHaveLength(1); // хоёр үг = нэг AND
+    expect(searchCondition('УБ 90000003').values).toContain(blindIndex('УБ 90000003'));
+  });
+
+  it('searchCondition (F11-3): үг тус бүрийн %, _, \\ escape хийгдэнэ; зөвхөн хоосон зай шүүлт нэмэхгүй', () => {
+    expect(searchCondition('50% a_b').values).toEqual(expect.arrayContaining(['%50\\%%', '%a\\_b%']));
+    expect(searchCondition('   ').text).not.toContain('ILIKE');
   });
 
   it('selectionOf: currency/search унтраах', () => {

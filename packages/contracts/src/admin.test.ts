@@ -24,6 +24,40 @@ describe('validateApprovalLevels (BR-13)', () => {
   ])('%s → алдаа', (_n, ls) => {
     expect(validateApprovalLevels(ls)).toEqual(expect.any(String));
   });
+
+  describe('түвшин бүрд ≥1 батлагч (F9-9)', () => {
+    const M = (levelNo: number, amountFrom: number, amountTo: number | null, members: string[], name = `Түвшин-${levelNo}-нэр`) => ({ levelNo, name, amountFrom, amountTo, members: members.map((userId) => ({ userId })) });
+
+    it('бүх түвшинд батлагчтай бол зөв', () => {
+      expect(validateApprovalLevels([M(1, 0, 5, ['u1']), M(2, 5, null, ['u2', 'u3'])])).toBeNull();
+    });
+
+    it('батлагчгүй түвшин → алдаа: түвшний дугаар ба нэрийг нэрлэнэ', () => {
+      const err = validateApprovalLevels([M(1, 0, 5, ['u1']), M(2, 5, null, [], 'Төв')]);
+      expect(err).toContain('Түвшин 2');
+      expect(err).toContain('"Төв"');
+      expect(err).toContain('батлагч');
+    });
+
+    it('1-р түвшний бүх батлагчийг хассан (finding F9-9) → алдаа', () => {
+      expect(validateApprovalLevels([M(1, 0, 5, []), M(2, 5, null, ['u2'])])).toContain('Түвшин 1');
+    });
+
+    it('нэргүй (шинээр нэмсэн) мөр: нэрийн хоосон хашилт гаргахгүй', () => {
+      const err = validateApprovalLevels([M(1, 0, null, [], '')]);
+      expect(err).toContain('Түвшин 1');
+      expect(err).not.toContain('""');
+    });
+
+    it('босгын алдаа нь батлагчийн алдаанаас өмнө мэдэгдэнэ (тухайн түвшинд)', () => {
+      expect(validateApprovalLevels([M(1, 0, 5, []), M(2, 6, null, ['u2'])])).toContain('Түвшин 1');
+      expect(validateApprovalLevels([M(1, 0, 5, ['u1']), M(2, 6, null, [])])).toContain('эхлэх дүн');
+    });
+
+    it('members өгөөгүй дуудлага (зөвхөн босго шалгах) батлагчийг шалгахгүй — хуучин зан төлөв хэвээр', () => {
+      expect(validateApprovalLevels([L(1, 0, 5), L(2, 5, null)])).toBeNull();
+    });
+  });
 });
 
 describe('DTO schemas', () => {
@@ -35,9 +69,52 @@ describe('DTO schemas', () => {
     expect(ReplaceApprovalLevelsBody.safeParse({ levels: [] }).success).toBe(false);
   });
   it('ContractNumberTemplateBody: {SEQ} заавал, угтвар зөвхөн үсэг/тоо', () => {
-    expect(ContractNumberTemplateBody.safeParse({ pattern: '{PREFIX}{SEQ:3}', prefix: 'B', seqScope: 'DAY' }).success).toBe(true);
-    expect(ContractNumberTemplateBody.safeParse({ pattern: '{PREFIX}', prefix: 'B', seqScope: 'DAY' }).success).toBe(false);
-    expect(ContractNumberTemplateBody.safeParse({ pattern: '{SEQ}', prefix: 'B-1', seqScope: 'DAY' }).success).toBe(false);
+    expect(ContractNumberTemplateBody.safeParse({ pattern: '{PREFIX}{SEQ:3}', prefix: 'B', seqScope: 'GLOBAL' }).success).toBe(true);
+    expect(ContractNumberTemplateBody.safeParse({ pattern: '{PREFIX}', prefix: 'B', seqScope: 'GLOBAL' }).success).toBe(false);
+    expect(ContractNumberTemplateBody.safeParse({ pattern: '{SEQ}', prefix: 'B-1', seqScope: 'GLOBAL' }).success).toBe(false);
+  });
+});
+
+// F9-20 · Тоолуур шинэчлэгдэх хүрээ (seq_scope) бүр дугаарт өөрийн ялгагч хэсэгтэй байх ёстой, эс бөгөөс (orgId, contractNo) unique-тэй мөргөлдөнө.
+describe('ContractNumberTemplateBody · seq scope needs a distinguishing token (F9-20)', () => {
+  const parse = (pattern: string, seqScope: 'DAY' | 'BRANCH' | 'GLOBAL', prefix = 'B') => ContractNumberTemplateBody.safeParse({ pattern, prefix, seqScope });
+  const messages = (r: ReturnType<typeof parse>) => (r.success ? [] : r.error.issues.map((i) => i.message));
+
+  it('DAY scope without {YYMMDD} is rejected with a Mongolian message on the pattern field', () => {
+    const r = parse('{PREFIX}{SEQ:2}', 'DAY');
+    expect(r.success).toBe(false);
+    expect(messages(r)).toEqual([expect.stringContaining('{YYMMDD}')]);
+    expect(r.success ? [] : r.error.issues[0]!.path).toEqual(['pattern']);
+  });
+  it('DAY scope with {YYMMDD} anywhere in the pattern is accepted (the generator has no other date token, so {YYYYMMDD} does not count)', () => {
+    expect(parse('{PREFIX}{YYMMDD}{SEQ:2}', 'DAY').success).toBe(true);
+    expect(parse('{SEQ:3}-{YYMMDD}', 'DAY').success).toBe(true);
+    expect(parse('{PREFIX}{YYYYMMDD}{SEQ:2}', 'DAY').success).toBe(false);
+  });
+  it('BRANCH scope without {BRANCH} is rejected; with {BRANCH} it is accepted (a date token is not required)', () => {
+    const r = parse('{PREFIX}{SEQ:3}', 'BRANCH');
+    expect(r.success).toBe(false);
+    expect(messages(r)).toEqual([expect.stringContaining('{BRANCH}')]);
+    expect(parse('{PREFIX}{BRANCH}{SEQ:3}', 'BRANCH').success).toBe(true);
+  });
+  it('a date token does not satisfy BRANCH scope and {BRANCH} does not satisfy DAY scope', () => {
+    expect(parse('{PREFIX}{YYMMDD}{SEQ:2}', 'BRANCH').success).toBe(false);
+    expect(parse('{PREFIX}{BRANCH}{SEQ:2}', 'DAY').success).toBe(false);
+  });
+  it('GLOBAL scope never resets, so {SEQ} alone is enough', () => {
+    expect(parse('{SEQ}', 'GLOBAL').success).toBe(true);
+    expect(parse('{PREFIX}{SEQ:4}', 'GLOBAL').success).toBe(true);
+  });
+  it('the seeded default template still validates', () => {
+    expect(parse('{PREFIX}{BRANCH}{YYMMDD}{SEQ:2}', 'DAY').success).toBe(true);
+  });
+  it('a missing {SEQ} is still reported first, and an unknown scope is still rejected', () => {
+    expect(messages(parse('{PREFIX}{YYMMDD}', 'DAY'))[0]).toContain('{SEQ}');
+    expect(ContractNumberTemplateBody.safeParse({ pattern: '{SEQ}', prefix: 'B', seqScope: 'WEEK' }).success).toBe(false);
+  });
+  it('the parsed output keeps the { pattern, prefix, seqScope } shape', () => {
+    const r = parse(' {PREFIX}{YYMMDD}{SEQ:2} ', 'DAY');
+    expect(r.success && r.data).toEqual({ pattern: '{PREFIX}{YYMMDD}{SEQ:2}', prefix: 'B', seqScope: 'DAY' });
   });
 });
 

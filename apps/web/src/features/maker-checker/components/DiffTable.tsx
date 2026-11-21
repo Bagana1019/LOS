@@ -7,9 +7,9 @@ import { diffObjects, formatValue, type DiffEntry } from '../diff';
 const KIND_COLOR = { added: 'green', removed: 'red', changed: 'gold' } as const;
 const MONO = { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', fontSize: 12 } as const;
 
-function Value({ present, value }: { present: boolean; value: unknown }) {
+function Value({ present, text }: { present: boolean; text: string }) {
   if (!present) return <Typography.Text type="secondary">{mn['maker_checker.diff.absent']}</Typography.Text>;
-  return <pre style={{ ...MONO, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{formatValue(value)}</pre>;
+  return <pre style={{ ...MONO, margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{text}</pre>;
 }
 
 interface Props {
@@ -17,12 +17,15 @@ interface Props {
   payload: unknown;
   /** Талбарын замын хүнд ойлгомжтой нэр (жишээ нь харилцагчийн маягтын нэр); өгөхгүй бол түүхий зам */
   labelOf?: (path: string) => string;
+  /** Утгыг нэгжтэйгээр харуулах (жишээ нь 0.25 → "25%"); өгөхгүй бол түүхий утга */
+  valueOf?: (path: string, value: unknown) => string;
 }
 
 /** "Өмнө → Дараа": one row per changed leaf field of the proposed payload. */
-export function DiffTable({ before, payload, labelOf }: Props) {
+export function DiffTable({ before, payload, labelOf, valueOf }: Props) {
   const { token } = theme.useToken();
   const rows = useMemo(() => diffObjects(before, payload), [before, payload]);
+  const show = (path: string, v: unknown): string => (valueOf ? valueOf(path, v) : formatValue(v));
 
   const columns: TableColumnsType<DiffEntry> = [
     {
@@ -30,9 +33,13 @@ export function DiffTable({ before, payload, labelOf }: Props) {
       dataIndex: 'path',
       width: '30%',
       render: (path: string, r) => (
-        <div>
-          {labelOf && path && labelOf(path) !== path && <div>{labelOf(path)}</div>}
-          <div style={{ ...MONO, wordBreak: 'break-all' }}>{path || mn['maker_checker.diff.root']}</div>
+        // A labelled field shows its name only (the raw key stays as a tooltip); an unlabelled one falls back to the raw path.
+        <div title={labelOf && path && labelOf(path) !== path ? path : undefined}>
+          {labelOf && path && labelOf(path) !== path ? (
+            <div>{labelOf(path)}</div>
+          ) : (
+            <div style={{ ...MONO, wordBreak: 'break-all' }}>{path || mn['maker_checker.diff.root']}</div>
+          )}
           <Tag color={KIND_COLOR[r.kind]} style={{ marginTop: 4 }}>
             {mn[`maker_checker.diff.kind.${r.kind}`]}
           </Tag>
@@ -43,13 +50,13 @@ export function DiffTable({ before, payload, labelOf }: Props) {
       title: mn['maker_checker.diff.col_before'],
       key: 'before',
       onCell: (r) => ({ style: r.kind === 'added' ? undefined : { background: token.colorErrorBg } }),
-      render: (_, r) => <Value present={r.kind !== 'added'} value={r.before} />,
+      render: (_, r) => <Value present={r.kind !== 'added'} text={show(r.path, r.before)} />,
     },
     {
       title: mn['maker_checker.diff.col_after'],
       key: 'after',
       onCell: (r) => ({ style: r.kind === 'removed' ? undefined : { background: token.colorSuccessBg } }),
-      render: (_, r) => <Value present={r.kind !== 'removed'} value={r.after} />,
+      render: (_, r) => <Value present={r.kind !== 'removed'} text={show(r.path, r.after)} />,
     },
   ];
 

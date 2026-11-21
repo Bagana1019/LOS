@@ -13,3 +13,5 @@ export const xypRequestOtp = (registerNo: string): Promise<XypOtpResult> => orig
 export const xypFetch = (registerNo: string, otp: string): Promise<XypFetchResult> => originationFetch<XypFetchResult>('/customers/xyp-fetch', { method: 'POST', json: { registerNo, otp } });
 export const createCustomer = (body: CreateCustomerRequest | Record<string, unknown>): Promise<CustomerView> => originationFetch<CustomerView>('/customers', { method: 'POST', json: body });
 export const fetchCustomerCard = (id: string): Promise<CustomerCard> => originationFetch<CustomerCard>(`/customers/${enc(id)}`);
+/** F1-15: хэсэгчилсэн засвар (`UpdateCustomerRequest`): өгсөн талбарыг л солино, `""` = арилгах. Регистр/төрөл явуулбал сервер 400 READONLY_FIELD. */
+export const updateCustomer = (id: string, body: Record<string, unknown>): Promise<CustomerView> => originationFetch<CustomerView>(`/customers/${enc(id)}`, { method: 'PUT', json: body });

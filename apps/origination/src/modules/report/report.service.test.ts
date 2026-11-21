@@ -29,7 +29,8 @@ function fixture(o: { source?: 'origination' | 'core-mock' | 'core'; max?: numbe
     run: async (_deps, input) => { runs.push(input); return o.run ? o.run(input) : { rows: [{ name: 'А' }], total: 1 }; },
   };
   const created: Array<{ data: { paramsJson: Record<string, unknown>; rowCount: number } }> = [];
-  const prisma = { product: { findMany: async () => [] }, reportRun: { create: async (args: (typeof created)[number]) => { created.push(args); return {}; } } } as unknown as PrismaService;
+  // loanApplication.findFirst: UUID биш салбар/ЗЭЗ-ийн шүүлт origination-д хэрэглэгдсэн эсэхийг шалгана (F11-7) — энд бүх id танигдсан
+  const prisma = { product: { findMany: async () => [] }, loanApplication: { findFirst: async () => ({ id: 'la-1' }) }, reportRun: { create: async (args: (typeof created)[number]) => { created.push(args); return {}; } } } as unknown as PrismaService;
   const clock = { now: () => new Date('2026-10-28T02:00:00Z'), today: () => '2026-10-28' } as unknown as Clock;
   const settings = { get: async () => o.max ?? 50_000 } as unknown as OrgSettings;
   const registry = { get: (k: string) => (k === def.key ? def : undefined), all: () => [def], has: (k: string) => k === def.key } as unknown as ReportRegistry;

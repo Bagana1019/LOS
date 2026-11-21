@@ -54,12 +54,14 @@ const CUSTOMER_CHANNELS: Record<(typeof CUSTOMER_TYPES)[number], Record<'SMS' | 
   },
 };
 
-/** Ажилтны хонх (in-app): title = subject. Бүх 9 төрөлд. */
+/** Ажилтны хонх (in-app): title = subject. Бүх 11 төрөлд. */
 const IN_APP: Record<NotificationType, BuiltinTemplate> = {
   APPROVAL_REQUESTED: { subject: 'Батлах хүсэлт ирлээ', body: '{{applicationNo}} дугаартай хүсэлтийг батлах шаардлагатай.' },
   RETURNED: { subject: 'Хүсэлт буцаагдлаа', body: '{{applicationNo}} дугаартай хүсэлт буцаагдлаа. Тайлбар: {{comment}}' },
   APPROVED: { subject: 'Хүсэлт батлагдлаа', body: '{{applicationNo}} дугаартай хүсэлт батлагдлаа. Гэрээний дугаар: {{contractNo}}.' },
   DISBURSEMENT_APPROVED: { subject: 'Олголт зөвшөөрөгдлөө', body: '{{applicationNo}} дугаартай хүсэлтийн {{amount}} {{currency}} олголт зөвшөөрөгдлөө.' },
+  DISBURSEMENT_SUBMITTED: { subject: 'Олголт зөвшөөрөх хүсэлт ирлээ', body: '{{applicationNo}} дугаартай хүсэлтийн {{amount}} {{currency}} олголтыг зөвшөөрөх шаардлагатай.' },
+  DISBURSEMENT_REJECTED: { subject: 'Олголтын хүсэлт буцаагдлаа', body: '{{applicationNo}} дугаартай хүсэлтийн {{amount}} {{currency}} олголт буцаагдлаа. Тайлбар: {{comment}}' },
   SLA_BREACH: { subject: 'Шийдвэрлэх хугацаа хэтэрлээ', body: '{{applicationNo}} дугаартай хүсэлтийн шийдвэрлэх хугацаа хэтэрсэн байна.' },
   MENTION: { subject: 'Таныг дурдлаа', body: '{{applicationNo}} дугаартай хүсэлтийн тайлбарт таныг дурдсан: {{comment}}' },
   PAYMENT_DUE: { subject: 'Төлбөрийн хугацаа ойртлоо', body: '{{contractNo}} зээлийн {{amount}} {{currency}} төлбөр {{dueDate}}-нд төлөгдөх ёстой.' },

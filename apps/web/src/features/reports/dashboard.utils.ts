@@ -1,5 +1,6 @@
 import { AgingBucket, ApplicationStatus } from '@los/contracts';
 import type { DashboardSummary } from '@los/contracts';
+import type { ScopeNames } from './report-lookups';
 import { EMPTY, formatMoneyValue, formatNumberValue, isIsoDate, type ParamReader, type Translate } from './reports.utils';
 
 // Dashboard-ын цэвэр логик: шүүлт ↔ URL, KPI текст, диаграмын геометр/масштаб. Vitest-ээр тестлэнэ.
@@ -75,9 +76,10 @@ export function formatDelta(ratio: number | null): string {
   return ratio > 0 && pct !== '0' ? `+${pct}%` : `${pct === '-0' ? '0' : pct}%`;
 }
 
-export function scopeText(scope: DashboardSummary['scope'], tr: Translate): string {
-  if (scope.officerId) return tr('report.dashboard.scope.officer', { officer: scope.officerId });
-  if (scope.branchId) return tr('report.dashboard.scope.branch', { branch: scope.branchId });
+/** Толгойн "Хүрээ: …". `names` өгвөл UUID биш нэр (F11-1, F11-13); өгөөгүй бол id-г хэвээр. */
+export function scopeText(scope: DashboardSummary['scope'], tr: Translate, names?: ScopeNames): string {
+  if (scope.officerId) return tr('report.dashboard.scope.officer', { officer: names ? names.officer(scope.officerId) : scope.officerId });
+  if (scope.branchId) return tr('report.dashboard.scope.branch', { branch: names ? names.branch(scope.branchId) : scope.branchId });
   return tr('report.dashboard.scope.all');
 }
 

@@ -1,6 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
 import {
-  type ApprovalDecision, type ApprovalTimelineLevel, type DecisionView, type MyApprovalListResponse, type RequestContext, type StepKey, type VoteRequest,
+  type ApprovalDecision, type ApprovalTimelineLevel, type DecisionRisk, type DecisionView, type MyApprovalListResponse, type RequestContext, type StepKey, type VoteRequest,
 } from '@los/contracts';
 import { recordAudit } from '@los/database';
 import { Clock, DomainError } from '@los/nest-common';
@@ -14,8 +14,11 @@ import { CollateralGateService } from '../collateral/collateral-gate.service';
 import { missingRequiredSteps } from '../application/application.rules';
 import { customerDisplayName, customerRegisterNoMasked } from '../borrower/customer-directory';
 import { NotificationService } from '../notification/notification.service';
+import { aggregateIncome } from '../score/score-input.assembler';
+import { readSnapshot } from '../score/score.rules';
 import { dueAt, evaluateLevel, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, type LevelLike } from './approval.rules';
 import { ContractNumberService } from './contract-number.service';
+import { buildDecisionRisk } from './decision-risk';
 
 const TX_OPTIONS = { timeout: 15_000, maxWait: 10_000 };
 
@@ -131,7 +134,7 @@ export class ApprovalService {
     await this.machine.apply(tx, ctx, app.id, 'RETURNED', { via: 'SYSTEM', reason: comment });
     await tx.loanApplicationStep.updateMany({ where: { applicationId: app.id, stepKey: 'decision', status: { not: 'LOCKED' } }, data: { status: 'PENDING', completedAt: null, updatedBy: ctx.userId } });
     await this.events.publish(tx, { type: 'ApplicationReturned', applicationId: app.id, levelNo: active.levelNo, comment }, ctx);
-    await this.notifications.notifyUsers({ orgId: ctx.orgId, userIds: [app.officerId], type: 'RETURNED', applicationId: app.id, payload: { applicationNo: app.appNo, amount: num(app.amount) } }, tx);
+    await this.notifications.notifyUsers({ orgId: ctx.orgId, userIds: [app.officerId], type: 'RETURNED', applicationId: app.id, payload: { applicationNo: app.appNo, amount: num(app.amount), comment } }, tx); // F3-3: the single RETURNED bell carries the reason
   }
 
   private async notifyLevel(tx: Tx, app: LoanApplication, level: LevelRow): Promise<void> {
@@ -156,7 +159,7 @@ export class ApprovalService {
     const app = await this.prisma.loanApplication.findUniqueOrThrow({
       where: { id: base.id },
       include: {
-        product: { select: { name: true } }, steps: { select: { stepKey: true, status: true } }, collaterals: { select: { id: true } },
+        product: { select: { name: true } }, steps: { select: { stepKey: true, status: true, staleReason: true } }, collaterals: { select: { id: true } },
         borrowers: { where: { role: 'PRIMARY' }, include: { customer: true }, take: 1 },
         // №0 мөр нь олголт (total 0) — «Сарын төлбөр» нь эхний бодит төлбөр (№1+). Үгүй бол батлагч 0₮ харна (F3-1b).
         schedules: { where: { isStale: false }, orderBy: { generatedAt: 'desc' }, take: 1, include: { rows: { where: { seq: { gte: 1 } }, orderBy: { seq: 'asc' }, take: 1 } } },
@@ -194,7 +197,7 @@ export class ApprovalService {
       summary: {
         borrowerName: primary ? customerDisplayName(primary) : null, registerNoMasked: primary ? customerRegisterNoMasked(primary) : null, productName: app.product?.name ?? null, currency: app.currency,
         amount: num(app.amount), termMonths: app.termMonths, interestRate: num(app.interestRate), monthlyPayment: num(app.schedules[0]?.rows[0]?.total ?? null),
-        collateralCount: app.collaterals.length, selectedMethod: app.selectedCalcMethod,
+        collateralCount: app.collaterals.length, selectedMethod: app.selectedCalcMethod, risk: await this.riskSummary(app),
       },
       progress: { completed: required.length - missing.length, total: required.length, missing: missing as StepKey[], reasons },
       canSubmit: (app.status === 'DRAFT' || app.status === 'RETURNED') && missing.length === 0 && app.productId != null && app.amount != null, // G1 (FR-10.1)
@@ -208,6 +211,23 @@ export class ApprovalService {
       decisionRecord: record ? { decisionNo: record.decisionNo, decidedAt: record.decidedAt.toISOString(), minutesText: record.minutesText, contractNo: app.contractNo } : null,
       canVote,
     };
+  }
+
+  /**
+   * F3-1: батлагчид эрсдэлийн хураангуй — зөвхөн ХАДГАЛАГДСАН үр дүн: тооцоолол (`calc_snapshot_json`), барьцааны модуль, орлого (`aggregateIncome`).
+   * Тооцоолол хадгалагдаагүй бол null. Энд юу ч тооцохгүй, юу ч бичихгүй.
+   */
+  private async riskSummary(app: LoanApplication & { steps: Array<{ stepKey: string; status: string; staleReason: string | null }> }): Promise<DecisionRisk | null> {
+    const snapshot = readSnapshot(app.calcSnapshotJson);
+    if (!snapshot) return null;
+    const where = { applicationId: app.id, orgId: app.orgId };
+    const [collateral, borrowers, incomes] = await Promise.all([
+      this.collateralGate.snapshot(this.prisma, app),
+      this.prisma.loanApplicationBorrower.findMany({ where, select: { customerId: true, role: true, incomeIncluded: true } }),
+      this.prisma.incomeSummary.findMany({ where, select: { customerId: true, avgSalaryMonthly: true, businessNcfMonthly: true, householdExpenseMonthly: true } }),
+    ]);
+    const step = app.steps.find((s) => s.stepKey === 'score');
+    return buildDecisionRisk({ snapshot, scoreStep: step ? { status: step.status, staleReason: step.staleReason } : null, collateral: collateral.response, income: aggregateIncome(borrowers, incomes) });
   }
 
   // ── "Миний батлах" таб (FR-10.2) ────────────────────────────────────────────────────────────

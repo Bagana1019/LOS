@@ -39,17 +39,21 @@ export function issuePath(path: readonly (string | number)[] | string): (string 
 export function validateCustomer(payload: Record<string, unknown>): FieldIssue[] {
   const out: FieldIssue[] = [];
   const seen = new Set<string>();
+  const removed = new Set<string>(); // F1-13: дараагийн алдааг хайхаар БИДЭНД устгасан дээд түвшний талбарууд
   let current = { ...payload };
   for (let round = 0; round < 8; round++) {
     const r = CustomerInput.safeParse(current);
     if (r.success) break;
     let progressed = false;
+    const removedBefore = new Set(removed); // зөвхөн ӨМНӨХ round-д устгасан: нэг round-ийн хоёр дэд талбарын алдаа (employment.address + employment.phone) хоёулаа жинхэнэ
     for (const i of r.error.issues) {
+      const top = i.path[0];
+      // Өмнөх round-д устгасан талбарын "заавал бөглөнө" нь хэрэглэгчийн бөглөсөн утгын алдаа биш, манай хиймэл үр дагавар (жишээ нь employment.phone буруу → employment бүхлээрээ устсан)
+      if (typeof top === 'string' && removedBefore.has(top)) continue;
       const name = issuePath(i.path as (string | number)[]);
       const key = name.join('.');
       if (!seen.has(key)) { seen.add(key); out.push({ name, message: i.message }); }
-      const top = i.path[0];
-      if (typeof top === 'string' && top in current && top !== 'customerType' && top !== 'registerNo') { delete current[top]; progressed = true; }
+      if (typeof top === 'string' && top in current && top !== 'customerType' && top !== 'registerNo') { delete current[top]; removed.add(top); progressed = true; }
     }
     // firstName дутуу бол superRefine ажиллахгүй: түр нөхөж үлдсэн заавал талбарыг мөн шалгана
     if (!progressed) {

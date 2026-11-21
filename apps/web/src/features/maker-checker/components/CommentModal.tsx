@@ -8,6 +8,8 @@ export interface CommentModalProps {
   open: boolean;
   title: string;
   hint?: ReactNode;
+  /** Shown above the hint, outside the muted paragraph (e.g. a warning). */
+  notice?: ReactNode;
   label: string;
   placeholder: string;
   okText: string;
@@ -20,7 +22,7 @@ export interface CommentModalProps {
 }
 
 /** Modal with one comment textarea; the OK button stays disabled until the text is valid. */
-export function CommentModal({ open, title, hint, label, placeholder, okText, okDanger, required, loading, onSubmit, onCancel }: CommentModalProps) {
+export function CommentModal({ open, title, hint, notice, label, placeholder, okText, okDanger, required, loading, onSubmit, onCancel }: CommentModalProps) {
   const [value, setValue] = useState('');
   const [touched, setTouched] = useState(false);
   const rules = { required, min: required ? COMMENT_MIN : 0, max: COMMENT_MAX };
@@ -47,6 +49,7 @@ export function CommentModal({ open, title, hint, label, placeholder, okText, ok
       keyboard={!loading}
       destroyOnHidden
     >
+      {notice}
       {hint && <Typography.Paragraph type="secondary">{hint}</Typography.Paragraph>}
       <Form layout="vertical">
         <Form.Item

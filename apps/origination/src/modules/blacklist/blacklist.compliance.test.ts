@@ -81,9 +81,9 @@ describe('BlacklistEscalationHandler', () => {
     severity: 'GREY', reasonCode: 'LATE_PAYMENT', isActive: false, pendingSeverity: 'BLACK', updatedAt: new Date('2026-10-28T09:00:00Z'), ...over,
   });
   const fakeTx = (r: ReturnType<typeof row> | null, count = 1) => {
-    const calls = { update: [] as object[], outbox: [] as { payload: Record<string, unknown> }[], audit: [] as { afterJson: unknown }[] };
+    const calls = { update: [] as object[], where: [] as object[], outbox: [] as { payload: Record<string, unknown> }[], audit: [] as { afterJson: unknown }[] };
     const tx = {
-      blacklist: { findFirst: async () => r, updateMany: async (a: { data: object }) => { calls.update.push(a.data); return { count }; } },
+      blacklist: { findFirst: async () => r, updateMany: async (a: { data: object; where: object }) => { calls.update.push(a.data); calls.where.push(a.where); return { count }; } },
       outbox: { create: async ({ data }: { data: { payload: Record<string, unknown> } }) => { calls.outbox.push(data); } },
       auditLog: { create: async ({ data }: { data: { afterJson: unknown } }) => { calls.audit.push(data); } },
     } as unknown as EscalationTx;
@@ -105,5 +105,92 @@ describe('BlacklistEscalationHandler', () => {
   it('conflicts when the entry is no longer pending or was modified concurrently', async () => {
     await expect(handler().apply(ctx(fakeTx(row({ pendingSeverity: null })).tx))).rejects.toBeInstanceOf(ChangeConflictError);
     await expect(handler().apply(ctx(fakeTx(row(), 0).tx))).rejects.toBeInstanceOf(ChangeConflictError);
+  });
+
+  // F8-2: Хар болгох хүсэлт татгалзагдсан/цуцлагдсан/хугацаа дууссан/FAILED бол мөр `pendingSeverity = BLACK`-ээр үлдэж, шинэ хүсэлт үүсэхгүй байсан.
+  describe('onNotApplied (F8-2)', () => {
+    type Outcome = 'REJECTED' | 'CANCELLED' | 'EXPIRED' | 'FAILED';
+    const closed = (tx: EscalationTx, outcome: Outcome, actor: { userId: string } | null = { userId: 'checker' }) =>
+      ({ db: tx, request: { ...(req as object), targetId: row().id, status: outcome }, outcome, actor }) as never;
+
+    it.each([
+      ['REJECTED', { userId: 'checker' }, 'checker'],
+      ['CANCELLED', { userId: 'maker' }, 'maker'],
+      ['EXPIRED', null, 'system'],
+      ['FAILED', { userId: 'checker' }, 'checker'],
+    ] as const)('%s clears pendingSeverity only, with a compare-and-set, an audit row and no event', async (outcome, actor, actorId) => {
+      const { tx, calls } = fakeTx(row());
+      await handler().onNotApplied(closed(tx, outcome, actor));
+
+      expect(calls.update).toHaveLength(1);
+      expect(calls.update[0]).toMatchObject({ pendingSeverity: null, updatedBy: actorId });
+      expect(calls.update[0]).not.toHaveProperty('severity');
+      expect(calls.update[0]).not.toHaveProperty('isActive');
+      expect((calls.update[0] as { updatedAt: Date }).updatedAt.getTime()).toBeGreaterThan(row().updatedAt.getTime()); // CAS-ийг уншсан бусад writer-т харагдана
+      expect(calls.where[0]).toMatchObject({ id: row().id, orgId: 'org-1', pendingSeverity: 'BLACK', updatedAt: row().updatedAt });
+      expect(calls.outbox).toHaveLength(0); // severity/isActive өөрчлөгдөөгүй тул kyc projection-д event хэрэггүй
+      expect(calls.audit).toEqual([expect.objectContaining({
+        entity: 'blacklist', entityId: row().id, action: `ESCALATE_${outcome}`, actorId,
+        beforeJson: expect.objectContaining({ pendingSeverity: 'BLACK' }), afterJson: expect.objectContaining({ pendingSeverity: null, changeRequestId: 'cr-1' }),
+      })]);
+    });
+
+    it('does nothing when the entry is no longer pending Black (made Grey, deactivated or already cleared) or is gone', async () => {
+      for (const r of [row({ pendingSeverity: null }), row({ pendingSeverity: 'GREY' }), null]) {
+        const { tx, calls } = fakeTx(r as ReturnType<typeof row> | null);
+        await handler().onNotApplied(closed(tx, 'REJECTED'));
+        expect(calls.update).toHaveLength(0);
+        expect(calls.audit).toHaveLength(0);
+      }
+    });
+
+    /** `findFirst` бүр дараагийн мөрийг, `updateMany` бүр дараагийн тоог буцаана (зэрэг засварыг дуурайна). */
+    const racing = (reads: ReturnType<typeof row>[], counts: number[]) => {
+      const seen = { where: [] as { updatedAt: Date }[], audit: 0 };
+      let reading = 0;
+      let writing = 0;
+      const tx = {
+        blacklist: {
+          findFirst: async () => reads[Math.min(reading++, reads.length - 1)],
+          updateMany: async (a: { where: { updatedAt: Date } }) => { seen.where.push(a.where); return { count: counts[writing++] ?? 0 }; },
+        },
+        outbox: { create: async () => undefined },
+        auditLog: { create: async () => { seen.audit++; } },
+      } as unknown as EscalationTx;
+      return { tx, seen };
+    };
+
+    it('re-reads and retries when the entry was modified between the read and the write', async () => {
+      const later = new Date('2026-10-28T09:00:05Z');
+      const { tx, seen } = racing([row(), row({ updatedAt: later })], [0, 1]);
+      await handler().onNotApplied(closed(tx, 'REJECTED'));
+
+      expect(seen.where.map((w) => w.updatedAt)).toEqual([row().updatedAt, later]);
+      expect(seen.audit).toBe(1);
+    });
+
+    it('fails loudly (rolling the close back) instead of leaving the entry pending when it keeps changing', async () => {
+      const { tx, seen } = racing([row()], [0, 0, 0, 0, 0]);
+      await expect(handler().onNotApplied(closed(tx, 'REJECTED'))).rejects.toThrow(/modified concurrently/);
+      expect(seen.audit).toBe(0);
+    });
+
+    it('lets a new Black request be created again once the stale pending marker is cleared (service level)', async () => {
+      const repo = new InMemoryBlacklistRepository();
+      const mc = new FakeMakerChecker();
+      const service = makeService(repo, new FixedClock(), new SequentialIds(), mc, fixedSettings(12));
+      const e = await service.create(adminCtx(), input({ severity: 'BLACK' }));
+      expect(mc.submitted).toHaveLength(1);
+      // pending маркер үлдсэн үед (өмнөх алдаа) дахин оролдлого хүсэлт үүсгэдэггүй: мөр өөрчлөгдөөгүй
+      await service.create(adminCtx(), input({ severity: 'BLACK' }));
+      expect(mc.submitted).toHaveLength(1);
+
+      // handler pendingSeverity-г цэвэрлэсний дараа (мөрийг шууд хадгалж дууриана) дахин илгээж болно
+      const stored = (await repo.findById('org-1', e.id))!;
+      await repo.saveWithEvent({ ...stored, pendingSeverity: null, updatedAt: new Date(stored.updatedAt.getTime() + 1) }, repo.events[0]!, stored.updatedAt);
+      const again = await service.create(adminCtx(), input({ severity: 'BLACK' }));
+      expect(again).toMatchObject({ id: e.id, pendingSeverity: 'BLACK' });
+      expect(mc.submitted).toHaveLength(2);
+    });
   });
 });

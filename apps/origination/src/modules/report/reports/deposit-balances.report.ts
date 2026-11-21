@@ -38,7 +38,7 @@ export const depositBalances: ReportDefinition = {
   async run(deps, input): Promise<ReportRunResult> {
     const f = input.filters;
     const statuses = f.status ? [f.status] : REPAYING_STATUSES;
-    const sel = selectionOf(input, statuses, { currency: false });
+    const sel = selectionOf(input, statuses, { currency: false, disbursedBy: f.asOf });
     const raws = await deps.prisma.$queryRaw<Raw[]>(sql`
       SELECT c.id AS "customerId", c.register_no_encrypted AS "registerEnc", c.first_name AS "firstName", c.last_name AS "lastName",
         COUNT(DISTINCT la.id)::int AS "loanCount", string_agg(DISTINCT la.contract_no, ', ' ORDER BY la.contract_no) AS "contractNos"

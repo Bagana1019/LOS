@@ -11,7 +11,9 @@ import { PrismaService, type Tx } from '../../prisma.service';
 import { ApplicationAccessService } from '../../shared/application-access.service';
 import { DomainEvents } from '../../shared/domain-events';
 import { ApplicationStateMachine } from '../application/application-state-machine';
+import { selectLevels } from '../approval/approval.rules';
 import { ErpSyncService } from '../erp-sync/erp-sync.service';
+import { NotificationService } from '../notification/notification.service';
 import {
   amountWithinApproved, assertCoreTiming, evaluateGate, isNotFoundDefinitive, maskAccount, NOT_FOUND_MIN_LOOKUPS, parseSettleSeconds, reconcile, recordNotFound, settleAnchor,
   type CoreSettlePolicy, type DecisionTerms, type NotFoundEvidence, type ReconDiff,
@@ -41,6 +43,8 @@ const CLEAR_EVIDENCE = { coreUnknownAt: null, coreNotFoundCount: 0, coreNotFound
 const VISIBLE = ['APPROVED', 'DISBURSING', 'ACTIVE'];
 const num = (d: { toString(): string } | null | undefined): number => (d == null ? 0 : Number(d.toString()));
 const ymd = (d: Date | null | undefined): string | null => (d ? d.toISOString().slice(0, 10) : null);
+/** Мэдэгдлийн хүлээн авагчаас хоосон утга болон үйлдэл хийсэн хүнийг (өөртөө мэдэгдэхгүй) хасна. */
+const others = (ids: ReadonlyArray<string | null | undefined>, self: string | null | undefined): string[] => ids.filter((id): id is string => !!id && id !== self);
 
 interface HistoryEntry { at: string; by: string | null; action: string; note: string | null }
 interface Snapshot {
@@ -67,6 +71,7 @@ export class DisbursementService {
     private readonly machine: ApplicationStateMachine,
     private readonly events: DomainEvents,
     private readonly erp: ErpSyncService,
+    private readonly notifications: NotificationService,
     @Inject(Clock) private readonly clock: Clock,
     @Inject(BANK_GATEWAY) private readonly bank: BankGatewayPort,
     @Inject(CORE_LOAN_PORT) private readonly core: CoreLoanPort,
@@ -146,6 +151,8 @@ export class DisbursementService {
       await this.machine.apply(tx, ctx, applicationId, 'DISBURSING', { via: 'USER' });
       await tx.disbursementRequest.update({ where: { id: row.id }, data: { status: 'SUBMITTED', historyJson: this.history(row, ctx, 'SUBMITTED', null) as never, updatedBy: ctx.userId } });
       await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: row.id, action: 'DISBURSEMENT_SUBMITTED', actorId: ctx.userId, applicationId, correlationId: ctx.correlationId });
+      // F5-12: батлагчдад "олголт хүлээж байна" — төлвийн өөрчлөлттэй нэг транзакцид; илгээгчид өөрт нь мэдэгдэхгүй.
+      await this.notifications.notifyUsers({ orgId: ctx.orgId, userIds: others(await this.approverCandidates(tx, app), ctx.userId), type: 'DISBURSEMENT_SUBMITTED', applicationId, payload: this.notePayload(app, row) }, tx);
     }, TX);
     return this.get(ctx, applicationId);
   }
@@ -167,7 +174,7 @@ export class DisbursementService {
       if (app.status !== 'DISBURSING') throw new ConflictException({ code: 'DISBURSEMENT_NOT_PENDING', message: 'Хүсэлтийн төлөв "Олгож байна" биш байна', details: { status: app.status } });
       const recovering = row.status === 'APPROVED';
       if (recovering && this.leaseActive(row)) throw this.inProgress();
-      const submittedBy = (row.historyJson as unknown as HistoryEntry[] | null)?.filter((h) => h.action === 'SUBMITTED').at(-1)?.by;
+      const submittedBy = this.lastSubmitter(row);
       if (submittedBy && submittedBy === ctx.userId) throw new ForbiddenException({ code: 'SELF_APPROVAL', message: 'Өөрийн илгээсэн олголтыг өөрөө зөвшөөрөх боломжгүй' });
       // openLoan дуудагдаж болох тул G5-ийг үргэлж (сэргээлтэд ч) шалгана. Core-д данс аль хэдийн байвал G5-гүй замаар: reconcile.
       const bad = evaluateGate(this.gateInput(app, row, await this.snapshot(tx, app))).filter((c) => !c.ok);
@@ -239,8 +246,34 @@ export class DisbursementService {
       await this.machine.apply(tx, ctx, applicationId, 'APPROVED', { via: 'SYSTEM', reason: comment });
       await tx.disbursementRequest.update({ where: { id: row.id }, data: { status: 'DRAFT', coreRequestedAt: null, ...CLEAR_EVIDENCE, historyJson: this.history(row, ctx, 'REJECTED', comment) as never, updatedBy: ctx.userId } });
       await recordAudit(tx, { orgId: ctx.orgId, entity: 'DISBURSEMENT_REQUEST', entityId: row.id, action: 'DISBURSEMENT_REJECTED', actorId: ctx.userId, afterJson: { comment }, applicationId, correlationId: ctx.correlationId });
+      // F5-12: илгээгч (maker)-д батлагчийн тайлбартай; батлагч өөрөө илгээгч байсан бол өөрт нь мэдэгдэхгүй.
+      await this.notifications.notifyUsers({ orgId: ctx.orgId, userIds: others([this.lastSubmitter(row)], ctx.userId), type: 'DISBURSEMENT_REJECTED', applicationId, payload: this.notePayload(app, row, comment) }, tx);
     }, TX);
     return this.get(ctx, applicationId);
+  }
+
+  // ── F5-12: олголтын мэдэгдэл (хонх) ──
+  /** Олголтыг сүүлд илгээсэн хэрэглэгч (maker) = түүхийн сүүлийн SUBMITTED. */
+  private lastSubmitter(row: Pick<DisbursementRequest, 'historyJson'>): string | null {
+    const history = Array.isArray(row.historyJson) ? (row.historyJson as unknown as HistoryEntry[]) : [];
+    return history.filter((h) => h.action === 'SUBMITTED').at(-1)?.by ?? null;
+  }
+
+  /**
+   * Олголтыг зөвшөөрч болох хүмүүс. Origination-д iam дүрийн лавлах байхгүй (DECISIONS 2026-11-03, approval.notifyLevel-тэй ижил хязгаар) тул
+   * мэдэгдэж буй батлагчдыг авна: хүсэлтэд хамаарах түвшний (BR-13) userId гишүүд + энэ хүсэлтэд санал өгсөн батлагчид.
+   * Дүрээр томилогдсон, санал өгөөгүй батлагч энд орохгүй — тэд олголтыг хүсэлтийн "Олгох" табаас олно.
+   */
+  private async approverCandidates(tx: Tx, app: LoanApplication): Promise<Array<string | null>> {
+    const pool = await tx.approvalLevel.findMany({ where: { orgId: app.orgId, OR: [{ productId: null }, ...(app.productId ? [{ productId: app.productId }] : [])] }, include: { members: true } });
+    const levels = selectLevels(pool.map((l) => ({ ...l, amountFrom: num(l.amountFrom), amountTo: l.amountTo == null ? null : num(l.amountTo) })), num(app.amount), app.productId);
+    const voters = await tx.approvalVote.findMany({ where: { orgId: app.orgId, request: { applicationId: app.id } }, select: { approverId: true } });
+    return [...levels.flatMap((l) => l.members.map((m) => m.userId)), ...voters.map((v) => v.approverId)];
+  }
+
+  /** Мэдэгдлийн загварт орох утгууд (дансны дугаар, нэр зэрэг хувийн мэдээлэл ОРУУЛАХГҮЙ). */
+  private notePayload(app: LoanApplication, row: DisbursementRequest, comment: string | null = null) {
+    return { applicationNo: app.appNo, amount: num(row.disburseAmount), currency: app.currency, comment };
   }
 
   // ── H1 дотоод: Core lease ──

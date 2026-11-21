@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { App as AntApp, Button, Flex, Form, Input, Modal, Select, Typography } from 'antd';
 import { t } from '../../lib/i18n';
 import { ApiErrorAlert } from './shared/ApiErrorAlert';
-import { FileUploadButton } from './shared/FileUploadButton';
+import { DMS_MAX_BYTES, DMS_TYPES_LABEL, FileUploadButton } from './shared/FileUploadButton';
 import { formatBytes, uploadDmsFile, type DmsFile } from './shared/files';
 import { attachNoteError, borrowerOptionLabel, buildAttachRequest, type AttachTarget, type BorrowerOption } from './documents.utils';
 import { useAttachDocument } from './useDocuments';
@@ -88,7 +88,7 @@ function AttachBody({ target, applicationId, borrowers, onClose, onChanged }: Om
   const busy = phase !== 'idle';
   return (
     <Form<FormValues> name="document-attach" form={form} layout="vertical" requiredMark="optional" onFinish={(v) => void submit(v)}>
-      <Form.Item label={t('document.attach.file')} required validateStatus={fileError ? 'error' : undefined} help={fileError ?? t('document.attach.fileHint')}>
+      <Form.Item label={t('document.attach.file')} required validateStatus={fileError ? 'error' : undefined} help={fileError ?? t('document.attach.fileHint', { types: DMS_TYPES_LABEL, max: formatBytes(DMS_MAX_BYTES) })}>
         <Flex gap={12} align="center" wrap>
           <FileUploadButton label={file ? t('document.attach.change') : t('document.attach.choose')} disabled={busy} onFile={(f) => { setFile(f); setFileError(null); }} />
           {file ? <Typography.Text data-testid="attach-file-name">{file.name} ({formatBytes(file.size)})</Typography.Text> : null}

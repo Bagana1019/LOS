@@ -23,10 +23,10 @@ export class HttpDmsDocgen implements DmsDocgenPort {
     return parsed.data;
   }
 
-  async fileInfo(fileId: string, ctx: RequestContext): Promise<{ uploadedBy: string | null } | null> {
+  async fileInfo(fileId: string, ctx: RequestContext): Promise<{ uploadedBy: string | null; mime: string | null } | null> {
     try {
-      const f = (await this.http.get('dms', `/api/files/${encodeURIComponent(fileId)}`, { ctx, timeoutMs: DMS_LOOKUP_TIMEOUT_MS })) as { uploadedBy?: string | null };
-      return { uploadedBy: f?.uploadedBy ?? null };
+      const f = (await this.http.get('dms', `/api/files/${encodeURIComponent(fileId)}`, { ctx, timeoutMs: DMS_LOOKUP_TIMEOUT_MS })) as { uploadedBy?: string | null; mime?: unknown };
+      return { uploadedBy: f?.uploadedBy ?? null, mime: typeof f?.mime === 'string' ? f.mime : null };
     } catch (e) {
       if (e instanceof NotFoundException || (e instanceof DomainError && e.getStatus() === 404)) return null;
       throw e;

@@ -62,7 +62,7 @@ export class MakerCheckerService {
         if (pending) {
           // Хугацаа нь дууссан боловч sweeper хараахан хаагаагүй хүсэлт шинэ илгээлтийг хаах ёсгүй (MC-BR-6)
           if (!isOverdue(pending, now)) throw new PendingConflictError(); // DIRECT-ийг ч хориглоно: хүлээгдэж буй өөрчлөлтийг хэнд ч мэдэгдэлгүй давахгүй
-          await this.close(tx, pending, 'EXPIRED', { status: 'EXPIRED', decidedAt: now, updatedBy: SYSTEM }, null, null, now);
+          await this.close(tx, pending, 'EXPIRED', { status: 'EXPIRED', decidedAt: now, updatedBy: SYSTEM }, null, null, now, undefined, { superseded: true });
         }
         await this.runValidate(handler, parsed.data, actor, tx, input.targetId);
         const snap = handler.snapshot ? await handler.snapshot({ db: tx.db, repo: tx, orgId: actor.orgId, targetId: input.targetId, actor, payload: parsed.data }) : null;
@@ -247,14 +247,22 @@ export class MakerCheckerService {
     }
   }
 
-  /** PENDING → терминал: мөр + түүх + event. */
+  /**
+   * PENDING → терминал: мөр + түүх + event. apply-гүйгээр хаагдсан бол (татгалзсан/цуцалсан/хугацаа дууссан/FAILED) handler-ийн `onNotApplied`
+   * ИЖИЛ tx-д дуудагдаж зорилтын pending тэмдэглэгээг цэвэрлэнэ (F8-2). `superseded`: хугацаа дууссан хүсэлтийг ижил tx-д шинэ илгээлт шууд
+   * сольж байгаа (submit) — зорилтын pending төлөв шинэ хүсэлтэд хамаарах тул цэвэрлэхгүй.
+   */
   private async close(
     tx: ChangeRequestTx, row: ChangeRequestRow, outcome: Exclude<Outcome, 'APPLIED_DIRECT'>,
     patch: Parameters<ChangeRequestTx['update']>[1], actor: Actor | null, comment: string | null, now: Date, data?: unknown,
+    opts: { superseded?: boolean } = {},
   ): Promise<ChangeRequestRow> {
     const updated = await tx.update(row.id, patch);
     await this.record(tx, updated, outcome === 'APPLIED' ? 'APPLIED' : outcome, row.status, actor, comment, now, data);
     await tx.enqueue(this.decidedEvent(updated, outcome, actor, updated.checkerId, now));
+    if (outcome !== 'APPLIED' && !opts.superseded) {
+      await this.registry.get(row.targetType, row.action)?.onNotApplied?.({ db: tx.db, repo: tx, request: updated, outcome, actor });
+    }
     return updated;
   }
 

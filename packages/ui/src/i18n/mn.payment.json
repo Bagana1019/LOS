@@ -87,6 +87,7 @@
   "payment.validation.modeUnavailable": "Энэ сонголт одоогоор боломжгүй байна",
   "payment.validation.rowRequired": "Төлөх мөрийг сонгоно уу",
   "payment.validation.amountRequired": "Төлөх дүнг оруулна уу",
+  "payment.validation.amountNotNumber": "Зөвхөн тоо оруулна уу (жишээ: 1,500,000 эсвэл 5сая)",
   "payment.validation.amountPositive": "Дүн 0-ээс их байх ёстой",
   "payment.validation.amountDecimals": "Дүн ихдээ 2 орны нарийвчлалтай байх ёстой",
   "payment.validation.amountMax": "Дүн {max}-аас хэтрэхгүй байх ёстой",

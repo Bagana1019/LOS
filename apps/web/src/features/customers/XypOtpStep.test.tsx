@@ -44,6 +44,19 @@ describe('XypOtpStep', () => {
     expect(tagsWithTestId(render({ resending: true, nowMs: T0 + 90_000 }), 'xyp-otp-resend')[0]).toContain('ant-btn-loading');
   });
 
+  it('F1-7: оролдлого дууссан (exhausted) үед код оруулах талбар ба баталгаажуулах товч идэвхгүй, шинэ код авах/гараар бөглөх гарц үлдэнэ', () => {
+    const html = render({ exhausted: true, errorMessage: 'Энэ кодоор оролдох эрх дууслаа. Шинэ код авна уу' });
+    expect(tagsWithTestId(html, 'xyp-otp-input')[0]).toContain('disabled');
+    expect(tagsWithTestId(html, 'xyp-otp-submit')[0]).toContain('disabled');
+    expect(textOfTestId(html, 'xyp-otp-error')).toContain('оролдох эрх дууслаа');
+    expect(tagsWithTestId(html, 'xyp-otp-manual')[0]).not.toContain('disabled');
+    expect(tagsWithTestId(render({ exhausted: true, nowMs: T0 + 61_000 }), 'xyp-otp-resend')[0]).not.toContain('disabled');
+  });
+
+  it('F1-7: оролдлого дуусаагүй үед (анхдагч) талбар идэвхтэй хэвээр', () => {
+    expect(tagsWithTestId(render(), 'xyp-otp-input')[0]).not.toContain('disabled');
+  });
+
   it('гараар бөглөх, өөр регистр (цуцлах) гарцууд үргэлж байна — ХУР код ирэхгүй байсан ч ажил зогсохгүй', () => {
     const html = render();
     expect(tagsWithTestId(html, 'xyp-otp-manual')).toHaveLength(1);

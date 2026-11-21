@@ -1,6 +1,7 @@
 'use client';
 import { App as AntApp, Alert, Button, Card, Collapse, Descriptions, Flex, Form, Input, InputNumber, Tag, Typography } from 'antd';
 import { isManualValueAsset, type CollateralView, type SuggestValuationResponse } from '@los/contracts';
+import { MAX_MONEY, MoneyInput, moneyRules } from '../../components/form';
 import { EMPTY_VALUE, formatDate, formatDateTime, formatMnt, formatPercent } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { canWriteBlocked } from './write-gates';
@@ -8,7 +9,6 @@ import { ApiErrorAlert } from '../documents/shared/ApiErrorAlert';
 import { buildSaveValuationRequest, isDemoSuggestion, overrideReasonRequired, suggestionWarningKey, toFieldErrors, unavailableReasonKey, valuationStatus } from './collateral.utils';
 import { ExternalValuationForm } from './ExternalValuationForm';
 import { applyFieldErrors } from './form-errors';
-import { MONEY_INPUT_PROPS } from './money-input';
 import { StatusTag } from './StatusTag';
 import type { TabProps } from './TabProps';
 import { ValuationHistory } from './ValuationHistory';
@@ -138,8 +138,8 @@ function InternalValuationForm({ applicationId, item, write, onChanged }: TabPro
           {result ? <SuggestionPanel result={result} /> : isManualValueAsset(item.assetType) ? <Typography.Text type="secondary">{t('collateral.valuation.manualHint')}</Typography.Text> : null}
         </Flex>
 
-        <Form.Item name="marketValue" label={t('collateral.valuation.finalValue')} required extra={t('collateral.valuation.finalValueHint')}>
-          <InputNumber<number> {...MONEY_INPUT_PROPS} style={{ width: '100%', maxWidth: 320 }} />
+        <Form.Item name="marketValue" label={t('collateral.valuation.finalValue')} required extra={t('collateral.valuation.finalValueHint')} validateFirst rules={moneyRules({ label: t('collateral.external.marketValue'), positive: true, max: MAX_MONEY })}>
+          <MoneyInput style={{ width: '100%', maxWidth: 320 }} />
         </Form.Item>
         {reasonRequired ? (
           <Form.Item name="overrideReason" label={t('collateral.valuation.overrideReason')} required extra={t('collateral.valuation.overrideReasonHint')}>

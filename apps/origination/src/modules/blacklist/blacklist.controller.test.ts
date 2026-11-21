@@ -338,7 +338,7 @@ describe('BlacklistController (HTTP)', () => {
 
   describe('POST /api/blacklist/import', () => {
     it('imports a text/csv body with BOM, CRLF, quoted commas and blank lines', async () => {
-      const csv = `\uFEFF${CSV_HEADER}\r\nУБ11111111,INDIVIDUAL,"Бат, ""Болд""",DELINQUENT,LATE_PAYMENT,"note"\r\n\r\nУБ22222222,LEGAL_ENTITY,Ордон ХХК,,FRAUD,\r\n`;
+      const csv = `\uFEFF${CSV_HEADER}\r\nУБ11111111,INDIVIDUAL,"Бат, ""Болд""",DELINQUENT,LATE_PAYMENT,"note"\r\n\r\n2222222,LEGAL_ENTITY,Ордон ХХК,,FRAUD,\r\n`;
       const res = await api().post('/api/blacklist/import').set(ADMIN).set('Content-Type', 'text/csv; charset=utf-8').send(csv).expect(200);
 
       expect(BlacklistImportResult.parse(res.body)).toEqual({ created: 2, updated: 0, skipped: 0, errors: [] });
@@ -576,6 +576,50 @@ describe('BlacklistController (HTTP)', () => {
       const ok = await api().patch(`/api/blacklist/${body.id}`).set(ADMIN).send({ registerNo: 'уб-9999 9999' }).expect(200);
       expect(ok.body.registerNo).toBe('УБ99999999');
       expect(repo.events).toHaveLength(2);
+    });
+  });
+
+  // F8-1: бичих замууд `check`-тэй ижил регистрийн шалгалттай (Латин "UB…", 9 орон, "УБ1234", төрөл таарахгүй бол хэзээ ч олдохгүй идэвхтэй бүртгэл болдог байсан).
+  describe('register validation on the write paths (F8-1)', () => {
+    const codeOf = (body: { code?: string; message?: { code?: string } }) => body.code ?? body.message?.code;
+
+    it.each([
+      ['a Latin look-alike register', { registerNo: 'UB98765432' }, 'INVALID_REGISTER_NO'],
+      ['a 9-digit register', { registerNo: '123456789', customerType: 'LEGAL_ENTITY' }, 'INVALID_REGISTER_NO'],
+      ['a too short register', { registerNo: 'УБ1234' }, 'INVALID_REGISTER_NO'],
+      ['a legal entity with an individual register', { registerNo: 'УБ30000001', customerType: 'LEGAL_ENTITY' }, 'REGISTER_TYPE_MISMATCH'],
+    ])('POST answers 400 with a stable code for %s and writes nothing', async (_label, over, code) => {
+      const res = await api().post('/api/blacklist').set(ADMIN).send(entryInput(over)).expect(400);
+      expect(codeOf(res.body)).toBe(code);
+      expect(repo.events).toHaveLength(0);
+    });
+
+    it('PATCH answers 400 with a stable code and keeps the stored entry', async () => {
+      const { body } = await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(201);
+      const latin = await api().patch(`/api/blacklist/${body.id}`).set(ADMIN).send({ registerNo: 'UB98765432' }).expect(400);
+      expect(codeOf(latin.body)).toBe('INVALID_REGISTER_NO');
+      const mismatch = await api().patch(`/api/blacklist/${body.id}`).set(ADMIN).send({ customerType: 'LEGAL_ENTITY' }).expect(400);
+      expect(codeOf(mismatch.body)).toBe('REGISTER_TYPE_MISMATCH');
+      expect((await api().get(`/api/blacklist/${body.id}`).set(ADMIN)).body).toMatchObject({ registerNo: REGISTER, customerType: 'INDIVIDUAL' });
+      expect(repo.events).toHaveLength(1);
+    });
+
+    it('CSV import reports a per-row error for each invalid register instead of saving it as active', async () => {
+      const csv = [
+        CSV_HEADER,
+        'УБ11111111,INDIVIDUAL,Бат,,LATE_PAYMENT,',
+        'UB98765432,INDIVIDUAL,Дорж,,LATE_PAYMENT,',
+        '123456789,INDIVIDUAL,Сараа,,LATE_PAYMENT,',
+        'УБ1234,INDIVIDUAL,Болд,,LATE_PAYMENT,',
+        'УБ30000001,LEGAL_ENTITY,Ордон ХХК,,LATE_PAYMENT,',
+      ].join('\n');
+      const res = await api().post('/api/blacklist/import').set(ADMIN).set('Content-Type', 'text/csv').send(csv).expect(200);
+
+      expect(res.body).toMatchObject({ created: 1, updated: 0, skipped: 0 });
+      expect(res.body.errors.map((e: { row: number }) => e.row)).toEqual([2, 3, 4, 5]);
+      expect(res.body.errors[0].message).toContain('registerNo');
+      expect((await api().get('/api/blacklist').set(ADMIN)).body.total).toBe(1);
+      for (const secret of ['UB98765432', '123456789', 'УБ30000001']) expect(JSON.stringify(res.body)).not.toContain(secret);
     });
   });
 

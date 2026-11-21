@@ -15,6 +15,8 @@ import { Semaphore, SemaphoreFullError } from './concurrency';
 import { buildReportWorkbook } from './excel.exporter';
 import { EXPORT_STATEMENT_TIMEOUT_MS, isStatementTimeout } from './report-db';
 import { applyDirectoryNames, hasDirectoryColumns } from './report-directory';
+import { exportAsciiName, exportDisplayName } from './report-filename';
+import { assertKnownIds, invalidFilter, requestedIds, type RequestedIds } from './report-id-filters';
 import { labelOf } from './report-labels';
 import { ReportRegistry } from './report-registry';
 import { effectiveScope, resolveReportScope, type ReportScope } from './report-scope';
@@ -32,9 +34,10 @@ export const EXPORT_MAX_QUEUE = 4;
 const REGISTER_LIKE = /^\p{L}{2}\d{8}$/u;
 type QueryLike = Partial<Omit<ReportQuery, 'page' | 'pageSize'>> & { page?: number; pageSize?: number };
 type Paging = { page: number; pageSize: number; maxRows?: number; statementTimeoutMs?: number };
-type Prepared = { def: ReportDefinition; input: ReportInput };
+type Prepared = { def: ReportDefinition; input: ReportInput; ids: RequestedIds };
 
-export interface ExportedReport { buffer: Buffer; filename: string; rowCount: number }
+/** `filename` = ASCII нөөц нэр; `displayName` = монгол тайлангийн нэртэй нэр (F11-4b) — controller хоёуланг `Content-Disposition`-д өгнө. */
+export interface ExportedReport { buffer: Buffer; filename: string; displayName: string; rowCount: number }
 
 const bad = (code: string, message: string) => new BadRequestException({ code, message });
 
@@ -65,7 +68,7 @@ export class ReportService {
 
   /** GET reports/:key — JSON хуудас. Excel-тэй ижил `run`. */
   async run(ctx: RequestContext, key: string, query: ReportQuery): Promise<ReportResult> {
-    const { def, input } = this.prepare(ctx, key, query, { page: query.page, pageSize: query.pageSize });
+    const { def, input } = await this.validated(ctx, key, query, { page: query.page, pageSize: query.pageSize });
     const res = await this.execute(def, input);
     return ReportResult.parse({
       key: def.key, title: def.title, columns: def.columns, rows: res.rows, total: res.total, page: input.page, pageSize: input.pageSize,
@@ -82,7 +85,7 @@ export class ReportService {
    */
   async export(ctx: RequestContext, key: string, query: ReportExportQuery): Promise<ExportedReport> {
     const max = await this.maxExportRows(ctx.orgId);
-    const prepared = this.prepare(ctx, key, query, { page: 1, pageSize: max + 1, maxRows: max, statementTimeoutMs: EXPORT_STATEMENT_TIMEOUT_MS });
+    const prepared = await this.validated(ctx, key, query, { page: 1, pageSize: max + 1, maxRows: max, statementTimeoutMs: EXPORT_STATEMENT_TIMEOUT_MS });
     const dataSource = prepared.def.dataSource({ deposit: this.deposit });
     if (dataSource === 'core-mock' && process.env.NODE_ENV === 'production') {
       // 501: web `apiDownload` нь алдааны биеийг уншдаггүй, статусаас кодыг сэргээдэг (501 = INTEGRATION_NOT_IMPLEMENTED)
@@ -122,7 +125,7 @@ export class ReportService {
         } as Prisma.InputJsonValue,
       },
     });
-    return { buffer, filename: `LOS_${def.key}_${f.asOf.replace(/-/g, '')}.xlsx`, rowCount: res.rows.length };
+    return { buffer, filename: exportAsciiName(def.key, f.asOf), displayName: exportDisplayName(def.title, f.asOf), rowCount: res.rows.length };
   }
 
   // ── дотоод ──
@@ -132,6 +135,13 @@ export class ReportService {
     return Number.isInteger(v) && v > 0 ? v : DEFAULT_MAX_EXPORT_ROWS;
   }
 
+  /** `prepare` + id шүүлтийн (салбар, ЗЭЗ, бүтээгдэхүүн) танигдсан эсэх шалгалт (F11-7). Тайлан ажиллахаас өмнө 400. */
+  private async validated(ctx: RequestContext, key: string, q: QueryLike, paging: Paging): Promise<Prepared> {
+    const prepared = this.prepare(ctx, key, q, paging);
+    await assertKnownIds(this.prisma, ctx.orgId, prepared.def.filters, prepared.ids);
+    return prepared;
+  }
+
   /** Хүрээ (NFR-3), шүүлт, эрэмбийг баталгаажуулж `ReportInput` болгоно. Тайланд хамаагүй шүүлтийг үл тооно. */
   private prepare(ctx: RequestContext, key: string, q: QueryLike, paging: Paging): Prepared {
     const def = this.registry.get(key);
@@ -139,22 +149,24 @@ export class ReportService {
     const scope: ReportScope = resolveReportScope(ctx);
     const declared = new Map(def.filters.map((f) => [f.key, f]));
 
-    const select = (name: 'status' | 'provider' | 'assetType'): string | null => {
-      const v = q[name];
+    // Сонголттой шүүлт (төлөв, валют…): утга нь filter.options-д байх ёстой, үгүй бол INVALID_FILTER. Валют том/жижиг үсэг үл ялгана.
+    const select = (name: 'status' | 'provider' | 'assetType' | 'currency'): string | null => {
+      const raw = q[name];
       const filter = declared.get(name);
-      if (!v || !filter) return null;
-      if (!filter.options?.some((o) => o.value === v)) throw bad('INVALID_FILTER', `"${filter.label}" шүүлтийн утга буруу: ${v}`);
+      if (!raw || !filter) return null;
+      const v = name === 'currency' ? raw.toUpperCase() : raw;
+      if (!filter.options?.some((o) => o.value === v)) throw invalidFilter(filter.label, raw);
       return v;
     };
     const dateFrom = declared.has('dateFrom') ? q.dateFrom ?? null : null;
     const dateTo = declared.has('dateTo') ? q.dateTo ?? null : null;
     if (dateFrom && dateTo && dateFrom > dateTo) throw bad('INVALID_DATE_RANGE', 'Эхлэх огноо дуусах огнооноос хойно байж болохгүй');
 
-    const eff = effectiveScope(scope, q);
+    const ids = requestedIds(declared, q);
+    const eff = effectiveScope(scope, ids);
     const filters: ResolvedFilters = {
       asOf: q.asOf ?? todayUB(this.clock), dateFrom, dateTo, branchId: eff.branchId, officerId: eff.officerId,
-      productId: declared.has('productId') ? q.productId || null : null,
-      currency: declared.has('currency') && q.currency ? q.currency.toUpperCase() : null,
+      productId: ids.productId, currency: select('currency'),
       status: select('status'), provider: select('provider'), assetType: select('assetType'),
       search: declared.has('search') && q.search?.trim() ? q.search.trim() : null,
     };
@@ -166,7 +178,7 @@ export class ReportService {
       sortBy = q.sortBy;
       sortDir = q.sortDir ?? 'asc';
     }
-    return { def, input: { scope, filters, sortBy, sortDir, ...paging } };
+    return { def, input: { scope, filters, sortBy, sortDir, ...paging }, ids };
   }
 
   /** Core интеграцийн тохиргоо/хэрэгжилтийн алдааг ойлгомжтой HTTP хариу болгоно. */

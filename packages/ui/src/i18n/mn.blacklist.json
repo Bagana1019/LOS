@@ -84,5 +84,22 @@
   "blacklist.field.validUntil.hint": "Хоосон бол тохиргооны хугацаа (анхдагч 12 сар) автоматаар тавигдана. Хар жагсаалт хугацаагүй.",
   "blacklist.field.blackApproval": "Хар жагсаалтад оруулахыг өөр Админ/Комплаенс батлах хүртэл бүртгэл идэвхжихгүй (4 нүд).",
   "blacklist.audit.ESCALATE_REQUESTED": "Хар болгох хүсэлт",
-  "blacklist.audit.ESCALATE_APPLIED": "Хар болгосон (баталсан)"
+  "blacklist.audit.ESCALATE_APPLIED": "Хар болгосон (баталсан)",
+  "blacklist.field.selectPlaceholder": "Сонгоно уу",
+  "blacklist.field.listType.required": "Жагсаалтын ангиллыг сонгоно уу",
+  "blacklist.field.reason.notFound": "Тохирох шалтгаан олдсонгүй",
+  "blacklist.savedPendingApproval": "Хар жагсаалтад оруулах хүсэлт илгээгдлээ. Өөр Админ/Комплаенс «{menu}» цэснээс баталсны дараа бүртгэл идэвхжинэ.",
+  "blacklist.error.formInvalid": "Оруулсан мэдээлэлд алдаа байна. Улаанаар тэмдэглэсэн талбарыг засна уу.",
+  "blacklist.error.rejected": "Хүсэлтийг хүлээн авсангүй. Оруулсан мэдээллээ шалгаад дахин оролдоно уу.",
+  "blacklist.error.enum": "Жагсаалтаас зөвшөөрөгдсөн утгыг сонгоно уу",
+  "blacklist.error.tooLong": "Хамгийн ихдээ {max} тэмдэгт байж болно",
+  "blacklist.error.tooLongAny": "Хэт урт байна",
+  "blacklist.error.tooShort": "Хэт богино байна",
+  "blacklist.error.registerChars": "Регистрт зөвхөн үсэг, цифр байна (жишээ нь УБ12345678)",
+  "blacklist.error.unsafeText": "Зөвшөөрөгдөөгүй тэмдэгт байна — текстээ шалгана уу",
+  "blacklist.error.invalidField": "Буруу утга байна",
+  "blacklist.error.validUntilPast": "Дуусах огноо өнгөрсөн байна — ирээдүйн огноо сонгоно уу",
+  "blacklist.error.duplicate": "Энэ регистр «{listType}» жагсаалтад аль хэдийн бүртгэлтэй байна. Хүснэгтээс хайж олоод «Засах» товчоор өөрчилнө үү.",
+  "blacklist.error.duplicate.field": "«{listType}» жагсаалтад бүртгэлтэй",
+  "blacklist.error.conflict": "Бүртгэлийг өөр хэрэглэгч саяхан өөрчилсөн байна. Хүснэгтийг шинэчлээд дахин оролдоно уу."
 }

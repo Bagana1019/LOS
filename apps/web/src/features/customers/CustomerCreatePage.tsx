@@ -7,10 +7,14 @@ import { t } from '../../lib/i18n';
 import { ApiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth/auth-context';
 import { CustomerForm } from './CustomerForm';
+import { markCustomerCreated } from './customer-created-flag';
 import { describeCustomerError } from './customer-error';
+import { lookupToFetchResult, usesCitizenOtp } from './customer-legal';
 import { lookupCustomer } from './customers.api';
 import { xypOtpToFetchResult } from './customers.utils';
-import { useCreateCustomer, useXypFetch, useXypOtp } from './useCustomers';
+import { registerInputProblem } from './register-hint';
+import { isOtpCodeUnusable } from './xyp-otp-state';
+import { useCreateCustomer, useLookupCustomer, useXypFetch, useXypOtp } from './useCustomers';
 import { XypOtpStep } from './XypOtpStep';
 
 const { Title, Text } = Typography;
@@ -28,6 +32,7 @@ export function CustomerCreatePage() {
   const [otpStep, setOtpStep] = useState<{ requestedAt: string } | null>(null);
   const otp = useXypOtp();
   const xyp = useXypFetch();
+  const lookup = useLookupCustomer();
   const create = useCreateCustomer();
   const canWrite = !!me && me.permissions.includes('customer:write');
 
@@ -35,7 +40,7 @@ export function CustomerCreatePage() {
   const initial = useMemo<Partial<CustomerInputRaw>>(() => (mode?.kind === 'xyp' ? mode.result.prefill : {}), [mode]);
   const existing = mode?.kind === 'xyp' ? mode.result.existing : null;
 
-  const reset = () => { setMode(null); setRegister(null); setOtpStep(null); setLocalError(null); otp.reset(); xyp.reset(); create.reset(); };
+  const reset = () => { setMode(null); setRegister(null); setOtpStep(null); setLocalError(null); otp.reset(); xyp.reset(); lookup.reset(); create.reset(); };
 
   /** Иргэний зөвшөөрөл, 1-р алхам: ХУР иргэний БҮРТГЭЛТЭЙ утсанд код илгээнэ (бүртгэлтэй харилцагч бол SMS явахгүй, шууд карт). Дахин авахад мөн энэ. */
   const requestCode = (registerNo: string) => {
@@ -49,16 +54,27 @@ export function CustomerCreatePage() {
     });
   };
 
+  /**
+   * F1-16: байгууллага (7 оронтой регистр) — иргэний зөвшөөрлийн код хамаарахгүй (иргэний утас байхгүй; бодит ХУР ААН-д 501). Код хүсэхгүй,
+   * бүртгэлтэй эсэх + хар жагсаалтыг `lookup`-ээр шалгаад шууд гараар бөглөх маягт руу (`source=MANUAL`).
+   */
+  const checkLegal = (registerNo: string) => {
+    lookup.mutate(registerNo, { onSuccess: (res) => setMode({ kind: 'xyp', result: lookupToFetchResult(res) }) });
+  };
+
   const check = () => {
     const normalized = normalizeRegisterNo(input);
+    const customerType = customerTypeOfRegister(normalized);
     setLocalError(null);
     setMode(null);
     setOtpStep(null);
     xyp.reset();
+    lookup.reset();
     create.reset();
-    if (!customerTypeOfRegister(normalized)) { setLocalError(t('error.INVALID_REGISTER_NO')); return; }
+    if (!customerType) { setLocalError(t(registerInputProblem(input) === 'LATIN' ? 'customer.new.registerLatin' : 'error.INVALID_REGISTER_NO')); return; } // F1-5
     setRegister(normalized);
-    requestCode(normalized);
+    if (usesCitizenOtp(customerType)) requestCode(normalized);
+    else checkLegal(normalized);
   };
 
   /** 2-р алхам: иргэний кодоор татна. Код нэг удаагийнх — хадгалахгүй, `snapshotToken`-ийг л `create`-д дамжуулна. */
@@ -71,11 +87,14 @@ export function CustomerCreatePage() {
     const viaXyp = mode?.kind === 'xyp' && !!mode.result.fetchedAt;
     const token = mode?.kind === 'xyp' ? mode.result.snapshotToken : null;
     create.mutate({ ...payload, source: viaXyp ? 'XYP' : 'MANUAL', ...(viaXyp && token ? { xypSnapshotToken: token } : {}) }, {
-      onSuccess: (c) => { void message.success(t('customer.new.success')); router.push(`/customer/${c.id}`); },
+      // Карт руу шилжих нь удаан байж болно (маршрут compile / сүлжээ) — toast 3с-д арилдаг тул картад тогтвортой баннер үлдээнэ (F1-15)
+      onSuccess: (c) => { markCustomerCreated(c.id); void message.success(t('customer.new.success')); router.push(`/customer/${c.id}`); },
     });
   };
 
-  const stepError = xyp.error ?? otp.error;
+  const stepError = xyp.error ?? otp.error ?? lookup.error;
+  const inputType = customerTypeOfRegister(normalizeRegisterNo(input));
+  const checkLabel = inputType && !usesCitizenOtp(inputType) ? t('customer.new.checkLegal') : t('customer.new.check');
   const xypErr = stepError ? describeCustomerError(stepError) : null;
   const createErr = create.error ? describeCustomerError(create.error) : null;
   const isExists = create.error instanceof ApiError && create.error.code === 'CUSTOMER_EXISTS';
@@ -109,7 +128,7 @@ export function CustomerCreatePage() {
           {(mode && !existing) || otpStep ? (
             <Button onClick={reset}>{t('customer.new.reset')}</Button>
           ) : (
-            <Button type="primary" data-testid="customer-check" loading={otp.isPending} onClick={check}>{t('customer.new.check')}</Button>
+            <Button type="primary" data-testid="customer-check" loading={otp.isPending || lookup.isPending} onClick={check}>{checkLabel}</Button>
           )}
         </Flex>
         <div style={{ marginTop: 4 }}><Text type="secondary">{t('customer.new.registerHint')}</Text></div>
@@ -118,14 +137,14 @@ export function CustomerCreatePage() {
 
       {otpStep && !mode ? (
         <XypOtpStep
-          requestedAt={otpStep.requestedAt} errorMessage={xypErr?.message ?? null} submitting={xyp.isPending} resending={otp.isPending}
+          requestedAt={otpStep.requestedAt} errorMessage={xypErr?.message ?? null} exhausted={isOtpCodeUnusable(xypErr?.code)} submitting={xyp.isPending} resending={otp.isPending}
           onSubmit={verify} onResend={() => { if (register) requestCode(register); }} onManual={() => { setOtpStep(null); setMode({ kind: 'manual' }); }} onCancel={reset}
         />
       ) : null}
 
       {xypErr && !mode && !otpStep ? (
         <Alert
-          style={{ marginBottom: 16 }} type="warning" showIcon message={t('customer.new.xypFailed')} description={xypErr.message}
+          style={{ marginBottom: 16 }} type="warning" showIcon message={t(lookup.error ? 'customer.new.lookupFailed' : 'customer.new.xypFailed')} description={xypErr.message}
           action={register && customerTypeOfRegister(register) && xypErr.code !== 'INVALID_REGISTER_NO' ? <Button size="small" onClick={() => setMode({ kind: 'manual' })}>{t('customer.new.manual')}</Button> : undefined}
         />
       ) : null}
@@ -144,6 +163,7 @@ export function CustomerCreatePage() {
 
       {mode && !existing && register && type ? (
         <>
+          {!usesCitizenOtp(type) ? <Alert style={{ marginBottom: 16 }} type="info" showIcon data-testid="customer-legal-note" message={t('customer.new.legalNote')} /> : null}
           {mode.kind === 'xyp' ? (
             <Space direction="vertical" style={{ marginBottom: 16, width: '100%' }}>
               {mode.result.prefilledFields.length ? <Alert type="success" showIcon message={t('customer.new.prefilledNote', { count: mode.result.prefilledFields.length })} /> : null}
@@ -158,7 +178,7 @@ export function CustomerCreatePage() {
                 : isSnapshotExpired ? <Button size="small" data-testid="customer-restart-xyp" onClick={reset}>{t('customer.new.restartXyp')}</Button> : undefined}
             />
           ) : null}
-          <CustomerForm customerType={type} registerNo={register} initial={initial} prefilled={mode.kind === 'xyp' ? mode.result.prefilledFields : []} serverIssues={serverIssues} submitting={create.isPending} onSubmit={submit} />
+          <CustomerForm customerType={type} registerNo={register} initial={initial} prefilled={mode.kind === 'xyp' ? mode.result.prefilledFields : []} serverIssues={serverIssues} submitting={create.isPending || create.isSuccess} onSubmit={submit} />
         </>
       ) : null}
     </div>

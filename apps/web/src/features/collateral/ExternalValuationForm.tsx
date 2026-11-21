@@ -1,13 +1,13 @@
 'use client';
 import { useState } from 'react';
-import { App as AntApp, Alert, Button, Flex, Form, Input, InputNumber, Typography } from 'antd';
+import { App as AntApp, Alert, Button, Flex, Form, Input, Typography } from 'antd';
+import { MAX_MONEY, MoneyInput, moneyRules } from '../../components/form';
 import { t } from '../../lib/i18n';
 import { ApiErrorAlert } from '../documents/shared/ApiErrorAlert';
 import { FileUploadButton } from '../documents/shared/FileUploadButton';
 import { formatBytes, uploadDmsFile, type DmsFile } from '../documents/shared/files';
 import { buildExternalValuationRequest, type ExternalValuationFormValues } from './collateral.utils';
 import { applyFieldErrors } from './form-errors';
-import { MONEY_INPUT_PROPS } from './money-input';
 import type { TabProps } from './TabProps';
 import { useRecordExternalValuation } from './useCollateral';
 import { canWriteBlocked } from './write-gates';
@@ -77,8 +77,8 @@ export function ExternalValuationForm({ applicationId, item, write, onChanged }:
         <Form.Item name="validUntil" label={t('collateral.external.validUntil')} extra={t('collateral.external.validUntilHint')} style={{ flex: '1 1 180px' }}>
           <Input type="date" />
         </Form.Item>
-        <Form.Item name="marketValue" label={t('collateral.external.marketValue')} required style={{ flex: '1 1 240px' }}>
-          <InputNumber<number> {...MONEY_INPUT_PROPS} />
+        <Form.Item name="marketValue" label={t('collateral.external.marketValue')} required style={{ flex: '1 1 240px' }} validateFirst rules={moneyRules({ label: t('collateral.external.marketValue'), positive: true, max: MAX_MONEY })}>
+          <MoneyInput />
         </Form.Item>
       </Flex>
       <Form.Item label={t('collateral.external.report')} required validateStatus={reportError ? 'error' : undefined} help={reportError ?? t('collateral.external.reportHint')}>

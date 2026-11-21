@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { BlacklistDeactivateBody, customerTypeOfRegister, normalizeRegisterNo, type BlacklistWarning } from '@los/contracts';
 import { Permissions, ZodValidationPipe } from '@los/nest-common';
 import { BlacklistAccessGuard, Ctx, Roles, WRITE_ROLES, type RequestContext } from './blacklist.context';
+import { INVALID_REGISTER_MESSAGE, INVALID_REGISTER_NO } from './blacklist.register';
 import { BlacklistCreateBody, BlacklistImportJsonBody, BlacklistListQuery, BlacklistPatchBody, MAX_IMPORT_ROWS } from './blacklist.schemas';
 import { BlacklistLookupService } from './blacklist-lookup.service';
 import { BlacklistService, importLimitError, type ImportItem } from './blacklist.service';
@@ -26,7 +27,7 @@ export class BlacklistController {
   @Permissions('blacklist:read')
   async check(@Query(new ZodValidationPipe(CheckQuery)) q: z.infer<typeof CheckQuery>, @Ctx() ctx: RequestContext): Promise<{ registerNo: string; blacklisted: boolean; warnings: BlacklistWarning[] }> {
     const registerNo = normalizeRegisterNo(q.registerNo);
-    if (!customerTypeOfRegister(registerNo)) throw new BadRequestException({ code: 'INVALID_REGISTER_NO', message: 'Регистрийн дугаар буруу (иргэн УБ12345678, байгууллага 7 орон)' });
+    if (!customerTypeOfRegister(registerNo)) throw new BadRequestException({ code: INVALID_REGISTER_NO, message: INVALID_REGISTER_MESSAGE });
     const warnings = await this.lookup.warningsForRegisterNo(ctx.orgId, registerNo);
     return { registerNo, blacklisted: warnings.length > 0, warnings };
   }

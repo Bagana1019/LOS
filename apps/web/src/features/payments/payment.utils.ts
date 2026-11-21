@@ -202,7 +202,8 @@ const hasAtMostTwoDecimals = (n: number): boolean => Math.abs(n * 100 - Math.rou
 
 /** Өөр дүн: эерэг, ≤ 2 орон, ≤ дээд хэмжээ. Доод хязгаар (payment.min_amount) setting-д байдаг тул сервер шалгаж 422 AMOUNT_OUT_OF_RANGE буцаана. */
 export function validateCustomAmount(value: number | null | undefined, max: number, currency: string): Reason | null {
-  if (value === null || value === undefined || !Number.isFinite(value)) return { key: 'payment.validation.amountRequired' };
+  if (value === null || value === undefined) return { key: 'payment.validation.amountRequired' };
+  if (!Number.isFinite(value)) return { key: 'payment.validation.amountNotNumber' }; // MoneyInput: тоо биш текст = NaN (чимээгүй хаяхгүй)
   if (value <= 0) return { key: 'payment.validation.amountPositive' };
   if (!hasAtMostTwoDecimals(value)) return { key: 'payment.validation.amountDecimals' };
   if (round2(value) > max) return { key: 'payment.validation.amountMax', params: { max: formatAmount(max, currency) } };

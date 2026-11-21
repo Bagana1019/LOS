@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AmlHitReviewRequest } from '@los/contracts';
+import { ApiError } from '../../lib/api';
 import * as api from './aml.api';
 
 export const amlKey = ['aml'] as const;
@@ -16,5 +17,7 @@ export function useReviewAmlHit() {
   return useMutation({
     mutationFn: (v: { hitId: string; body: AmlHitReviewRequest }) => api.reviewAmlHit(v.hitId, v.body),
     onSuccess: () => qc.invalidateQueries({ queryKey: amlKey }),
+    // 409 (аль хэдийн шийдвэрлэсэн / шалгалт хуучирсан): ачаалсан өгөгдөл хуучирсан тул дахин ачаалж, бүртгэгдсэн шийдвэрийг харуулна.
+    onError: (e) => (e instanceof ApiError && e.status === 409 ? qc.invalidateQueries({ queryKey: amlKey }) : undefined),
   });
 }

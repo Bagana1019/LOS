@@ -1,6 +1,7 @@
 'use client';
-import { App as AntApp, Alert, Badge, Button, Descriptions, Empty, Flex, Form, Input, InputNumber, Skeleton, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { App as AntApp, Alert, Badge, Button, Descriptions, Empty, Flex, Form, Input, Skeleton, Space, Table, Tabs, Tag, Typography } from 'antd';
 import type { InquiryBorrowerView, InquiryItemView, UnregisteredLoan } from '@los/contracts';
+import { MAX_MONEY, MoneyInput, moneyRules, useSingleFlight } from '../../components/form';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatDateTime, formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
@@ -22,7 +23,10 @@ export function InquiryStep({ applicationId, onChanged }: Props) {
   const q = useInquiries(applicationId);
   const fetchNow = useFetchInquiries(applicationId, onChanged);
   const recheck = useRecheckInquiries(applicationId, onChanged);
-  const data = fetchNow.data ?? q.data;
+  // Жагсаалтын эх сурвалж нь кэш: мутаци бүрийн дараа invalidate хийгдэнэ. Татах хариуг ("fetchNow.data") эх сурвалж болговол дараагийн нэмэлт/устгал/шалгалт харагдахгүй (F2-9).
+  const data = q.data ?? fetchNow.data;
+  // `failures` нь зөвхөн татах (POST) хариунд байдаг, жагсаалтын GET хоосон буцаадаг.
+  const failures = fetchNow.data?.failures ?? [];
 
   const run = (customerId?: string) =>
     fetchNow.mutate({ customerId }, { onSuccess: (res) => { if (!res.failures.length) void message.success(t('inquiry.toast.fetched')); } });
@@ -46,8 +50,8 @@ export function InquiryStep({ applicationId, onChanged }: Props) {
       </Flex>
       {data.step.reason && data.step.status !== 'COMPLETED' ? <Alert type="warning" showIcon message={t(`inquiry.step.reason.${data.step.reason}`)} description={t('inquiry.staleHint', { days: data.staleDays })} /> : null}
       {fetchNow.error ? <ApiErrorAlert error={fetchNow.error} /> : null}
-      {data.failures.length ? (
-        <Alert type="error" showIcon message={t('inquiry.fetch.failures')} description={<ul style={{ margin: 0, paddingLeft: 18 }}>{data.failures.map((f) => <li key={`${f.customerId}-${f.source}-${f.code}`}>{f.source ? `${t(`inquiry.source.${f.source}`)}: ` : ''}{f.message}</li>)}</ul>} />
+      {failures.length ? (
+        <Alert type="error" showIcon message={t('inquiry.fetch.failures')} description={<ul style={{ margin: 0, paddingLeft: 18 }}>{failures.map((f) => <li key={`${f.customerId}-${f.source}-${f.code}`}>{f.source ? `${t(`inquiry.source.${f.source}`)}: ` : ''}{f.message}</li>)}</ul>} />
       ) : null}
       {!data.borrowers.length ? (
         <Empty description={t('inquiry.empty.noBorrower')} />
@@ -120,6 +124,7 @@ function UnregisteredLoans({ applicationId, customerId, loans, onChanged }: { ap
   const [form] = Form.useForm<{ lenderName: string; amount: number; monthlyPayment: number; note?: string }>();
   const add = useAddLoan(applicationId, onChanged);
   const remove = useRemoveLoan(applicationId, onChanged);
+  const flight = useSingleFlight(); // давхар товшилтоор нэг зээлийг хоёр удаа нэмэхгүй (өрийн төлбөр давхардахгүй)
   const required = [{ required: true, message: t('inquiry.loans.required') }];
   return (
     <Flex vertical gap={8}>
@@ -133,12 +138,12 @@ function UnregisteredLoans({ applicationId, customerId, loans, onChanged }: { ap
           { key: 'x', render: (_: unknown, r: UnregisteredLoan) => <Button size="small" danger loading={remove.isPending} onClick={() => remove.mutate(r.id, { onSuccess: () => void message.success(t('inquiry.toast.loanRemoved')) })}>{t('inquiry.action.remove')}</Button> },
         ]} />
       ) : <Typography.Text type="secondary">{t('inquiry.loans.empty')}</Typography.Text>}
-      <Form form={form} layout="inline" onFinish={(v) => add.mutate({ ...v, customerId }, { onSuccess: () => { form.resetFields(); void message.success(t('inquiry.toast.loanAdded')); } })}>
+      <Form form={form} layout="inline" onFinish={(v) => void flight(() => add.mutateAsync({ ...v, customerId }).then(() => { form.resetFields(); void message.success(t('inquiry.toast.loanAdded')); })).catch(() => undefined /* алдаа add.error-оор доор харагдана */)}>
         <Form.Item name="lenderName" rules={required}><Input placeholder={t('inquiry.loans.lender')} /></Form.Item>
-        <Form.Item name="amount" rules={required}><InputNumber min={0} placeholder={t('inquiry.loans.amount')} style={{ width: 160 }} /></Form.Item>
-        <Form.Item name="monthlyPayment" rules={required}><InputNumber min={0} placeholder={t('inquiry.loans.monthly')} style={{ width: 160 }} /></Form.Item>
+        <Form.Item name="amount" validateFirst rules={moneyRules({ required: t('inquiry.loans.required'), positive: true, max: MAX_MONEY, label: t('inquiry.loans.amount') })}><MoneyInput placeholder={t('inquiry.loans.amount')} style={{ width: 160 }} /></Form.Item>
+        <Form.Item name="monthlyPayment" validateFirst rules={moneyRules({ required: t('inquiry.loans.required'), max: MAX_MONEY, label: t('inquiry.loans.monthly') })}><MoneyInput placeholder={t('inquiry.loans.monthly')} style={{ width: 160 }} /></Form.Item>
         <Form.Item name="note"><Input placeholder={t('inquiry.loans.note')} /></Form.Item>
-        <Form.Item><Space><Button htmlType="submit" loading={add.isPending}>{t('inquiry.action.addLoan')}</Button></Space></Form.Item>
+        <Form.Item><Space><Button htmlType="submit" loading={add.isPending} disabled={add.isPending}>{t('inquiry.action.addLoan')}</Button></Space></Form.Item>
       </Form>
       {add.error ? <ApiErrorAlert error={add.error} /> : null}
     </Flex>

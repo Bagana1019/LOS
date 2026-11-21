@@ -9,7 +9,9 @@ import { DashboardFilters } from './DashboardFilters';
 import { ApplicationKpis, CollectionKpis, DisbursementKpis, PortfolioKpis } from './DashboardKpis';
 import { ReportErrorAlert } from './ReportErrorAlert';
 import { buildDashboardQuery, isDashboardEmpty, parseDashboardFilters, scopeText, toDashboardSearchParams, type DashboardFilters as Filters } from './dashboard.utils';
+import { scopeNames } from './report-lookups';
 import { formatDateTimeUb } from './reports.utils';
+import { useLookups } from './useLookups';
 import { useDashboard } from './useReports';
 
 /** `/los/dashboard` — KPI самбар (FR-13.3): багц, цуглуулалт, олголт, хүсэлтийн урсгал. Шүүлт URL-д. Хүрээг (NFR-3) сервер хэрэгжүүлнэ. */
@@ -20,6 +22,7 @@ export function DashboardPage() {
   const filters = useMemo(() => parseDashboardFilters(searchParams), [searchParams]);
   const query = useMemo(() => buildDashboardQuery(filters), [filters]);
   const q = useDashboard(query);
+  const lookups = useLookups();
   const summary = q.data;
   const reloading = q.isFetching && q.isPlaceholderData;
 
@@ -44,7 +47,7 @@ export function DashboardPage() {
       {summary ? (
         <Flex vertical gap={24} style={{ opacity: reloading ? 0.6 : 1, transition: 'opacity .15s' }}>
           <Typography.Text type="secondary">
-            {t('report.dashboard.meta', { asOf: summary.asOf, scope: scopeText(summary.scope, t), currency: summary.currency, generated: formatDateTimeUb(summary.generatedAt) })}
+            {t('report.dashboard.meta', { asOf: summary.asOf, scope: scopeText(summary.scope, t, scopeNames(lookups.directory, lookups.status, t)), currency: summary.currency, generated: formatDateTimeUb(summary.generatedAt) })}
           </Typography.Text>
 
           {isDashboardEmpty(summary) ? <Alert type="info" showIcon message={t('report.dashboard.empty')} /> : null}

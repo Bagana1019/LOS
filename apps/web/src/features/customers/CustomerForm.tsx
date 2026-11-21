@@ -1,9 +1,9 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { App as AntApp, AutoComplete, Button, Card, Checkbox, Divider, Flex, Form, Input, InputNumber, Select, Typography, Upload } from 'antd';
+import { useEffect } from 'react';
+import { App as AntApp, AutoComplete, Button, Card, Checkbox, Divider, Flex, Form, Input, InputNumber, Select, Typography } from 'antd';
 import { CustomerContactRelation, Gender, MaritalStatus, type CustomerType, type CustomerInputRaw } from '@los/contracts';
 import { t } from '../../lib/i18n';
-import { uploadDmsFile } from '../documents/shared/files';
+import { CustomerPhotoUpload } from './CustomerPhotoUpload';
 import { buildPayload, validateCustomer, xypLockedFields } from './customers.utils';
 
 type Values = Record<string, unknown>;
@@ -17,6 +17,10 @@ interface Props {
   serverIssues: { path: string; message: string }[];
   submitting: boolean;
   onSubmit: (payload: Record<string, unknown>) => void;
+  /** Илгээх товчийн текст (анхдагч «Бүртгэх»). Засах горимд «Хадгалах». */
+  submitLabel?: string;
+  /** Илгээх товчийн хажууд (жишээ «Болих»). */
+  extra?: React.ReactNode;
 }
 
 const L = (k: string) => t(`customer.field.${k}`);
@@ -66,12 +70,11 @@ function ContactHomeAddress({ form, index, residence }: { form: ReturnType<typeo
 const stripHomeSame = (values: Values): Values => ({ ...values, contacts: ((values.contacts as Values[] | undefined) ?? []).map(({ homeSame: _h, ...c }) => c) });
 
 /** FR-2.3 / FR-2.4: харилцагчийн бүрэн маягт. Заавал талбарыг `@los/contracts`-ийн `CustomerInput`-аар шалгана (сервертэй ижил). */
-export function CustomerForm({ customerType, registerNo, initial, prefilled, serverIssues, submitting, onSubmit }: Props) {
+export function CustomerForm({ customerType, registerNo, initial, prefilled, serverIssues, submitting, onSubmit, submitLabel, extra }: Props) {
   const { message } = AntApp.useApp();
   const [form] = Form.useForm<Values>();
   const individual = customerType === 'INDIVIDUAL';
   const same = Form.useWatch('residenceSameAsOfficial', form);
-  const [uploading, setUploading] = useState(false);
   const photoId = Form.useWatch('photoFileId', form) as string | undefined;
   /** Харилцагчийн одоогийн оршин суугаа хаяг (чекбокс «ижил» бол албан ёсны). */
   const residence = () => {
@@ -107,18 +110,9 @@ export function CustomerForm({ customerType, registerNo, initial, prefilled, ser
     onSubmit(payload);
   };
 
-  const upload = async (file: File) => {
-    setUploading(true);
-    try {
-      const f = await uploadDmsFile(file);
-      form.setFieldValue('photoFileId', f.id);
-      form.setFields([{ name: 'photoFileId', errors: [] }]);
-      void message.success(t('customer.new.photoUploaded'));
-    } catch {
-      void message.error(t('customer.new.photoFailed'));
-    } finally {
-      setUploading(false);
-    }
+  const setPhoto = (id: string | undefined) => {
+    form.setFieldValue('photoFileId', id);
+    form.setFields([{ name: 'photoFileId', errors: [] }]);
   };
 
   // M5: ХУР-ын эзэмшдэг талбар (албан ёсны хаяг, овог нэр, төрсөн огноо) зөвхөн унших — сервер өөр утгыг 400-аар татгалзана
@@ -159,9 +153,7 @@ export function CustomerForm({ customerType, registerNo, initial, prefilled, ser
             <Form.Item name="education" label={L('education')} rules={[req]} style={{ flex: '1 1 200px' }}><Input maxLength={100} /></Form.Item>
             <Form.Item label={L('photoFileId')} required style={{ flex: '1 1 240px' }}>
               <Form.Item name="photoFileId" noStyle rules={[req]}><Input type="hidden" /></Form.Item>
-              <Upload accept=".png,.jpg,.jpeg,.pdf" showUploadList={false} beforeUpload={(f) => { void upload(f); return false; }} maxCount={1}>
-                <Button loading={uploading}>{photoId ? t('customer.new.photoUploaded') : t('customer.new.photoUpload')}</Button>
-              </Upload>
+              <CustomerPhotoUpload photoId={photoId} onChange={setPhoto} />
             </Form.Item>
           </Flex>
         ) : null}
@@ -221,7 +213,10 @@ export function CustomerForm({ customerType, registerNo, initial, prefilled, ser
         </Flex>
       </Card>
 
-      <Button type="primary" htmlType="submit" loading={submitting} data-testid="customer-submit">{t('customer.new.submit')}</Button>
+      <Flex gap={8} wrap>
+        <Button type="primary" htmlType="submit" loading={submitting} data-testid="customer-submit">{submitLabel ?? t('customer.new.submit')}</Button>
+        {extra}
+      </Flex>
     </Form>
   );
 }

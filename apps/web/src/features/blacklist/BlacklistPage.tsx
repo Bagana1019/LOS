@@ -1,18 +1,30 @@
 'use client';
 import { useState } from 'react';
-import { Alert, App, Button, Drawer, Flex, Form, Input, Modal, Radio, Select, Table, Tag, Timeline, Typography } from 'antd';
+import { Alert, App, Button, Drawer, Flex, Form, Input, Modal, Radio, Select, Table, Tag, Timeline, Typography, type FormInstance } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { AmlSubjectType, BlacklistSeverity, type BlacklistEntry, type BlacklistEntryInput } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { useAuth } from '../../lib/auth/auth-context';
 import { describeCustomerError } from '../customers/customer-error';
 import { useBlacklistHistory, useBlacklistList, useCreateBlacklist, useDeactivateBlacklist, useUpdateBlacklist } from './useBlacklist';
-import { LIST_TYPES, REASON_CODES, SOURCES, auditActionLabel, cleanRegisterInput, listTypeLabel, maskRegister, reasonLabel, severityStyle } from './blacklist.utils';
+import { LIST_TYPES, REASON_CODES, SOURCES, auditActionLabel, cleanRegisterInput, listTypeLabel, maskRegister, reasonLabel, savedMessage, severityStyle } from './blacklist.utils';
+import { describeBlacklistError, type BlacklistErrorContext } from './blacklist.errors';
 
 const { Title, Text, Paragraph } = Typography;
 
 const SeverityTag = ({ value }: { value: BlacklistSeverity }) => <Tag style={severityStyle(value)}>{t(`blacklist.severity.${value}`)}</Tag>;
 const errMsg = (e: unknown) => describeCustomerError(e).message;
+/** Дөрвөн нүдний хүсэлт уншихад удаан тул энгийн "Хадгаллаа"-аас урт харуулна (секунд). */
+const PENDING_TOAST_SECONDS = 8;
+
+/** F8-4: серверийн алдааг талбар бүрийн доор (form.setFields) монголоор тавьж, маягтын дээд Alert-ийн текстийг буцаана. */
+function applyApiError(form: FormInstance, error: unknown, ctx: BlacklistErrorContext = {}): string {
+  const described = describeBlacklistError(error, ctx);
+  form.setFields(described.fields.map((f) => ({ name: f.name, errors: [f.message] })));
+  const first = described.fields[0];
+  if (first) form.scrollToField(first.name);
+  return described.message;
+}
 
 /** FR-13.1: дотоод хар/саарал жагсаалт. BR-9: хоёул зөвхөн анхааруулга. Бичих — `blacklist:manage` (ADMIN, COMPLIANCE, BRANCH_MANAGER), унших — `blacklist:read`. */
 export function BlacklistPage() {
@@ -107,7 +119,7 @@ function DeactivateModal({ entry, onClose }: { entry: BlacklistEntry; onClose: (
   const [error, setError] = useState<string | null>(null);
   const onFinish = (v: { reason: string }) => {
     setError(null);
-    deactivate.mutate({ id: entry.id, reason: v.reason.trim() }, { onSuccess: () => { void message.success(t('blacklist.deactivated')); onClose(); }, onError: (e) => setError(errMsg(e)) });
+    deactivate.mutate({ id: entry.id, reason: v.reason.trim() }, { onSuccess: () => { void message.success(t('blacklist.deactivated')); onClose(); }, onError: (e) => setError(applyApiError(form, e)) });
   };
   return (
     <Modal open title={t('blacklist.deactivate.title')} onCancel={onClose} okText={t('blacklist.deactivate.ok')} okButtonProps={{ danger: true }} cancelText={t('blacklist.cancel')} confirmLoading={deactivate.isPending} onOk={() => form.submit()} destroyOnHidden>
@@ -133,7 +145,14 @@ function EntryModal({ entry, onClose }: { entry: BlacklistEntry | null; onClose:
   const onFinish = (v: FormValues) => {
     setError(null);
     const body = { ...v, registerNo: cleanRegisterInput(v.registerNo), reasonText: v.reasonText?.trim() || undefined, validUntil: v.validUntil ? new Date(`${v.validUntil}T23:59:59`).toISOString() : undefined };
-    const done = { onSuccess: () => { void message.success(t('blacklist.saved')); onClose(); }, onError: (e: unknown) => setError(errMsg(e)) };
+    const done = {
+      onSuccess: (saved: BlacklistEntry) => {
+        const text = savedMessage(saved, entry);
+        void message.success({ content: text, duration: text === t('blacklist.saved') ? undefined : PENDING_TOAST_SECONDS });
+        onClose();
+      },
+      onError: (e: unknown) => setError(applyApiError(form, e, { listType: form.getFieldValue('listType') as string | undefined })),
+    };
     if (entry) update.mutate({ id: entry.id, body: { ...body, reasonText: v.reasonText?.trim() || null } }, done);
     else create.mutate(body, done);
   };
@@ -141,7 +160,7 @@ function EntryModal({ entry, onClose }: { entry: BlacklistEntry | null; onClose:
   return (
     <Modal open title={t(entry ? 'blacklist.edit.title' : 'blacklist.add.title')} onCancel={onClose} okText={t('blacklist.save')} cancelText={t('blacklist.cancel')} confirmLoading={busy} onOk={() => form.submit()} destroyOnHidden>
       <Form<FormValues> form={form} layout="vertical" onFinish={onFinish}
-        initialValues={entry ? { registerNo: entry.registerNo, customerType: entry.customerType, name: entry.name, severity: entry.severity, listType: entry.listType, reasonCode: entry.reasonCode, reasonText: entry.reasonText ?? undefined, source: entry.source, validUntil: entry.validUntil?.slice(0, 10) } : { source: 'INTERNAL', customerType: 'INDIVIDUAL', severity: 'BLACK', listType: 'DELINQUENT' }}>
+        initialValues={entry ? { registerNo: entry.registerNo, customerType: entry.customerType, name: entry.name, severity: entry.severity, listType: entry.listType, reasonCode: entry.reasonCode, reasonText: entry.reasonText ?? undefined, source: entry.source, validUntil: entry.validUntil?.slice(0, 10) } : { source: 'INTERNAL', customerType: 'INDIVIDUAL', severity: 'BLACK' }}>
         {error ? <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} /> : null}
         <Form.Item name="severity" label={t('blacklist.field.severity')} rules={[{ required: true }]} extra={t('blacklist.field.severity.hint')}>
           <Radio.Group optionType="button" buttonStyle="solid" options={BlacklistSeverity.map((v) => ({ value: v, label: t(`blacklist.severity.${v}`) }))} />
@@ -158,11 +177,11 @@ function EntryModal({ entry, onClose }: { entry: BlacklistEntry | null; onClose:
         <Form.Item name="name" label={t('blacklist.field.name')} rules={[{ required: true, whitespace: true, message: t('blacklist.field.required') }, { max: 200 }]}>
           <Input autoComplete="off" />
         </Form.Item>
-        <Form.Item name="listType" label={t('blacklist.field.listType')} rules={[{ required: true }]}>
-          <Select options={listTypeOptions(entry?.listType)} />
+        <Form.Item name="listType" label={t('blacklist.field.listType')} rules={[{ required: true, message: t('blacklist.field.listType.required') }]}>
+          <Select placeholder={t('blacklist.field.selectPlaceholder')} options={listTypeOptions(entry?.listType)} />
         </Form.Item>
         <Form.Item name="reasonCode" label={t('blacklist.field.reason')} rules={[{ required: true, message: t('blacklist.field.required') }]}>
-          <Select showSearch options={reasonOptions(entry?.reasonCode)} />
+          <Select showSearch optionFilterProp="label" placeholder={t('blacklist.field.selectPlaceholder')} notFoundContent={t('blacklist.field.reason.notFound')} options={reasonOptions(entry?.reasonCode)} />
         </Form.Item>
         <Form.Item name="source" label={t('blacklist.field.source')} rules={[{ required: true }]}>
           <Select options={SOURCES.map((v) => ({ value: v, label: t(`blacklist.source.${v}`) }))} />

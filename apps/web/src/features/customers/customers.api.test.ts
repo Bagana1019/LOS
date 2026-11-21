@@ -24,6 +24,11 @@ describe('customers API · ХУР иргэний код', () => {
     expect(calls).toEqual([{ url: `${API}/origination/customers/xyp-fetch`, method: 'POST', body: { registerNo: 'УБ90010112', otp: '123456' } }]);
   });
 
+  it('updateCustomer: PUT /origination/customers/:id — өгсөн бие хэвээр, id кодлогдоно', async () => {
+    await api.updateCustomer('22222222-2222-4222-8222-222222222222', { phone: '99887766' });
+    expect(calls).toEqual([{ url: `${API}/origination/customers/22222222-2222-4222-8222-222222222222`, method: 'PUT', body: { phone: '99887766' } }]);
+  });
+
   it('kyc-ийн замыг шууд дуудахгүй (gateway-д ажилтанд хаалттай — хязгаар, аудит origination-д)', async () => {
     await api.xypRequestOtp('УБ90010112');
     await api.xypFetch('УБ90010112', '123456');

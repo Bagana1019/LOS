@@ -6,6 +6,9 @@ import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatDateTime, formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { useDecision, useVote, voteTargetOf } from './decision.api';
+import { methodLabel, progressCounts } from './decision.risk';
+import { useWizardStageCounts } from './decision.wizard-counts';
+import { RiskSummaryCard } from './RiskSummaryCard';
 
 interface Props { applicationId: string; onChanged?: () => void }
 const stepStatus = (s: ApprovalTimelineLevel['state']) => (s === 'APPROVED' ? 'finish' : s === 'PENDING' ? 'process' : s === 'RETURNED' ? 'error' : 'wait') as 'finish' | 'process' | 'error' | 'wait';
@@ -15,6 +18,7 @@ export function DecisionStep({ applicationId, onChanged }: Props) {
   const { message } = AntApp.useApp();
   const q = useDecision(applicationId);
   const vote = useVote(applicationId, onChanged);
+  const stage1 = useWizardStageCounts(applicationId);
   const [returning, setReturning] = useState(false);
   const [comment, setComment] = useState('');
   if (q.isLoading) return <Skeleton active />;
@@ -23,6 +27,7 @@ export function DecisionStep({ applicationId, onChanged }: Props) {
   const s = d.summary;
   const levels = d.approval.levels;
   const current = Math.max(0, levels.findIndex((l) => l.state === 'PENDING'));
+  const counts = progressCounts(d.progress, stage1); // F3-1: шугам ба зүүн самбарын «Бүрдсэн» тоолуур ижил тоо
   // FR-1.5: харж буй түвшин, хувилбараа дамжуулна — өөр хүн/цонхонд түвшин ахисан, дахин илгээгдсэн бол сервер 409 (ApiErrorAlert-д харагдана).
   const send = (decision: 'APPROVE' | 'RETURN', text?: string) => vote.mutateAsync({ decision, ...(text ? { comment: text } : {}), ...voteTargetOf(d) }).then(() => { setReturning(false); setComment(''); void message.success(t(decision === 'APPROVE' ? 'decide.approved' : 'decide.returned')); }).catch(() => undefined);
 
@@ -41,12 +46,17 @@ export function DecisionStep({ applicationId, onChanged }: Props) {
           <Descriptions.Item label={t('decide.rate')}>{s.interestRate ?? '—'}</Descriptions.Item>
           <Descriptions.Item label={t('decide.monthly')}>{s.monthlyPayment != null ? formatMnt(s.monthlyPayment) : '—'}</Descriptions.Item>
           <Descriptions.Item label={t('decide.collateral')}>{s.collateralCount}</Descriptions.Item>
-          <Descriptions.Item label={t('decide.method')}>{s.selectedMethod ?? '—'}</Descriptions.Item>
+          <Descriptions.Item label={t('decide.method')}><span data-testid="decision-method">{methodLabel(s.selectedMethod)}</span></Descriptions.Item>
         </Descriptions>
-        <Progress percent={d.progress.total ? Math.round((d.progress.completed / d.progress.total) * 100) : 0} size="small" format={() => `${d.progress.completed}/${d.progress.total}`} />
+        <Progress percent={counts.percent} size="small" format={() => `${counts.done}/${counts.total}`} />
+        <Flex vertical data-testid="decision-progress-text">
+          <Typography.Text type="secondary">{counts.label}</Typography.Text>
+          {counts.requiredLabel ? <Typography.Text type="secondary">{counts.requiredLabel}</Typography.Text> : null}
+        </Flex>
         {d.progress.missing.length ? <Alert type="warning" showIcon style={{ marginTop: 8 }} message={t('decide.missing', { steps: d.progress.missing.map((k) => t(`application.step.${k}`)).join(', ') })}
           description={Object.entries(d.progress.reasons).map(([k, rs]) => <div key={k}><strong>{t(`application.step.${k}`)}:</strong> {rs.join('; ')}</div>)} /> : null}
       </Card>
+      <RiskSummaryCard risk={s.risk} />
       {levels.length ? (
         <Card size="small" title={t('decide.flow')}>
           <Steps direction="vertical" size="small" current={current} items={levels.map((l) => ({

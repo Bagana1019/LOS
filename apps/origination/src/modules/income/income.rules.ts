@@ -35,6 +35,49 @@ export function summaryView(row: SummaryRow | null, salaries: readonly SalaryRow
   return { ...base, periodFrom: formatYearMonth(from), periodTo: formatYearMonth(to), months: calc.months, salaryTotal: calc.total };
 }
 
+/** Ажил олгогчийн нэрийг харьцуулах хэлбэр: зай/том жижиг үсгийг үл тооно; null = хоосон. */
+export const normalizeEmployer = (e: string | null | undefined): string => (e ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+export interface SalaryRef { year: number; month: number; employer: string | null; source: 'NDSH' | 'MANUAL' }
+export type SalaryConflict = 'MANUAL_MONTH_EXISTS' | 'NDSH_MONTH_EXISTS';
+export const SALARY_CONFLICT_CODE: Record<SalaryConflict, string> = { MANUAL_MONTH_EXISTS: 'SALARY_MONTH_DUPLICATE', NDSH_MONTH_EXISTS: 'SALARY_MONTH_IN_NDSH' };
+
+export function salaryConflictMessage(conflict: SalaryConflict, ym: YearMonth): string {
+  const month = formatYearMonth(ym);
+  return conflict === 'MANUAL_MONTH_EXISTS'
+    ? `${month} сард ижил ажил олгогчийн (эсвэл ажил олгогчгүй) цалингийн мөр аль хэдийн байна. Буруу бол өмнөх мөрийг устгаад дахин оруулна уу; өөр ажил олгогчийн цалин бол ажил олгогчийн нэрийг заан оруулна уу`
+    : `${month} сарын цалин НДШ-ээс аль хэдийн татагдсан байна. Өөр ажил олгогчийн цалин бол ажил олгогчийн нэрийг заан оруулна уу`;
+}
+
+/** Гар мөр хоорондын ижил ажил олгогч: нэр нь тэнцүү, эсвэл аль нэг нь хоосон (хоосон = тодорхойгүй, дурын ажил олгогчтой давхцаж болзошгүй). */
+const sameEmployerOrBlank = (a: string | null | undefined, b: string | null | undefined): boolean => {
+  const x = normalizeEmployer(a);
+  const y = normalizeEmployer(b);
+  return x === '' || y === '' || x === y;
+};
+
+/** НДШ-ийн мөр тухайн сард, ижил (эсвэл хоосон = тодорхойгүй) ажил олгогчийг хамарч байгаа эсэх. */
+const ndshCovers = (ndsh: readonly SalaryRef[], ym: YearMonth, employer: string | null | undefined): boolean => {
+  const emp = normalizeEmployer(employer);
+  return ndsh.some((n) => n.source === 'NDSH' && n.year === ym.year && n.month === ym.month && (emp === '' || normalizeEmployer(n.employer) === emp));
+};
+
+/**
+ * F2-14 · Гар цалин нэмэх давхардал. Нэг (хүсэлт, зээлдэгч, сар, ажил олгогч)-д гар (`MANUAL`) цалингийн нэг мөр: ижил нэртэй ажил олгогч, эсвэл
+ * аль нэг талд ажил олгогч хоосон бол давхардал. Өөр өөр НЭРТЭЙ хоёр ажил олгогч нэг сард зөвшөөрөгдөж дундаж нийлбэрлэгдэнэ (DECISIONS 2026-11-03).
+ * НДШ-д тэр сар байвал гар мөр нь ТОДОРХОЙ, өөр ажил олгогчийн (нэмэлт ажил) байх ёстой — хоосон/ижил ажил олгогч нь НДШ-ийн мөрийг давхарлана.
+ * `existing` нь ижил хүсэлт, зээлдэгчийн одоогийн мөрүүд. Давхардахгүй бол null.
+ */
+export function manualSalaryConflict(candidate: { year: number; month: number; employer?: string | null }, existing: readonly SalaryRef[]): SalaryConflict | null {
+  const sameMonth = existing.filter((r) => r.year === candidate.year && r.month === candidate.month);
+  if (sameMonth.some((r) => r.source === 'MANUAL' && sameEmployerOrBlank(r.employer, candidate.employer))) return 'MANUAL_MONTH_EXISTS';
+  return ndshCovers(sameMonth, candidate, candidate.employer) ? 'NDSH_MONTH_EXISTS' : null;
+}
+
+/** НДШ-ийг (дахин) татсаны дараа НДШ-ийн мөрөөр давхардсан болсон гар цалингийн мөрүүдийн id (НДШ эх сурвалжийн үнэн тул гар мөрийг хасна). */
+export const supersededManualIds = (manual: ReadonlyArray<SalaryRef & { id: string }>, ndsh: readonly SalaryRef[]): string[] =>
+  manual.filter((m) => m.source === 'MANUAL' && ndshCovers(ndsh, m, m.employer)).map((m) => m.id);
+
 /** Орлого тогтоогдсон эсэх: цалингийн дундаж > 0, гар орлого > 0, эсвэл (BSA-аас ирсэн) бизнесийн ЦМУ > 0. */
 export const hasIncome = (summary: Pick<IncomeSummaryView, 'avgSalaryMonthly' | 'businessNcfMonthly'>, manualMonthlyTotal: number): boolean =>
   (summary.avgSalaryMonthly ?? 0) > 0 || manualMonthlyTotal > 0 || (summary.businessNcfMonthly ?? 0) > 0;

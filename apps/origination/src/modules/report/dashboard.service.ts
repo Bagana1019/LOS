@@ -92,13 +92,14 @@ export class DashboardService {
   }
 
   private async compute(eff: { orgId: string; branchId: string | null; officerId: string | null }, currency: string, asOf: string): Promise<DashboardSummary> {
-    const sel = (statuses: readonly string[] | null): LoanSelection => ({ orgId: eff.orgId, branchId: eff.branchId, officerId: eff.officerId, productId: null, currency, statuses, search: null });
+    const sel = (statuses: readonly string[] | null, disbursedBy: string | null = null): LoanSelection => ({ orgId: eff.orgId, branchId: eff.branchId, officerId: eff.officerId, productId: null, currency, statuses, search: null, disbursedBy });
 
     // Хамгийн хүнд (ЭТХ-ийн) query-үүд эхэнд: хоёр слот эхлээд тэдгээрт, дараа нь хөнгөнүүдэд.
+    // F11-2: ЭТХ-д суурилсан багц/цуглуулалт нь asOf өдрийн төгсгөл хүртэл олгогдсон зээлээр хязгаарлагдана (byStatus/topProducts нь одоогийн байдлын зураг, flow/disbursementsByMonth нь өөрсдөө огноогоор хязгаарлагддаг).
     const gate = new Semaphore(DASHBOARD_QUERY_CONCURRENCY);
     const [portfolio, collections, monthly, byStatus, flow, top] = await Promise.all([
-      gate.run(() => this.portfolio(sel(REPAYING_STATUSES), asOf)),
-      gate.run(() => this.collections(sel(COLLECTION_STATUSES), asOf)),
+      gate.run(() => this.portfolio(sel(REPAYING_STATUSES, asOf), asOf)),
+      gate.run(() => this.collections(sel(COLLECTION_STATUSES, asOf), asOf)),
       gate.run(() => this.disbursementsByMonth(sel(null), asOf)),
       gate.run(() => this.byStatus(sel(null))),
       gate.run(() => this.flow(sel(null), asOf)),
