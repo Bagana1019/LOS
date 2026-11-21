@@ -1,7 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { YMD, addMonths, lastDayOfMonth, lastMonths, monthStart, nextMonthStart, ubDayStartUtc } from './report-dates';
+import { YMD, addMonths, formatUbDateTime, lastDayOfMonth, lastMonths, monthStart, nextMonthStart, ubDayStartUtc } from './report-dates';
 
 describe('report-dates (Asia/Ulaanbaatar, UTC+8)', () => {
+  it('formatUbDateTime (F11-4a): ISO UTC агшин → UB "YYYY-MM-DD HH:mm"; миллисекунд/секундийг хасна, өдөр/сар/жил шилжинэ', () => {
+    expect(formatUbDateTime('2026-11-20T06:19:04.927Z')).toBe('2026-11-20 14:19');
+    expect(formatUbDateTime('2026-10-28T02:00:00.000Z')).toBe('2026-10-28 10:00');
+    expect(formatUbDateTime('2026-11-20T17:30:00.000Z')).toBe('2026-11-21 01:30');
+    expect(formatUbDateTime('2026-12-31T16:00:00.000Z')).toBe('2027-01-01 00:00');
+    expect(formatUbDateTime('2026-02-28T16:00:00.000Z')).toBe('2026-03-01 00:00');
+    expect(formatUbDateTime('2026-11-20T15:59:59.999Z')).toBe('2026-11-20 23:59'); // минут нь доош бөөрөнхийлөгдөнө
+  });
+
+  it('formatUbDateTime: цагийн бүстэй оролт ч ижил агшин (+09:00 → UB)', () => {
+    expect(formatUbDateTime('2026-11-20T15:19:04+09:00')).toBe('2026-11-20 14:19');
+  });
+
+  it('formatUbDateTime: хүчинтэй бус агшин → оролтыг өөрчлөхгүй (тайлан унахгүй)', () => {
+    expect(formatUbDateTime('not-a-date')).toBe('not-a-date');
+    expect(formatUbDateTime('')).toBe('');
+  });
+
   it('ubDayStartUtc: UB өдрийн 00:00 = өмнөх өдрийн 16:00 UTC (timestamp(3) харьцуулалт)', () => {
     expect(ubDayStartUtc('2026-10-28')).toBe('2026-10-27T16:00:00.000');
     expect(ubDayStartUtc('2026-01-01')).toBe('2025-12-31T16:00:00.000'); // жилийн хил

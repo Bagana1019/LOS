@@ -127,8 +127,10 @@ describe.skipIf(!hasTestDb)('report: эрх, хүрээ, шүүлт, хууда�
       for (const v of evil) {
         for (const key of ['search', 'branchId', 'officerId', 'productId']) {
           const res = await get(admin, '/reports/outstanding-balance', { [key]: v });
-          expect(res.status, `${key}=${v}`).toBe(200);
-          expect(res.body.total, `${key}=${v}`).toBe(0);
+          // search: утга хайлт тул 200 ба 0 мөр; id шүүлт (F11-7): танигдаагүй утга 400 INVALID_FILTER (SQL хүртэл очихгүй)
+          expect(res.status, `${key}=${v}`).toBe(key === 'search' ? 200 : 400);
+          if (key === 'search') expect(res.body.total, `${key}=${v}`).toBe(0);
+          else expect(res.body.code, `${key}=${v}`).toBe('INVALID_FILTER');
         }
       }
       expect(await env.t.prisma.loanApplication.count()).toBeGreaterThan(10);
@@ -173,7 +175,9 @@ describe.skipIf(!hasTestDb)('report: эрх, хүрээ, шүүлт, хууда�
       const sneaky = await getReport(env, bm1, 'outstanding-balance', { branchId: 'branch-2' });
       expect(new Set(col(sneaky, 'branchId'))).toEqual(new Set(['branch-1']));
       expect(col(await getReport(env, actors.branchManager('bm-2', 'branch-2'), 'outstanding-balance'), 'contractNo').sort()).toEqual(['B10026LC', 'B10026LN']);
-      expect(col(await getReport(env, bm1, 'outstanding-balance', { officerId: 'officer-9' }), 'contractNo')).toEqual([]);
+      // F11-7: зөв хэлбэртэй (UUID) боловч зээлгүй ЗЭЗ → зөв хоосон хариу; танигдаагүй (UUID биш, өгөгдөлд байхгүй) id → 400
+      expect(col(await getReport(env, bm1, 'outstanding-balance', { officerId: '00000000-0000-4000-8000-0000000009ff' }), 'contractNo')).toEqual([]);
+      expect((await get(bm1, '/reports/outstanding-balance', { officerId: 'officer-9' })).body.code).toBe('INVALID_FILTER');
     });
 
     it('ADMIN/APPROVER: бүгд; branchId/officerId-ээр нарийсгана', async () => {
@@ -229,7 +233,9 @@ describe.skipIf(!hasTestDb)('report: эрх, хүрээ, шүүлт, хууда�
       const biz = await getReport(env, admin, 'outstanding-balance', { productId: w.products.business.id });
       expect(col(biz, 'contractNo').sort()).toEqual(['B10026LC', 'B10026LE', 'B10026LN']);
       expect(col(await getReport(env, admin, 'outstanding-balance', { currency: 'usd' }), 'contractNo')).toEqual(['B10026LD']);
-      expect((await getReport(env, admin, 'outstanding-balance', { productId: 'no-such-product' })).total).toBe(0);
+      const unknown = await get(admin, '/reports/outstanding-balance', { productId: 'no-such-product' }); // F11-7: каталогт байхгүй → чимээгүй 0 мөр биш 400
+      expect(unknown.status).toBe(400);
+      expect(unknown.body.code).toBe('INVALID_FILTER');
     });
 
     it('хоосон string шүүлтийг үл тооно', async () => {
