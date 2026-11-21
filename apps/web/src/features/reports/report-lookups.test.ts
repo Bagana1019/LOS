@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { OrgDirectory, ReportFilterDef } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { scopeText } from './dashboard.utils';
-import { directoryOptions, lookupKindOf, lookupScopeOf, nameInMap, scopeNames, selectModel, type LookupOption } from './report-lookups';
+import { directoryCellText, directoryColumnKind, directoryOptions, lookupKindOf, lookupScopeOf, nameInMap, scopeNames, selectModel, type LookupOption } from './report-lookups';
 import { normalizeFilterValue, parseFilters } from './reports.utils';
 
 // F11-1: салбар / ЗЭЗ / бүтээгдэхүүний шүүлт нэрээр сонгодог (утга = id), танихгүй id-г чимээгүй зөвшөөрөхгүй.
@@ -134,5 +134,46 @@ describe('URL filter values for lookup filters are kept, not silently dropped', 
   it('a non-lookup select still rejects values outside its options', () => {
     expect(normalizeFilterValue(status, 'BOGUS')).toBeNull();
     expect(normalizeFilterValue(status, 'ACTIVE')).toBe('ACTIVE');
+  });
+});
+
+// F11-4 c: JSON тайлангийн хүснэгтийн "Салбар" / "ЗЭЗ" баганад түүхий UUID биш нэр (Excel-тэй адил).
+describe('directoryColumnKind', () => {
+  it('only the branchId / officerId report columns are directory columns', () => {
+    expect(directoryColumnKind('branchId')).toBe('branch');
+    expect(directoryColumnKind('officerId')).toBe('officer');
+    for (const k of ['productId', 'appNo', 'customerName', '', 'constructor', '__proto__']) expect(directoryColumnKind(k), k).toBeNull();
+  });
+});
+
+describe('directoryCellText (report table cell: a name, never a bare id)', () => {
+  const ready = { directory: DIR, status: 'ready' as const };
+  const UNKNOWN_NAME = 'Тодорхойгүй';
+
+  it('a known branch / officer id resolves to its name', () => {
+    expect(directoryCellText('branch', HQ, ready, t)).toBe('Төв салбар');
+    expect(directoryCellText('officer', 'u1', ready, t)).toBe('Батаа Дорж');
+  });
+  it('an id missing from the directory is "Тодорхойгүй" and the id is not echoed', () => {
+    expect(directoryCellText('branch', UNKNOWN, ready, t)).toBe(UNKNOWN_NAME);
+    expect(directoryCellText('officer', 'nobody', ready, t)).toBe(UNKNOWN_NAME);
+  });
+  it('a branch column never resolves through the user map (and vice versa)', () => {
+    expect(directoryCellText('branch', 'u1', ready, t)).toBe(UNKNOWN_NAME);
+    expect(directoryCellText('officer', HQ, ready, t)).toBe(UNKNOWN_NAME);
+  });
+  it('prototype keys and blank names are not names', () => {
+    for (const id of ['__proto__', 'constructor', 'toString']) expect(directoryCellText('branch', id, ready, t), id).toBe(UNKNOWN_NAME);
+    expect(directoryCellText('branch', 'b-blank', { directory: { branches: { 'b-blank': '   ' }, users: {} }, status: 'ready' }, t)).toBe(UNKNOWN_NAME);
+  });
+  it('"Систем" (BR-12: request without an officer) is a label, not an id: kept for the officer column only', () => {
+    expect(directoryCellText('officer', 'Систем', ready, t)).toBe('Систем');
+    expect(directoryCellText('branch', 'Систем', ready, t)).toBe(UNKNOWN_NAME);
+  });
+  it('while the directory loads a placeholder is shown, never the id', () => {
+    expect(directoryCellText('branch', HQ, { directory: undefined, status: 'loading' }, t)).toBe('—');
+  });
+  it('when the directory failed to load the name is unknown (still never the id)', () => {
+    expect(directoryCellText('branch', HQ, { directory: undefined, status: 'failed' }, t)).toBe(UNKNOWN_NAME);
   });
 });
