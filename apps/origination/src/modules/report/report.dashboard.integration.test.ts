@@ -3,6 +3,7 @@ import { AgingBucket, ApplicationStatus, DashboardSummary } from '@los/contracts
 import { actors, createApplication, hasTestDb } from '../../test-utils/factories';
 import { OTHER_ORG, createPayment, rowsOf, seedLoan, seedOtherOrgLoan, type World } from './report.fixtures';
 import { bootReport, getReport, resetAndSeed, resetReport, type ReportEnv } from './report.test-helpers';
+import { createReturnEvent } from './dashboard.test-helpers';
 
 type Q = Record<string, string | number>;
 
@@ -13,7 +14,11 @@ describe.skipIf(!hasTestDb)('report: dashboard (KPI) (HTTP)', () => {
   const admin = actors.admin();
   beforeAll(async () => { env = await bootReport(); });
   afterAll(async () => { await env.t.close(); });
-  beforeEach(async () => { w = await resetAndSeed(env); });
+  // F11-9: "Буцаасан" нь буцаалтын үйл явдлаас тоологдоно; LI-ийн returnedAt (2026-10-06T14:00Z)-тэй тохирох үйл явдлыг түүхэнд бичнэ.
+  beforeEach(async () => {
+    w = await resetAndSeed(env);
+    await createReturnEvent(env.t.prisma, w.LI.app.id, '2026-10-06T14:00:00Z');
+  });
 
   const summary = async (headers: Record<string, string>, query: Q = {}): Promise<DashboardSummary> => {
     const res = await env.http().get('/api/reports/dashboard/summary').query(query).set(headers);

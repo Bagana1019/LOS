@@ -20,6 +20,9 @@ const n = (v: unknown): number => toNumber(v) ?? 0;
 /** Цуглуулалтад энэ сард төлөх ёстой мөртэй, гэхдээ бүрэн төлөгдөж хаагдсан (CLOSED) зээл ч орно — эс бөгөөс хамгийн сайн төлөгчид хасагдаж хувь доогуур гарна. */
 const COLLECTION_STATUSES = [...REPAYING_STATUSES, 'CLOSED'] as const;
 
+/** F11-9: буцаалтын үйл явдал = ApplicationStateMachine.apply-ийн бичдэг audit мөр (`entity`/`action`/`after_json.status`) — IN_APPROVAL → RETURNED нь хүсэлтийн цорын ганц буцаалтын зам. */
+const RETURN_EVENT = { entity: 'LOAN_APPLICATION', action: 'STATUS_CHANGED', toStatus: 'RETURNED' } as const;
+
 /** Нэг dashboard тооцооллын дотор зэрэг ажиллах query (6 query нэг дор 6 холболт эзэлж, нийтлэг Prisma pool-ыг дүүргэж байсан). */
 export const DASHBOARD_QUERY_CONCURRENCY = 2;
 /** Процесс даяар зэрэг тооцоологдох dashboard (өөр түлхүүртэй) ба хүлээх дараалал → pool-д хамгийн ихдээ 2×2 = 4 холболт. Дараалал дүүрвэл 429. */
@@ -138,17 +141,29 @@ export class DashboardService {
     return new Map(rows.map((r) => [String(r.status), { count: n(r.count), amount: n(r.amount) }]));
   }
 
-  /** Энэ сарын илгээсэн/батлагдсан/буцаасан, шийдвэрийн дундаж цаг (сүүлийн 90 хоногт шийдвэрлэгдсэн). */
+  /**
+   * Энэ сарын илгээсэн/батлагдсан/буцаасан, шийдвэрийн дундаж цаг (сүүлийн 90 хоногт шийдвэрлэгдсэн).
+   * F11-9: "буцаасан" нь хүсэлтийн одоогийн төлөв (`returned_at` — дахин илгээхэд цэвэрлэгддэг) биш, энэ сард болсон буцаалтын ҮЙЛ ЯВДАЛ:
+   * төлөв шилжилт бүрийн append-only түүх (audit_log STATUS_CHANGED → RETURNED). Үйл явдал бүр нэг удаа тоологдоно.
+   * Нэг query (CTE) — dashboard-ын query-ийн зэрэгцээ ажиллах хязгаарыг (DASHBOARD_QUERY_CONCURRENCY) өөрчлөхгүй.
+   */
   private async flow(sel: LoanSelection, asOf: string) {
     const from = ubDayStartUtc(monthStart(asOf));
     const to = ubDayStartUtc(addDays(asOf, 1));
     const since = ubDayStartUtc(addDays(asOf, -90));
     const decision = Prisma.raw('GREATEST(la.approved_at, la.returned_at)');
     const [r] = await queryWithTimeout<Raw[]>(this.prisma, sql`
+      WITH ret AS (
+        SELECT COUNT(*)::int AS n
+        FROM origination.audit_log al JOIN origination.loan_application la ON la.id = al.application_id
+        WHERE ${and(loanConditions(sel))} AND al.org_id = ${sel.orgId}
+          AND al.entity = ${RETURN_EVENT.entity} AND al.action = ${RETURN_EVENT.action} AND al.after_json ->> 'status' = ${RETURN_EVENT.toStatus}
+          AND al.at >= ${from}::timestamp AND al.at < ${to}::timestamp
+      )
       SELECT
         COUNT(*) FILTER (WHERE la.submitted_at >= ${from}::timestamp AND la.submitted_at < ${to}::timestamp)::int AS submitted,
         COUNT(*) FILTER (WHERE la.approved_at >= ${from}::timestamp AND la.approved_at < ${to}::timestamp)::int AS approved,
-        COUNT(*) FILTER (WHERE la.returned_at >= ${from}::timestamp AND la.returned_at < ${to}::timestamp)::int AS returned,
+        (SELECT n FROM ret) AS returned,
         AVG(EXTRACT(EPOCH FROM (${decision} - la.submitted_at)) / 3600.0)
           FILTER (WHERE la.submitted_at IS NOT NULL AND ${decision} >= la.submitted_at AND ${decision} >= ${since}::timestamp AND ${decision} < ${to}::timestamp) AS avg_hours
       FROM origination.loan_application la WHERE ${and(loanConditions(sel))}`);
