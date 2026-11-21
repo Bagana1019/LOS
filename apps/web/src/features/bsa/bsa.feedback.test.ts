@@ -175,3 +175,51 @@ describe('resolveFeedback (F6-12)', () => {
     expect(resolveFeedback('APPROVE', 1, { pendingFilter: false })).not.toContain('шүүлтүүр');
   });
 });
+
+describe('resolveFeedback impact on transactions (F6-10)', () => {
+  const category = 'Зээл (авсан зээлийн олголт)';
+
+  it('says how many transactions changed category and which direction was left alone', () => {
+    const msg = resolveFeedback('RECLASSIFY', 1, { categoryName: category, impact: { changed: 1, unchanged: 1, unchangedDirection: 'EXPENSE' } });
+    expect(msg).toContain('1 дохионы ангиллыг');
+    expect(msg).toContain('1 гүйлгээний ангилал солигдлоо');
+    expect(msg).toContain('1 зарлагын гүйлгээ чиглэл таарахгүй тул өөрчлөгдсөнгүй');
+  });
+
+  it('names the income direction when the expense side was reclassified', () => {
+    const msg = resolveFeedback('RECLASSIFY', 1, { categoryName: 'Зээлийн төлбөр', impact: { changed: 2, unchanged: 3, unchangedDirection: 'INCOME' } });
+    expect(msg).toContain('2 гүйлгээний ангилал солигдлоо');
+    expect(msg).toContain('3 орлогын гүйлгээ чиглэл таарахгүй тул өөрчлөгдсөнгүй');
+  });
+
+  it('says plainly that nothing changed when the signals held no recategorisable transaction', () => {
+    const msg = resolveFeedback('EXCLUDE', 1, { impact: { changed: 0, unchanged: 0, unchangedDirection: null } });
+    expect(msg).toContain('1 дохиог тооцооноос хаслаа');
+    expect(msg).toContain('Гүйлгээний ангилал өөрчлөгдсөнгүй');
+    expect(msg).not.toContain('чиглэл таарахгүй');
+  });
+
+  it('reports exclude counts without a direction sentence', () => {
+    const msg = resolveFeedback('EXCLUDE', 2, { impact: { changed: 4, unchanged: 0, unchangedDirection: null } });
+    expect(msg).toContain('4 гүйлгээний ангилал солигдлоо');
+  });
+
+  it('leaves approve untouched when no impact is given', () => {
+    expect(resolveFeedback('APPROVE', 3, { impact: null })).toBe('3 дохиог зөвшөөрлөө.');
+  });
+
+  it('mentions signals the server skipped, so the number the user sees is the resolved one', () => {
+    const msg = resolveFeedback('APPROVE', 2, { skipped: 1 });
+    expect(msg).toContain('2 дохиог зөвшөөрлөө');
+    expect(msg).toContain('1 дохио аль хэдийн шийдвэрлэгдсэн эсвэл олдоогүй тул алгасагдлаа');
+    expect(resolveFeedback('APPROVE', 2, { skipped: 0 })).not.toContain('алгасагдлаа');
+  });
+
+  it('keeps the pending-filter hint last', () => {
+    const msg = resolveFeedback('EXCLUDE', 1, { pendingFilter: true, skipped: 1, impact: { changed: 1, unchanged: 0, unchangedDirection: null } });
+    const order = ['1 дохиог тооцооноос хаслаа', '1 гүйлгээний ангилал солигдлоо', 'алгасагдлаа', 'шүүлтүүр'].map((part) => msg.indexOf(part));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(msg.endsWith('арилгана уу.')).toBe(true);
+  });
+});
