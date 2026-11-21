@@ -42,14 +42,17 @@ export function PortfolioKpis({ summary }: { summary: DashboardSummary }) {
   );
 }
 
-/** Энэ сарын эргэн төлөлтийн цуглуулалт ба ойрын 7 хоногийн төлөх дүн. */
+/**
+ * Энэ сарын ХУВААРИЙН мөрт тохирох эргэн төлөлт (F11-8): "төлөгдсөн" нь зөвхөн энэ сард хугацаа болох мөрт хуваарилагдсан төлбөр —
+ * урьдчилж (бусад сарын мөрт) төлсөн дүн, нийт хүлээн авсан мөнгө биш (API нийт хүлээн авсан дүн буцаадаггүй). Мөн ойрын 7 хоногийн төлөх дүн.
+ */
 export function CollectionKpis({ summary }: { summary: DashboardSummary }) {
   const { collections: c, currency } = summary;
   return (
     <Section title={t('report.dashboard.section.collections')} href="/los/report/upcoming-repayments">
       <Row gutter={[16, 16]}>
         <Col {...COLS}><KpiCard label={t('report.kpi.dueThisMonth')} value={money(c.dueThisMonth, currency)} /></Col>
-        <Col {...COLS}><KpiCard label={t('report.kpi.collectedThisMonth')} value={money(c.collectedThisMonth, currency)} /></Col>
+        <Col {...COLS}><KpiCard label={t('report.kpi.collectedThisMonth')} value={money(c.collectedThisMonth, currency)} hint={t('report.kpi.collectedThisMonthHint')} /></Col>
         <Col {...COLS}><KpiCard label={t('report.kpi.collectionRate')} value={formatRatio(c.collectionRate)} meter={c.collectionRate} hint={t('report.kpi.collectionRateHint')} /></Col>
         <Col {...COLS}><KpiCard label={t('report.kpi.dueNext7Days')} value={money(c.dueNext7Days, currency)} /></Col>
       </Row>
