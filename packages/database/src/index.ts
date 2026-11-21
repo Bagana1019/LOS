@@ -10,3 +10,4 @@ export * from './advisory-lock';
 export * from './db-resilience';
 export * from './audit-seal';
 export * from './audit-seal-cli';
+export * from './contains-insensitive';
