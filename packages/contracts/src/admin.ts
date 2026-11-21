@@ -44,10 +44,23 @@ export function validateApprovalLevels(levels: readonly Pick<ApprovalLevelInput,
 }
 
 // ── Гэрээний дугаарын загвар (BR-11) ──
+/**
+ * F9-20 · Тоолуур `seqScope`-оор шинэчлэгдэнэ (origination `counterScopeKey`): DAY = өдөр бүр, BRANCH = салбар тутам, GLOBAL = хэзээ ч.
+ * Шинэчлэгдсэн тоолуур 01-ээс эхэлдэг тул хүрээг ялгах хэсэг (`formatContractNo`-ийн дэмждэг токен) дугаарт байхгүй бол (orgId, contractNo) unique-тэй мөргөлдөж
+ * батлах үйлдэл унана. Дэмжигдэх токен: {PREFIX} {BRANCH} {YYMMDD} {SEQ[:n]} — өөр огнооны токен (жишээ {YYYYMMDD}) орлуулагдахгүй.
+ */
+const SCOPE_DISTINGUISHING_TOKEN = {
+  DAY: { token: '{YYMMDD}', message: 'Тоолуур өдөр бүр шинээр эхлэх тул загварт өдрийн {YYMMDD} хэсэг заавал байх ёстой, эс бөгөөс маргааш давхардсан дугаар гарна' },
+  BRANCH: { token: '{BRANCH}', message: 'Тоолуур салбар тутам тусдаа тоологдох тул загварт салбарын {BRANCH} хэсэг заавал байх ёстой, эс бөгөөс өөр салбарт давхардсан дугаар гарна' },
+} as const;
+
 export const ContractNumberTemplateBody = z.object({
   pattern: z.string().trim().min(1).max(80).refine((p) => /\{SEQ(?::\d+)?\}/.test(p), '{SEQ} хэсэг заавал байх ёстой'),
   prefix: z.string().trim().max(12).regex(/^[A-Za-z0-9]*$/, 'Угтвар зөвхөн үсэг, тоо'),
   seqScope: z.enum(['DAY', 'BRANCH', 'GLOBAL']),
+}).superRefine((tpl, ctx) => {
+  const rule = tpl.seqScope === 'GLOBAL' ? null : SCOPE_DISTINGUISHING_TOKEN[tpl.seqScope];
+  if (rule && !tpl.pattern.includes(rule.token)) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['pattern'], message: rule.message });
 });
 export type ContractNumberTemplateBody = z.infer<typeof ContractNumberTemplateBody>;
 
