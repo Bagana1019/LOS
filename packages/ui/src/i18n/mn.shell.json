@@ -21,5 +21,10 @@
   "shell.home.role": "Дүр",
   "shell.home.scope": "Харах хүрээ",
   "shell.home.quick_links": "Хандах боломжтой хэсгүүд",
+  "shell.home.next_step": "Дараагийн алхам",
+  "shell.home.new_application": "Шинэ хүсэлт",
+  "shell.home.new_application_hint": "Эхлээд ноорог үүсгэнэ, дараа нь алхам алхмаар бөглөж, батлуулахаар илгээнэ.",
+  "shell.home.approvals": "Батлах хүсэлтүүд рүү очих",
+  "shell.home.approvals_hint": "Таны шийдвэр хүлээж буй хүсэлтүүдийг нээж, батлах эсвэл буцаана.",
   "shell.nav.toggle": "Цэсийг нээх, хаах"
 }
