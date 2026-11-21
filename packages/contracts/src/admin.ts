@@ -29,8 +29,12 @@ export type ReplaceApprovalLevelsBody = z.infer<typeof ReplaceApprovalLevelsBody
 export const ApprovalLevelDto = ApprovalLevelInput.extend({ id: z.string() });
 export type ApprovalLevelDto = z.infer<typeof ApprovalLevelDto>;
 
-/** Босго давхцахгүй, завсаргүй: түвшин 1 нь 0-ээс, дараагийн `from` = өмнөх `to`, сүүлийнх нь хязгааргүй. Алдааны мессеж буцаана, зөв бол null. */
-export function validateApprovalLevels(levels: readonly Pick<ApprovalLevelInput, 'levelNo' | 'amountFrom' | 'amountTo'>[]): string | null {
+/**
+ * Босго давхцахгүй, завсаргүй: түвшин 1 нь 0-ээс, дараагийн `from` = өмнөх `to`, сүүлийнх нь хязгааргүй. Алдааны мессеж буцаана, зөв бол null.
+ * F9-9: `members` өгөгдсөн бол түвшин бүрд ≥1 батлагч заавал — батлагчгүй түвшин батлах хүсэлтийг гацаана (илгээхэд `APPROVAL_LEVEL_WITHOUT_MEMBERS`).
+ * `members` өгөөгүй дуудлага (зөвхөн босго шалгах) батлагчийг шалгахгүй.
+ */
+export function validateApprovalLevels(levels: readonly (Pick<ApprovalLevelInput, 'levelNo' | 'amountFrom' | 'amountTo'> & Partial<Pick<ApprovalLevelInput, 'name' | 'members'>>)[]): string | null {
   const sorted = [...levels].sort((a, b) => a.levelNo - b.levelNo);
   for (let i = 0; i < sorted.length; i++) {
     const l = sorted[i]!;
@@ -39,6 +43,10 @@ export function validateApprovalLevels(levels: readonly Pick<ApprovalLevelInput,
     if (i > 0 && l.amountFrom !== sorted[i - 1]!.amountTo) return `Түвшин ${l.levelNo}: эхлэх дүн өмнөх түвшний дээд дүнтэй тэнцүү байх ёстой`;
     if (i < sorted.length - 1 && (l.amountTo === null || l.amountTo <= l.amountFrom)) return `Түвшин ${l.levelNo}: дээд дүн эхлэх дүнгээс их байх ёстой`;
     if (i === sorted.length - 1 && l.amountTo !== null) return 'Сүүлийн түвшин дээд хязгааргүй (хоосон) байх ёстой';
+    if (l.members && l.members.length === 0) {
+      const label = l.name?.trim() ? ` "${l.name.trim()}"` : '';
+      return `Түвшин ${l.levelNo}${label}: дор хаяж нэг батлагч томилох ёстой (батлагчгүй түвшин батлах хүсэлтийг гацаана)`;
+    }
   }
   return null;
 }
