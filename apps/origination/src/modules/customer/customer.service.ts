@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  CustomerInput, customerTypeOfRegister, normalizeRegisterNo,
+  CustomerInput, customerTypeOfRegister, normalizePhone, normalizeRegisterNo,
   type CreateCustomerRequest, type CustomerApplicationRef, type CustomerCard, type CustomerLookup, type CustomerPage, type CustomerView, type RequestContext,
   UpdateCustomerRequest, type XypCitizen, type XypFetchResult, type XypOtpResult,
 } from '@los/contracts';
@@ -62,8 +62,11 @@ export class CustomerService {
     if (q.registerNo) where.registerNoHash = blindIndex(normalizeRegisterNo(q.registerNo));
     if (q.q?.trim()) {
       const term = q.q.trim();
+      // F1-2: утсыг хадгалахтай ижил normalizePhone-оор тулгана; хоосон болсон (зөвхөн тусгаарлагч) үед `contains: ''` бүх утастайг барьдаг тул алгасна.
+      const phoneTerm = normalizePhone(term);
       const or: Prisma.CustomerWhereInput[] = [
-        { lastName: { contains: term, mode: 'insensitive' } }, { firstName: { contains: term, mode: 'insensitive' } }, { phone: { contains: term } },
+        { lastName: { contains: term, mode: 'insensitive' } }, { firstName: { contains: term, mode: 'insensitive' } },
+        ...(phoneTerm ? [{ phone: { contains: phoneTerm } }] : []),
       ];
       if (customerTypeOfRegister(term)) or.push({ registerNoHash: blindIndex(normalizeRegisterNo(term)) });
       where.AND = [{ OR: or }];
