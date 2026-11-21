@@ -20,13 +20,15 @@ export interface RangeRule {
  * The single place to tune the thresholds. Units as stored: LTV is a fraction (0.9 = 90%), amounts are ₮, annual rates are percent (100 = 100%).
  * - LTV above 90%: a loan nearly as large as the collateral leaves no margin.
  * - Minimum amount below 10,000₮: a loan this small is a typo (the finding's test value was 5₮).
- * - Annual rate of 100% or more: a rate that doubles the debt in a year (the finding's test value was 100%).
+ * - Annual rate above 60% (owner decision, 2026-11-21): the server accepts rates up to 100%, so a 100% limit would only ever warn on that one value;
+ *   60% is 18 points above the highest seeded product (42%), so normal edits stay quiet while a slip such as 36 → 63 is caught.
+ *   If a legal ceiling exists, put that number here instead.
  */
 export const PRODUCT_RANGE_RULES: readonly RangeRule[] = [
   { path: 'maxLtv', op: 'gt', limit: 0.9, unit: 'ratio' },
   { path: 'minAmount', op: 'lt', limit: 10_000, unit: 'mnt' },
-  { path: 'minRate', op: 'gte', limit: 100, unit: 'annualPercent' },
-  { path: 'maxRate', op: 'gte', limit: 100, unit: 'annualPercent' },
+  { path: 'minRate', op: 'gt', limit: 60, unit: 'annualPercent' },
+  { path: 'maxRate', op: 'gt', limit: 60, unit: 'annualPercent' },
 ];
 
 export interface RangeWarning { path: string; message: string }

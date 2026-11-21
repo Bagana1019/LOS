@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { rangeWarnings } from './range-warnings';
 
-// F9-5: бүтээгдэхүүний саналд хэвийн бус утга (LTV > 90%, доод дүн < 10,000₮, жилийн хүү ≥ 100%) батлагчид анхааруулагдана. Хориглохгүй.
+// F9-5: бүтээгдэхүүний саналд хэвийн бус утга (LTV > 90%, доод дүн < 10,000₮, жилийн хүү > 60%) батлагчид анхааруулагдана. Хориглохгүй.
 const BEFORE = { id: 'p1', isActive: true, name: 'X', minAmount: 100000, maxAmount: 5000000, minRate: 24, maxRate: 36, maxLtv: 0.25 };
 const update = (product: Record<string, unknown>, over: Record<string, unknown> = {}) => ({
   targetType: 'PRODUCT', action: 'UPDATE', before: BEFORE, payload: { id: 'p1', product: { name: 'X', minAmount: 100000, maxAmount: 5000000, minRate: 24, maxRate: 36, maxLtv: 0.25, ...product } }, ...over,
@@ -22,17 +22,22 @@ describe('rangeWarnings: product thresholds', () => {
     expect(paths(update({ minAmount: 10000 }))).toEqual([]);
   });
 
-  it('an annual rate of 100% or more warns (min and max), 99.99% does not', () => {
-    expect(paths(update({ maxRate: 100 }))).toEqual(['maxRate']);
-    expect(paths(update({ minRate: 120, maxRate: 150 })).sort()).toEqual(['maxRate', 'minRate']);
-    expect(paths(update({ maxRate: 99.99 }))).toEqual([]);
+  // Эзэмшигчийн шийдвэр B (2026-11-21): сервер хүүг ≤100% гэж хүлээн авдаг тул 100%-ийн босго зөвхөн яг 100 дээр л дуугарна; 60% нь одоогийн хамгийн өндөр хүүнээс (42%) 18 пунктээр дээр.
+  it('an annual rate above 60% warns (min and max), 60% and below does not', () => {
+    expect(paths(update({ maxRate: 63 }))).toEqual(['maxRate']); // 36 → 63 (оронгийн буруу бичилт)
+    expect(paths(update({ maxRate: 60.01 }))).toEqual(['maxRate']);
+    expect(paths(update({ maxRate: 100 }))).toEqual(['maxRate']); // серверийн дээд хязгаар
+    expect(paths(update({ minRate: 70, maxRate: 80 })).sort()).toEqual(['maxRate', 'minRate']);
+    expect(paths(update({ maxRate: 60 }))).toEqual([]);
+    expect(paths(update({ maxRate: 55 }))).toEqual([]);
+    expect(paths(update({ minRate: 18, maxRate: 42 }))).toEqual([]); // одоогийн бүтээгдэхүүнүүдийн хүрээ
   });
 
   it('the message names the field, the value with its unit and the limit', () => {
     const msgs = rangeWarnings(update({ maxLtv: 1, minAmount: 5 })).map((w) => w.message);
     expect(msgs).toContain('Дээд LTV: 100% — хэтэрхий өндөр (хэвийн: 90% хүртэл)');
     expect(msgs).toContain('Доод дүн: 5₮ — хэтэрхий бага (хэвийн: 10,000₮ ба түүнээс дээш)');
-    expect(rangeWarnings(update({ maxRate: 100 }))[0]?.message).toBe('Дээд хүү (жилийн): 100% — хэтэрхий өндөр (хэвийн: 100% хүрэхгүй)');
+    expect(rangeWarnings(update({ maxRate: 63 }))[0]?.message).toBe('Дээд хүү (жилийн): 63% — хэтэрхий өндөр (хэвийн: 60% хүртэл)');
   });
 
   it('only CHANGED values are checked: an old odd value that this request does not touch is not repeated', () => {
