@@ -3,7 +3,7 @@ import { AgingBucket, ApplicationStatus, DashboardSummary } from '@los/contracts
 import { actors, createApplication, hasTestDb } from '../../test-utils/factories';
 import { OTHER_ORG, createPayment, rowsOf, seedLoan, seedOtherOrgLoan, type World } from './report.fixtures';
 import { bootReport, getReport, resetAndSeed, resetReport, type ReportEnv } from './report.test-helpers';
-import { createReturnEvent } from './dashboard.test-helpers';
+import { createReturnEvent } from './test-dashboard-helpers';
 
 type Q = Record<string, string | number>;
 

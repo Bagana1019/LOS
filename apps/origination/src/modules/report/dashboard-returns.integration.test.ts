@@ -3,7 +3,7 @@ import { DashboardSummary } from '@los/contracts';
 import { actors, createApplication, hasTestDb } from '../../test-utils/factories';
 import { OTHER_ORG } from './report.fixtures';
 import { bootReport, resetReport, type ReportEnv } from './report.test-helpers';
-import { createReturnEvent, createStatusEvent } from './dashboard.test-helpers';
+import { createReturnEvent, createStatusEvent } from './test-dashboard-helpers';
 
 type Q = Record<string, string | number>;
 const at = (iso: string) => new Date(iso);
