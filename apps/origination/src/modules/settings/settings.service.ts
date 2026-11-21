@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
-  SETTING_ACTION_UPDATE, SETTING_KEYS, SETTING_REGISTRY, SETTING_TARGET_TYPE, isFourEyesSettingKey, isSettingKey, parseSetting,
+  SETTING_ACTION_UPDATE, SETTING_KEYS, SETTING_RANGES, SETTING_REGISTRY, SETTING_TARGET_TYPE, isFourEyesSettingKey, isSettingKey, parseSetting,
   type RequestContext, type SettingKey, type SubmitChangeResult,
 } from '@los/contracts';
 import { DomainError } from '@los/nest-common';
@@ -14,6 +14,12 @@ export interface SettingView { key: string; value: unknown; description: string;
 
 /** Утгыг бүртгэлийн схемээр шалгана (ZodError → AllExceptionsFilter 400) + түлхүүр тус бүрийн нэмэлт шалгалт. */
 export function checkSetting(key: SettingKey, value: unknown): unknown {
+  // F9-22: хүрээнээс гарсан тоон утгад "Оруулсан өгөгдөл буруу" биш, түлхүүр + зөвшөөрөгдсөн хүрээг нэрлэнэ (0.55 = 55%)
+  const range = SETTING_RANGES[key];
+  if (range && typeof value === 'number' && (value < range.min || value > range.max)) {
+    const pct = (x: number) => `${Math.round(x * 100)}%`;
+    throw new DomainError('SETTING_OUT_OF_RANGE', `${key}: утга ${range.min}–${range.max} (${pct(range.min)}–${pct(range.max)}) хооронд байх ёстой. Бутархайгаар бичнэ: 0.55 = 55%`, 422, { key, min: range.min, max: range.max });
+  }
   const parsed = parseSetting(key, value);
   if (key === 'contract.branch_codes') { // BR-11: салбарын код давхцвал хоёр салбарын гэрээний дугаар андуурагдана
     const codes = Object.values(parsed as Record<string, string>).map((c) => c.toUpperCase());

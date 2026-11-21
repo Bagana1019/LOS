@@ -166,8 +166,14 @@ export const APPROVAL_LEVELS_TARGET_ID = 'default';
 /** `setting` түлхүүр засах хүсэлт: targetType = SETTING, action = UPDATE, targetId = түлхүүр */
 export const SETTING_TARGET_TYPE = 'SETTING';
 export const SETTING_ACTION_UPDATE = 'UPDATE';
-/** Батлах урсгалд нөлөөлдөг тул зөвхөн 4 нүдээр өөрчлөгдөх тохиргооны түлхүүрүүд; бусад түлхүүр өмнөх шигээ шууд (settings:manage). */
-export const FOUR_EYES_SETTING_KEYS = ['contract.branch_codes', 'approval.default_sla_hours'] as const;
+/**
+ * Батлах урсгал болон зээлийн эрсдэлийн босгод нөлөөлдөг тул зөвхөн 4 нүдээр өөрчлөгдөх тохиргооны түлхүүрүүд; бусад түлхүүр өмнөх шигээ шууд (settings:manage).
+ * F9-22: ӨОХ (br1), ӨТЧХ (br2), LTV (br3), аргын босго (br4), олголт ≤ батлагдсан (br10). `br9` нэг л утга (WARN_ONLY) хүлээн авдаг тул орохгүй.
+ */
+export const FOUR_EYES_SETTING_KEYS = [
+  'contract.branch_codes', 'approval.default_sla_hours',
+  'br1.dti_max', 'br2.dscr_min', 'br3.ltv_max', 'br4.method_weight_threshold', 'br10.disburse_not_exceed_approved',
+] as const;
 export type FourEyesSettingKey = typeof FOUR_EYES_SETTING_KEYS[number];
 export const isFourEyesSettingKey = (k: string): k is FourEyesSettingKey => (FOUR_EYES_SETTING_KEYS as readonly string[]).includes(k);
 
