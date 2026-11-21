@@ -3,6 +3,7 @@ import { Badge, Button, Empty, Flex, List, Skeleton, Tag, Tooltip, Typography } 
 import type { NotificationView } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { NotificationErrorAlert } from './NotificationErrorAlert';
+import { displayNotificationBody } from './notification-text';
 import { CHANNEL_COLOR, formatDateTime, notificationHref, relativeTime, typeKey } from './notifications.utils';
 
 interface Props {
@@ -58,7 +59,7 @@ export function NotificationList({ items, loading, error, unreadOnly, nowMs, bus
               }
               description={
                 <Flex vertical gap={2}>
-                  <Typography.Text style={{ whiteSpace: 'pre-line' }}>{n.body}</Typography.Text>
+                  <Typography.Text style={{ whiteSpace: 'pre-line' }}>{displayNotificationBody(n.body)}</Typography.Text>
                   <Tooltip title={formatDateTime(n.createdAt)}>
                     <Typography.Text type="secondary">{relativeTime(n.createdAt, nowMs, t)}</Typography.Text>
                   </Tooltip>

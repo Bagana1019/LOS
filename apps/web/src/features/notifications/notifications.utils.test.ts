@@ -114,6 +114,11 @@ describe('ажилтны хонх', () => {
     expect(toBellItem(notification({ type: 'DISBURSEMENT_REJECTED', title: ' ' }), NOW, tr).title).toBe('Олголт буцаагдсан');
   });
 
+  it('toBellItem — дүнг MNT биш ₮-өөр харуулна, бусад бичвэр хэвээр (F3-5)', () => {
+    const bell = toBellItem(notification({ body: 'APP-1 хүсэлтийн 20,000,000 MNT олголт зөвшөөрөгдлөө.' }), NOW, tr);
+    expect(bell.body).toBe('APP-1 хүсэлтийн 20,000,000₮ олголт зөвшөөрөгдлөө.');
+  });
+
   it('toBellItem — уншсан эсэх, гарчиг хоосон бол төрлийн нэр', () => {
     const unread = toBellItem(notification(), NOW, tr);
     expect(unread).toEqual({ id: 'n1', title: 'Хүсэлт буцаагдлаа', body: 'APP-1 буцаагдлаа', timeLabel: '5 минутын өмнө', read: false });
