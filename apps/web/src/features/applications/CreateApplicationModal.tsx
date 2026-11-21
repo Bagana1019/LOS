@@ -32,7 +32,7 @@ export function CreateApplicationModal({ open, onClose, onCreated }: Props) {
   const guarded = useMemo(() => singleFlight(() => latest.current()), []);
   const submit = () => { void guarded(); };
   return (
-    <Modal open={open} title={t('application.create.title')} okText={t('application.create.submit')} cancelText={t('application.create.cancel')} confirmLoading={create.isPending} okButtonProps={{ disabled: create.isPending }} onOk={submit} onCancel={onClose} destroyOnClose>
+    <Modal open={open} title={t('application.create.title')} okText={t('application.create.submit')} cancelText={t('application.create.cancel')} confirmLoading={create.isPending} okButtonProps={{ disabled: create.isPending }} onOk={submit} onCancel={onClose} destroyOnHidden>
       <Form layout="vertical" onFinish={submit}>
         <Form.Item label={t('application.create.purpose')} extra={t('application.create.purposeHint')}>
           <Input value={purpose} maxLength={200} onChange={(e) => setPurpose(e.target.value)} onPressEnter={submit} autoFocus />

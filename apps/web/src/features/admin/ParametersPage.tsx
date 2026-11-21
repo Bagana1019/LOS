@@ -59,7 +59,7 @@ export function ParametersPage() {
         <Table<SettingView> rowKey="key" size="small" columns={columns} dataSource={rows} pagination={{ pageSize: 25, hideOnSinglePage: true }} scroll={{ x: 900 }} />
       )}
       <Modal open={!!editing} title={t('admin.params.edit_title')} onCancel={() => setEditing(null)} okText={t(fourEyes ? 'admin.four_eyes.submit' : 'admin.common.save')} cancelText={t('admin.common.cancel')}
-        onOk={onSave} okButtonProps={{ disabled: !parsed.ok || (fourEyes && !reasonOk(reason)), loading: save.isPending || propose.isPending }} destroyOnClose>
+        onOk={onSave} okButtonProps={{ disabled: !parsed.ok || (fourEyes && !reasonOk(reason)), loading: save.isPending || propose.isPending }} destroyOnHidden>
         {editing ? (
           <Flex vertical gap={8}>
             <Typography.Text code>{editing.key}</Typography.Text>
