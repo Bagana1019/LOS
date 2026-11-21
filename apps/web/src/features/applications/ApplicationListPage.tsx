@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { App as AntApp, Alert, Badge, Button, Flex, Input, Table, Tabs, Tag, Typography } from 'antd';
+import { App as AntApp, Badge, Button, Flex, Input, Table, Tabs, Tag, Typography } from 'antd';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import type { SorterResult } from 'antd/es/table/interface';
 import { APPLICATION_PAGE_SIZES, ApplicationSort, type ApplicationRow, type ApplicationStatus } from '@los/contracts';
@@ -11,6 +11,7 @@ import { downloadApplications } from './applications.api';
 import { applicationHref, resumeHref } from './applications.utils';
 import { CreateApplicationModal } from './CreateApplicationModal';
 import { directoryLabels } from './directory';
+import { ListLoadError } from './ListLoadError';
 import { canSeeMyApprovals, listTabs, MY_APPROVALS_TAB, pendingVoteCount, resolveListTab } from './list-tabs';
 import { MyApprovalsPanel } from './MyApprovalsPanel';
 import { useApplicationList, useDirectory, useMyApprovals } from './useApplications';
@@ -130,7 +131,7 @@ export function ApplicationListPage() {
             {list.data ? <Text type="secondary" style={{ alignSelf: 'center' }}>{t('application.list.total', { total: list.data.total })}</Text> : null}
           </Flex>
 
-          {list.isError ? <Alert type="error" showIcon message={t('application.list.error')} action={<Button size="small" onClick={() => void list.refetch()}>{t('application.list.retry')}</Button>} style={{ marginBottom: 12 }} /> : null}
+          {list.isError ? <ListLoadError error={list.error} errorKey="application.list.error" forbiddenKey="application.list.forbidden" onRetry={() => void list.refetch()} /> : null}
           <Table<ApplicationRow>
             rowKey="id"
             size="middle"
