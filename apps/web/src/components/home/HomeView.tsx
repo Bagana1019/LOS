@@ -8,12 +8,15 @@ import { flattenMenu } from '../../lib/access';
 import { useAuth } from '../../lib/auth/auth-context';
 import { menuIcon } from '../shell/menu-icons';
 import { RoleTags } from '../shell/RoleTags';
+import { homeActionFor } from './home-actions';
+import { HomePrimaryAction } from './HomePrimaryAction';
 
 /** Нүүр: хэрэглэгчийн дүр, харах хүрээ, дүрт нээлттэй хэсгүүдийн товчлол (бүгд `/auth/me`-ээс). */
 export function HomeView() {
   const { me } = useAuth();
   if (!me) return null;
   const { user, menu } = me;
+  const action = homeActionFor(me.permissions);
   return (
     <Space direction="vertical" size="large" style={{ display: 'flex' }}>
       <Card>
@@ -25,6 +28,7 @@ export function HomeView() {
           <Descriptions.Item label={t('shell.home.scope')}>{t(`auth.scope.${resolveDataScope(user.roles)}`)}</Descriptions.Item>
         </Descriptions>
       </Card>
+      {action ? <HomePrimaryAction action={action} /> : null}
       <section aria-labelledby="quick-links">
         <Typography.Title level={5} id="quick-links">{t('shell.home.quick_links')}</Typography.Title>
         <Row gutter={[16, 16]}>
