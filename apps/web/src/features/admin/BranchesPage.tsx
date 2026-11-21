@@ -102,7 +102,7 @@ export function BranchesPage() {
         </Flex>
       </Card>
       <Modal open={editing !== null} title={t(editing === 'new' ? 'admin.branches.create.title' : 'admin.branches.edit.title')} okText={t('admin.common.save')} cancelText={t('admin.common.cancel')}
-        confirmLoading={create.isPending || update.isPending} onOk={onSubmit} onCancel={() => setEditing(null)} destroyOnClose forceRender>
+        confirmLoading={create.isPending || update.isPending} onOk={onSubmit} onCancel={() => setEditing(null)} destroyOnHidden forceRender>
         <Form form={form} layout="vertical" requiredMark={false}>
           <Form.Item name="code" label={t('admin.branches.field.code')} extra={t('admin.branches.code.help')} validateFirst rules={editing === 'new' ? branchCodeRules() : undefined}>
             <Input maxLength={12} disabled={editing !== 'new'} autoComplete="off" />
