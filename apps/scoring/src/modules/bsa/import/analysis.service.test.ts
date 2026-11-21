@@ -31,9 +31,10 @@ describe('AnalysisService.create', () => {
     expect((await h.createAnalysis({ periodMonths: null })).periodMonths).toBe(6);
   });
 
-  it('versions: a second analysis for the same application and customer is version 2', async () => {
+  it('versions: once the first analysis is completed, a second one for the same application and customer is version 2', async () => {
     const h = await createHarness();
     const first = await h.createAnalysis();
+    await h.repo.analyses.update(first.id, { status: 'ANALYZED' });
     const second = await h.createAnalysis();
     expect([first.version, second.version]).toEqual([1, 2]);
     const latest = await h.analysis.latestForApplication(OFFICER, 'app-1');
@@ -69,6 +70,93 @@ describe('AnalysisService.create', () => {
     expect((await h.createAnalysis({ loanApplicationId: 'app-4' }, ctxOf(['BRANCH_MANAGER'], { userId: 'u-bm' }))).branchId).toBe(BRANCH);
     await expect(h.createAnalysis({}, ctxOf(['OFFICER'], { branchId: null }))).rejects.toBeInstanceOf(ForbiddenException);
     await expect(h.createAnalysis({}, ctxOf(['APPROVER']))).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+// F6-3 / BSA-FR-1.2 «давхар бүртгэхгүй» / INT-7: хүсэлт+зээлдэгч тутамд нэг идэвхтэй ноорог. Хурдан давхар дарахад 2 DRAFT үүсч v1 өнчирдөг байсан.
+describe('AnalysisService.create is idempotent while the latest version is a DRAFT (F6-3)', () => {
+  const draftCount = async (h: Awaited<ReturnType<typeof createHarness>>, filter: { applicationId?: string; customerId?: string } = {}): Promise<number> =>
+    (await h.repo.analyses.list({ orgId: OFFICER.orgId, ...filter })).total;
+
+  it('a second create returns the existing DRAFT and creates nothing (no new row, no second ANALYSIS_CREATED event)', async () => {
+    const h = await createHarness();
+    const first = await h.createAnalysis();
+    const second = await h.createAnalysis();
+    expect(second.id).toBe(first.id);
+    expect(second).toMatchObject({ status: 'DRAFT', version: 1 });
+    expect(await draftCount(h)).toBe(1);
+    const events = (await h.analysis.listEvents(OFFICER, first.id)).items;
+    expect(events.map((e) => e.action)).toEqual(['ANALYSIS_CREATED']);
+  });
+
+  it('createOrGetDraft reports created=true for the first call and created=false for the repeat', async () => {
+    const h = await createHarness();
+    const body = { loanApplicationId: 'app-1', customerId: 'cust-1', customer: { registerNo: CUSTOMER_REGISTER }, periodMonths: 3 };
+    const first = await h.analysis.createOrGetDraft(OFFICER, body);
+    const again = await h.analysis.createOrGetDraft(OFFICER, body);
+    expect([first.created, again.created]).toEqual([true, false]);
+    expect(again.analysis.id).toBe(first.analysis.id);
+  });
+
+  it('concurrent creates (double click) share ONE DRAFT and write ONE event', async () => {
+    const h = await createHarness();
+    const results = await Promise.all([h.createAnalysis(), h.createAnalysis(), h.createAnalysis()]);
+    expect(new Set(results.map((r) => r.id)).size).toBe(1);
+    expect(await draftCount(h)).toBe(1);
+    expect((await h.analysis.listEvents(OFFICER, results[0].id)).items).toHaveLength(1);
+  });
+
+  it('after the DRAFT is completed the next create makes a NEW version (INT-7 history is kept)', async () => {
+    const h = await createHarness();
+    const v1 = await h.createAnalysis();
+    await h.repo.analyses.update(v1.id, { status: 'ANALYZED' });
+    const v2 = await h.createAnalysis();
+    expect(v2.id).not.toBe(v1.id);
+    expect(v2).toMatchObject({ status: 'DRAFT', version: 2 });
+    expect(await draftCount(h)).toBe(2);
+    // ...and that new DRAFT is itself idempotent
+    expect((await h.createAnalysis()).id).toBe(v2.id);
+    expect(await draftCount(h)).toBe(2);
+  });
+
+  it('a stale DRAFT behind a completed newer version does not block a new version (only the LATEST version counts)', async () => {
+    const h = await createHarness();
+    const stale = await h.repo.analyses.create({ orgId: OFFICER.orgId, branchId: BRANCH, applicationId: 'app-1', customerId: 'cust-1', createdBy: OFFICER.userId });
+    const done = await h.repo.analyses.create({ orgId: OFFICER.orgId, branchId: BRANCH, applicationId: 'app-1', customerId: 'cust-1', createdBy: OFFICER.userId });
+    await h.repo.analyses.update(done.id, { status: 'ANALYZED' });
+    const created = await h.createAnalysis();
+    expect([stale.version, done.version, created.version]).toEqual([1, 2, 3]);
+  });
+
+  it('a different customer or a different application is a separate analysis', async () => {
+    const h = await createHarness();
+    const base = await h.createAnalysis();
+    const otherCustomer = await h.createAnalysis({ customerId: 'cust-2' });
+    const otherApplication = await h.createAnalysis({ loanApplicationId: 'app-2' });
+    expect(new Set([base.id, otherCustomer.id, otherApplication.id]).size).toBe(3);
+    expect([base.version, otherCustomer.version, otherApplication.version]).toEqual([1, 1, 1]);
+  });
+
+  it('never hands out a DRAFT the caller cannot read: another OFFICER gets their own new version', async () => {
+    const h = await createHarness();
+    const mine = await h.createAnalysis();
+    const colleague = ctxOf(['OFFICER'], { userId: 'u-colleague' });
+    const theirs = await h.createAnalysis({}, colleague);
+    expect(theirs.id).not.toBe(mine.id);
+    expect(theirs).toMatchObject({ version: 2, createdBy: 'u-colleague' });
+  });
+
+  it('a BRANCH_MANAGER of the same branch reuses an OFFICER DRAFT they are allowed to read', async () => {
+    const h = await createHarness();
+    const mine = await h.createAnalysis();
+    const manager = ctxOf(['BRANCH_MANAGER'], { userId: 'u-manager' });
+    expect((await h.createAnalysis({}, manager)).id).toBe(mine.id);
+  });
+
+  it('invalid input still fails and creates nothing', async () => {
+    const h = await createHarness();
+    await expect(h.createAnalysis({ periodMonths: 5 })).rejects.toMatchObject({ bsaCode: 'PERIOD_NOT_ALLOWED' });
+    expect(await draftCount(h)).toBe(0);
   });
 });
 

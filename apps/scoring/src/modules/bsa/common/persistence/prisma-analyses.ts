@@ -8,6 +8,10 @@ import type { Prisma } from './prisma.service';
 
 const NEWEST = [{ createdAt: 'desc' }, { version: 'desc' }, { id: 'desc' }] as const;
 
+/** create() ба lockAndFindLatest() НЭГ түлхүүр ашиглана — тэгэхгүй бол «шалгаад үүсгэх» хоёр зэрэгцээ дуудлагад атомар байхаа болино */
+const analysisLockKey = (orgId: string, applicationId: string, customerId: string): string => JSON.stringify([orgId, applicationId, customerId]);
+const lockAnalysisKey = (db: Db, key: string): Promise<number> => db.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`;
+
 export function createAnalysisRepo(ctx: Ctx): BsaAnalysisRepo {
   const registerHash = (registerNo: string | null | undefined): string | null => (registerNo ? ctx.cipher.hash(normalizeRegisterNo(registerNo)) : null);
   const snapshotCipher = (v: unknown): string | null => (v === null ? null : encJson(ctx, v));
@@ -17,10 +21,10 @@ export function createAnalysisRepo(ctx: Ctx): BsaAnalysisRepo {
     // INT-7: (org, application, customer) тутмын хувилбарыг advisory lock-оор дарааллуулж олгоно — зэрэгцээ create unique violation өгөхгүй
     async create(input) {
       const v = validate(newAnalysisSchema, input, 'analysis');
-      const lockKey = JSON.stringify([v.orgId, v.applicationId, v.customerId]);
+      const lockKey = analysisLockKey(v.orgId, v.applicationId, v.customerId);
       try {
         return await inTx(ctx, async (db) => {
-          await db.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+          await lockAnalysisKey(db, lockKey);
           const { _max } = await db.bsaAnalysis.aggregate({
             where: { orgId: v.orgId, applicationId: v.applicationId, customerId: v.customerId },
             _max: { version: true },
@@ -53,6 +57,15 @@ export function createAnalysisRepo(ctx: Ctx): BsaAnalysisRepo {
     async findLatest(orgId, applicationId, customerId) {
       const row = await ctx.db.bsaAnalysis.findFirst({ where: { orgId, applicationId, customerId }, orderBy: { version: 'desc' } });
       return row ? toAnalysis(ctx, row) : null;
+    },
+
+    // F6-3: service-ийн транзакц дотор дуудагдахад lock нь commit хүртэл баригдаж, дараагийн create() нь ижил lock-ийг дахин авна (reentrant)
+    async lockAndFindLatest(orgId, applicationId, customerId) {
+      return inTx(ctx, async (db) => {
+        await lockAnalysisKey(db, analysisLockKey(orgId, applicationId, customerId));
+        const row = await db.bsaAnalysis.findFirst({ where: { orgId, applicationId, customerId }, orderBy: { version: 'desc' } });
+        return row ? toAnalysis(ctx, row) : null;
+      });
     },
 
     async listLatestByApplication(orgId, applicationId) {

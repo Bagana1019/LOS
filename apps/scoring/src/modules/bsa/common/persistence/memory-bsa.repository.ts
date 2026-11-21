@@ -112,6 +112,8 @@ export class InMemoryBsaRepository implements BsaRepository {
       const top = all.sort((a, b) => b.version - a.version)[0];
       return top ? clone(top) : null;
     },
+    // runInTransaction зэрэгцээ транзакцийг дарааллуулдаг тул түгжээ далд (Prisma талд advisory lock)
+    lockAndFindLatest: (orgId, applicationId, customerId) => this.analyses.findLatest(orgId, applicationId, customerId),
     listLatestByApplication: async (orgId, applicationId) => {
       const latest = new Map<string, BsaAnalysisRecord>();
       for (const a of this.state.analyses.values()) {

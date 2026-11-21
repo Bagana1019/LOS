@@ -1,5 +1,6 @@
 // BSA-FR-1 / FR-4.1 / FR-6.1: шинжилгээ (bsa_analysis) үүсгэх, харах, параметр өөрчлөх, устгах + импорт ажил/гүйлгээ/түүхийг унших туслахууд.
-//  - INT-1 / INT-7: (байгууллага, хүсэлт, зээлдэгч) тутамд create() бүр ШИНЭ хувилбар; хамгийн өндөр нь идэвхтэй.
+//  - INT-1 / INT-7: (байгууллага, хүсэлт, зээлдэгч) тутамд хамгийн сүүлийн хувилбар дууссан бол create() ШИНЭ хувилбар; хамгийн өндөр нь идэвхтэй.
+//    F6-3: хамгийн сүүлийнх нь DRAFT хэвээр бол create() түүнийг буцаана (давхар ноорог үүсгэхгүй) — createOrGetDraft.
 //  - Хандалт: тенант + салбар + үүрэг (access.ts). Өөр байгууллагын шинжилгээ «олдсонгүй» шиг харагдана.
 //  - Устгал: зөвхөн DRAFT; DB-ийн commit-ийн ДАРАА object store-оос файлуудыг устгана (commit өмнө устгавал DB буцсан үед файл алдагдана).
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
@@ -14,7 +15,7 @@ import {
 } from '../common/persistence';
 import { analysisListScope, decideAnalysisAccess, REQUEST_CONTEXT_MESSAGES } from '../common/request-context';
 import { describeError } from '../common/import-queue';
-import { assertRole, loadAnalysis, WRITE_ROLES } from './access';
+import { assertRole, canWriteAnalysis, loadAnalysis, WRITE_ROLES } from './access';
 import { BSA_EVENT } from './import.events';
 import { badRequest, conflict, notFound } from './import.errors';
 import { parseInput } from './parse-input';
@@ -84,8 +85,17 @@ export class AnalysisService {
 
   // ───────────────────────── Үүсгэх ─────────────────────────
 
-  /** INT-1: LOS хүсэлт + зээлдэгчээс шинэ шинжилгээ (хувилбар). OFFICER / BRANCH_MANAGER / ADMIN */
+  /** INT-1: LOS хүсэлт + зээлдэгчээс шинэ шинжилгээ (хувилбар). OFFICER / BRANCH_MANAGER / ADMIN. Давхардлын дүрмийг `createOrGetDraft` үзнэ */
   async create(ctx: RequestContext, raw: z.input<typeof BsaCreateAnalysisRequest>): Promise<AnalysisView> {
+    return (await this.createOrGetDraft(ctx, raw)).analysis;
+  }
+
+  /**
+   * F6-3 / BSA-FR-1.2 «давхар бүртгэхгүй»: (байгууллага, хүсэлт, зээлдэгч)-ийн ХАМГИЙН СҮҮЛИЙН хувилбар DRAFT хэвээр бол түүнийг буцаана (created=false),
+   * юу ч үүсгэхгүй. Дууссан (ANALYZED г.м.) байвал шинэ хувилбар (INT-7). «Шалгаад үүсгэх» нь НЭГ транзакц доторх advisory lock-оор атомар —
+   * хурдан давхар дарах / зэрэгцээ хүсэлтэд 2 DRAFT үүсэхгүй. Байгаа DRAFT-ыг зөвхөн бичих эрхтэй хүнд буцаана (өөр ЗЭЗ-ийнх бол өөрийн шинэ хувилбар).
+   */
+  async createOrGetDraft(ctx: RequestContext, raw: z.input<typeof BsaCreateAnalysisRequest>): Promise<{ analysis: AnalysisView; created: boolean }> {
     assertRole(ctx, WRITE_ROLES);
     const input = parseInput(BsaCreateAnalysisRequest, raw);
     const isAdmin = ctx.roles.includes('ADMIN');
@@ -121,7 +131,9 @@ export class AnalysisService {
     };
     const ownAccounts = mergeAccounts([], declared.flatMap((d) => [d.accountNo, d.iban ?? '']));
 
-    const created = await this.repo.runInTransaction(async (r) => {
+    const outcome = await this.repo.runInTransaction(async (r) => {
+      const latest = await r.analyses.lockAndFindLatest(ctx.orgId, input.loanApplicationId, input.customerId);
+      if (latest?.status === 'DRAFT' && canWriteAnalysis(ctx, latest)) return { record: latest, created: false };
       const record = await r.analyses.create({
         orgId: ctx.orgId,
         branchId,
@@ -143,9 +155,9 @@ export class AnalysisService {
         actorId: ctx.userId,
         detail: { version: record.version, periodMode: hasRange ? 'EXPLICIT' : 'MONTHS', periodMonths, declaredAccounts: declared.length },
       });
-      return record;
+      return { record, created: true };
     });
-    return toAnalysisView(created);
+    return { analysis: toAnalysisView(outcome.record), created: outcome.created };
   }
 
   // ───────────────────────── Унших ─────────────────────────
