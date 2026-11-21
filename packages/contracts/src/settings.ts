@@ -7,12 +7,19 @@ import { z } from 'zod';
  */
 const def = <T extends z.ZodTypeAny>(schema: T, value: z.infer<T>, description: string) => ({ schema, default: value as unknown, description });
 
+/**
+ * F9-22: бутархай (0.55 = 55%) хэлбэрийн эрсдэлийн босгын зөвшөөрөгдөх хүрээ. 0 нь бүх хүсэлтийг хаана, 1-ээс дээш нь утгагүй.
+ * `SETTING_RANGES` нь серверийн ойлгомжтой алдааны мессежийг (`SETTING_OUT_OF_RANGE`) тодорхойлоход ашиглагдана.
+ */
+export const RISK_RATIO_RANGE = { min: 0.05, max: 1 } as const;
+const riskRatio = () => z.number().min(RISK_RATIO_RANGE.min).max(RISK_RATIO_RANGE.max);
+
 export const SETTING_REGISTRY = {
   // ── Бизнес дүрэм (docs/01 §8) ──
-  'br1.dti_max': def(z.number().min(0).max(1), 0.55, 'BR-1 · ӨОХ дээд (A арга, BSA DTI мөн ижил)'),
+  'br1.dti_max': def(riskRatio(), 0.55, 'BR-1 · ӨОХ дээд (A арга, BSA DTI мөн ижил)'),
   'br2.dscr_min': def(z.number().positive(), 1.25, 'BR-2 · ӨТЧХ доод (B, C арга)'),
-  'br3.ltv_max': def(z.number().min(0).max(1), 0.7, 'BR-3 · LTV дээд'),
-  'br4.method_weight_threshold': def(z.number().min(0).max(1), 0.7, 'BR-4 · автомат аргын сонголтын жингийн босго'),
+  'br3.ltv_max': def(riskRatio(), 0.7, 'BR-3 · LTV дээд'),
+  'br4.method_weight_threshold': def(riskRatio(), 0.7, 'BR-4 · автомат аргын сонголтын жингийн босго'),
   // FR-9.2: `document` (8-р алхам, бүтээгдэхүүний заавал баримтын checklist) заавал — migration 20261118020000 хуучин default мөрийг шинэчилнэ.
   'br7.required_steps': def(z.array(z.string()), ['client', 'inquiry', 'income', 'loan', 'collateral', 'installment', 'score', 'document'], 'BR-7 · илгээхэд заавал бүрдэх алхмууд'),
   'br9.blacklist_mode': def(z.enum(['WARN_ONLY']), 'WARN_ONLY', 'BR-9 · хар жагсаалт — зөвхөн анхааруулга'),
@@ -70,6 +77,12 @@ export const SETTING_REGISTRY = {
 
 export type SettingKey = keyof typeof SETTING_REGISTRY;
 export const SETTING_KEYS = Object.keys(SETTING_REGISTRY) as SettingKey[];
+/** Тоон утгын зөвшөөрөгдөх хүрээтэй түлхүүрүүд (схемтэй ижил хүрээ): сервер хүрээнээс гарсан утгад түлхүүр, хүрээг нэрлэсэн 422 өгнө. */
+export const SETTING_RANGES: Partial<Record<SettingKey, { readonly min: number; readonly max: number }>> = {
+  'br1.dti_max': RISK_RATIO_RANGE,
+  'br3.ltv_max': RISK_RATIO_RANGE,
+  'br4.method_weight_threshold': RISK_RATIO_RANGE,
+};
 export type SettingValue<K extends SettingKey> = z.infer<(typeof SETTING_REGISTRY)[K]['schema']>;
 export const isSettingKey = (k: string): k is SettingKey => k in SETTING_REGISTRY;
 /** Хадгалах/сервисээс унших утгыг баталгаажуулна; бүртгэлгүй түлхүүр дээр throw. */

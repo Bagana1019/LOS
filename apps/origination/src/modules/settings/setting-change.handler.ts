@@ -1,4 +1,5 @@
 // Q-124 · Батлах урсгалд нөлөөлдөг тохиргоо (FOUR_EYES_SETTING_KEYS: салбарын код, батлах SLA) 4 нүдээр өөрчлөгдөнө.
+// F9-22 · Зээлийн эрсдэлийн босго (br1 ӨОХ, br2 ӨТЧХ, br3 LTV, br4 аргын босго, br10 олголт ≤ батлагдсан) мөн ижил урсгалаар.
 import { Inject, Injectable } from '@nestjs/common';
 import type { Prisma } from '.prisma/client-origination';
 import { FOUR_EYES_SETTING_KEYS, SETTING_ACTION_UPDATE, SETTING_TARGET_TYPE, isFourEyesSettingKey, type FourEyesSettingKey } from '@los/contracts';
