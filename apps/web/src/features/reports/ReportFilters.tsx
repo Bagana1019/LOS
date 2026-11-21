@@ -3,7 +3,10 @@ import { useEffect, useState } from 'react';
 import { Button, Flex, Input, Select, Typography } from 'antd';
 import type { ReportFilterDef } from '@los/contracts';
 import { t } from '../../lib/i18n';
+import { LookupSelect } from './LookupSelect';
+import { catalogFieldModel, directoryFieldModel, lookupKindOf, type LookupKind, type Lookups } from './report-lookups';
 import { compactFilters, MAX_TEXT_LENGTH, validateFilters, type FilterValues } from './reports.utils';
+import { useLookups } from './useLookups';
 
 interface Props {
   filters: readonly ReportFilterDef[];
@@ -16,9 +19,29 @@ interface Props {
 
 const widthOf = (f: ReportFilterDef): number => (f.key === 'search' ? 320 : f.type === 'date' ? 168 : f.type === 'select' ? 200 : 180);
 
-function Control({ filter, value, onChange, onEnter }: { filter: ReportFilterDef; value: string; onChange: (v: string) => void; onEnter: () => void }) {
+/** F11-1: салбар / ЗЭЗ / бүтээгдэхүүн — нэрээр сонгоно (утга = id). Бүтээгдэхүүний сонголт тайлангийн каталогоос, бусад нь gateway лавлахаас. */
+function LookupControl({ filter, kind, value, lookups, onChange }: { filter: ReportFilterDef; kind: LookupKind; value: string; lookups: Lookups; onChange: (v: string) => void }) {
+  const model = kind === 'product' ? catalogFieldModel(value, filter.options ?? []) : directoryFieldModel(kind, value, lookups);
+  return (
+    <LookupSelect
+      id={`report-filter-${filter.key}`}
+      label={filter.label}
+      kind={kind}
+      value={value}
+      options={model.options}
+      notFound={model.notFound}
+      status={kind === 'product' ? 'ready' : lookups.status}
+      width={200}
+      onChange={onChange}
+    />
+  );
+}
+
+function Control({ filter, value, lookups, onChange, onEnter }: { filter: ReportFilterDef; value: string; lookups: Lookups; onChange: (v: string) => void; onEnter: () => void }) {
   const style = { width: widthOf(filter) };
   const id = `report-filter-${filter.key}`;
+  const kind = lookupKindOf(filter.key);
+  if (kind) return <LookupControl filter={filter} kind={kind} value={value} lookups={lookups} onChange={onChange} />;
   switch (filter.type) {
     case 'select':
       return (
@@ -47,6 +70,7 @@ function Control({ filter, value, onChange, onEnter }: { filter: ReportFilterDef
 /** Тайлангийн `definition.filters`-ээс динамикаар үүсэх шүүлтийн мөр. "Хайх" дарж байж URL/query шинэчлэгдэнэ (бичих бүрд сервер рүү хандахгүй). */
 export function ReportFilters({ filters, values, busy, onApply, onReset }: Props) {
   const [draft, setDraft] = useState<FilterValues>(values);
+  const lookups = useLookups();
   // Хэрэглэгдсэн шүүлт өөрчлөгдөхөд (цэвэрлэх, URL) draft-ыг синхрончилно. Агуулгаар харьцуулна — хуудас солиход draft алдагдахгүй.
   const serial = JSON.stringify(values);
   useEffect(() => {
@@ -67,7 +91,7 @@ export function ReportFilters({ filters, values, busy, onApply, onReset }: Props
         {filters.map((f) => (
           <Flex key={f.key} vertical gap={4}>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}><label htmlFor={`report-filter-${f.key}`}>{f.label}</label></Typography.Text>
-            <Control filter={f} value={draft[f.key] ?? ''} onChange={(v) => setDraft((d) => ({ ...d, [f.key]: v }))} onEnter={apply} />
+            <Control filter={f} value={draft[f.key] ?? ''} lookups={lookups} onChange={(v) => setDraft((d) => ({ ...d, [f.key]: v }))} onEnter={apply} />
           </Flex>
         ))}
         <Button type="primary" onClick={apply} disabled={Boolean(errorKey)} loading={busy}>{t('report.filters.apply')}</Button>
