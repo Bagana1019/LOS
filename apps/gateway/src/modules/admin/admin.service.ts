@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { ADMIN_BRANCH_BOUND_ROLES, type AdminBranchDto, type AdminUserDto, type AuditLogPage, type AuditLogQuery, type CreateBranchBody, type CreateUserBody, type UpdateBranchBody, type UpdateUserBody, type UserCredentialResult } from '@los/contracts';
+import { ADMIN_BRANCH_BOUND_ROLES, incompatibleRolePair, type AdminBranchDto, type AdminUserDto, type AuditLogPage, type AuditLogQuery, type CreateBranchBody, type CreateUserBody, type UpdateBranchBody, type UpdateUserBody, type UserCredentialResult } from '@los/contracts';
 import { insertAuditRow } from '@los/database';
 import { DomainError, notFound } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
@@ -90,6 +90,12 @@ export class AdminService {
     }
   }
 
+  /** F9-19: бэлтгэгч ба батлагч дүрийг нэг хүнд ЗЭРЭГ олгохыг хаана (хос нь contracts `INCOMPATIBLE_ROLE_PAIRS`). */
+  private assertRoleCombination(roles: readonly string[]): void {
+    const pair = incompatibleRolePair(roles);
+    if (pair) throw new DomainError('ROLE_COMBINATION_FORBIDDEN', `Нэг хүнд ${pair[0]} ба ${pair[1]} дүрийг зэрэг олгох боломжгүй (бэлтгэгч ба батлагч тусдаа хүн байх ёстой)`, 422, { roles: pair });
+  }
+
   /** Сүүлийн идэвхтэй ADMIN-ыг (өөрийгөө оролцуулан) алдахаас сэргийлнэ. */
   private async assertAnotherAdmin(orgId: string, exceptUserId: string): Promise<void> {
     const n = await this.prisma.user.count({ where: { orgId, isActive: true, id: { not: exceptUserId }, roles: { has: 'ADMIN' } } });
@@ -98,6 +104,7 @@ export class AdminService {
 
   /** Шинэ хэрэглэгч + түр нууц үг (нэг удаа буцна; эхний нэвтрэлтээр заавал солино). Нууц үг, ПИИ аудитад орохгүй. */
   async createUser(orgId: string, actorId: string, body: CreateUserBody, meta: Meta): Promise<UserCredentialResult> {
+    this.assertRoleCombination(body.roles);
     if (await this.prisma.user.findUnique({ where: { username: body.username } })) throw new DomainError('USERNAME_TAKEN', 'Энэ нэвтрэх нэр бүртгэлтэй байна', 409);
     await this.checkRolesBranch(orgId, body.roles, body.branchId);
     const password = temporaryPassword();
@@ -119,6 +126,9 @@ export class AdminService {
       if (id === actorId) throw new DomainError('SELF_ADMIN_REMOVAL', 'Өөрийн админ эрхийг хасах боломжгүй', 422);
       if (before.isActive) await this.assertAnotherAdmin(orgId, id);
     }
+    // F9-19: өөртөө дүр нэмэхгүй (өөр админаар олгуулна); хориглосон хослолыг зөвхөн ШИНЭЭР бий болгохыг хаана (хуучныг засахад саад болохгүй)
+    if (id === actorId && body.roles.some((r) => !before.roles.includes(r))) throw new DomainError('SELF_ROLE_GRANT', 'Өөртөө дүр нэмэх боломжгүй: өөр админаар олгуулна уу', 422);
+    if (!incompatibleRolePair(before.roles)) this.assertRoleCombination(body.roles);
     await this.checkRolesBranch(orgId, body.roles, body.branchId);
     const sameRoles = [...before.roles].sort().join() === [...body.roles].sort().join();
     const accessChanged = !sameRoles || before.branchId !== body.branchId;
