@@ -38,5 +38,16 @@
   "pricing.issue.DUPLICATE_CODE": "Шатлалын код давхардсан байна",
   "pricing.issue.DEFAULT_TIER_COUNT": "Яг нэг шатлал анхдагч байх ёстой",
   "pricing.issue.INTEREST_RATE_NOT_MONOTONIC": "Оноо өндөр шатлалын хүү доод шатлалынхаас өндөр байж болохгүй",
-  "pricing.issue.FEE_RATE_NOT_MONOTONIC": "Оноо өндөр шатлалын шимтгэл доод шатлалынхаас өндөр байж болохгүй"
+  "pricing.issue.FEE_RATE_NOT_MONOTONIC": "Оноо өндөр шатлалын шимтгэл доод шатлалынхаас өндөр байж болохгүй",
+  "input.money.field": "Дүн",
+  "input.money.required": "Дүнг оруулна уу",
+  "input.money.notNumber": "Зөвхөн тоо оруулна уу (жишээ: 1,500,000 эсвэл 5сая)",
+  "input.money.negative": "Сөрөг дүн оруулах боломжгүй",
+  "input.money.positive": "{field} 0-ээс их байх ёстой",
+  "input.money.max": "{field} {max}-аас ихгүй байх ёстой",
+  "input.number.decimals": "Бутархай хэсэг {max} оронгоос ихгүй байх ёстой",
+  "input.percent.field": "Хувь",
+  "input.percent.required": "Хувийг оруулна уу",
+  "input.percent.notNumber": "Зөвхөн тоо оруулна уу (жишээ: 1.5)",
+  "input.percent.range": "{field} {min}–{max}% хооронд байх ёстой"
 }
