@@ -5,11 +5,11 @@ import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AmlHit, AmlHitQueueItem, AmlScreeningDetail } from '@los/contracts';
 import { API, ApiError } from '../../lib/api';
-import { messageKeys } from '../../lib/i18n';
+import { messageKeys, t } from '../../lib/i18n';
 import { textOfTestId, visibleText } from '../collateral/html.fixtures';
 import { describeApplicationError } from '../applications/applications.utils';
 import { fetchAmlQueue, fetchAmlScreening, reviewAmlHit } from './aml.api';
-import { describeAmlReviewError, screeningHref, validateReviewReason } from './aml.utils';
+import { AML_QUEUE_TABS, type AmlQueueTab, blockingNotice, describeAmlReviewError, reviewConfirmCopy, screeningHref, validateReviewReason } from './aml.utils';
 import { AmlQueueView } from './AmlQueueView';
 import { AmlScreeningView } from './AmlScreeningView';
 
@@ -52,6 +52,20 @@ describe('aml.utils', () => {
     expect(describeAmlReviewError(new Error('boom'))).toBe('Шийдвэр хадгалж чадсангүй');
   });
   it('screeningHref encodes the id', () => expect(screeningHref('a/b')).toBe('/los/compliance/aml/a%2Fb'));
+  it('F7-2: the confirmation copy names the decision and explains the consequence of each outcome', () => {
+    expect(reviewConfirmCopy('FALSE_POSITIVE')).toEqual({ decision: 'Худал тохирол', consequence: expect.stringContaining('илгээх боломжтой болно') });
+    expect(reviewConfirmCopy('CONFIRMED')).toEqual({ decision: 'Жинхэнэ тохирол', consequence: expect.stringContaining('илгээгдэхгүй') });
+  });
+  it('F7-3: blockingNotice gives CONFIRMED_MATCH its own (error) notice; REVIEW_REQUIRED keeps the "awaiting decision" one; non-blocking → none', () => {
+    expect(blockingNotice('CONFIRMED_MATCH', true)).toEqual({ type: 'error', key: 'aml.detail.blockingConfirmed' });
+    expect(blockingNotice('REVIEW_REQUIRED', true)).toEqual({ type: 'warning', key: 'aml.detail.blocking' });
+    expect(blockingNotice('CLEARED_AFTER_REVIEW', false)).toBeNull();
+    expect(blockingNotice('CLEAR', false)).toBeNull();
+    expect(blockingNotice('WARNING', false)).toBeNull();
+  });
+  it('F7-6: queue tabs map to the existing single `status` filter of GET /aml/hits (OPEN, CONFIRMED, FALSE_POSITIVE) plus "all"', () => {
+    expect([...AML_QUEUE_TABS]).toEqual(['OPEN', 'CONFIRMED', 'FALSE_POSITIVE', 'ALL']);
+  });
 });
 
 describe('AML_REVIEW_REQUIRED on the application page', () => {
@@ -75,7 +89,7 @@ describe('aml.api (web → gateway `/kyc/aml/*` only)', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('queue, detail and decision paths', async () => {
-    expect((await fetchAmlQueue({ limit: 20, offset: 40 })).total).toBe(1);
+    expect((await fetchAmlQueue({ limit: 20, offset: 40, status: 'OPEN' })).total).toBe(1);
     expect((await fetchAmlScreening('scr 1')).subject.birthYear).toBe(1980);
     await reviewAmlHit('hit-1', { decision: 'FALSE_POSITIVE', comment: 'Өөр хүн' });
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
@@ -85,11 +99,22 @@ describe('aml.api (web → gateway `/kyc/aml/*` only)', () => {
     ]);
     expect(calls[2]!.body).toEqual({ decision: 'FALSE_POSITIVE', comment: 'Өөр хүн' });
   });
+
+  it('F7-6: the queue sends the chosen status; "ALL" sends no status so resolved hits are returned too', async () => {
+    await fetchAmlQueue({ limit: 20, offset: 0, status: 'CONFIRMED' });
+    await fetchAmlQueue({ limit: 20, offset: 0, status: 'FALSE_POSITIVE' });
+    await fetchAmlQueue({ limit: 20, offset: 0, status: 'ALL' });
+    expect(calls.map((c) => c.url)).toEqual([
+      `${API}/kyc/aml/hits?status=CONFIRMED&limit=20&offset=0`,
+      `${API}/kyc/aml/hits?status=FALSE_POSITIVE&limit=20&offset=0`,
+      `${API}/kyc/aml/hits?limit=20&offset=0`,
+    ]);
+  });
 });
 
 describe('AmlQueueView', () => {
-  const render = (items: AmlHitQueueItem[], total = items.length) =>
-    renderToString(<AmlQueueView items={items} total={total} page={1} pageSize={20} loading={false} error={null} onPageChange={() => undefined} />);
+  const render = (items: AmlHitQueueItem[], total = items.length, tab: AmlQueueTab = 'OPEN') =>
+    renderToString(<AmlQueueView items={items} total={total} page={1} pageSize={20} tab={tab} loading={false} error={null} onPageChange={() => undefined} onTabChange={() => undefined} />);
 
   it('lists open hits with the masked register, list, severity, score and a link to the screening', () => {
     const html = render([makeItem()]);
@@ -98,16 +123,43 @@ describe('AmlQueueView', () => {
     expect(text).toContain('Ганболд Бат-Эрдэнэ');
     expect(text).toContain('*******321');
     expect(text).toContain('НҮБ-ын хориг');
-    expect(text).toContain('Хаах');
+    expect(text).toContain('Блоклох');
+    expect(text).not.toContain('Хаах');
     expect(text).toContain('93%');
     expect(html).toContain('href="/los/compliance/aml/scr-1"');
     expect(html).not.toContain(REGISTER_FULL);
+  });
+  it('F7-6: status tabs (pending / true match / false match / all) are shown with the active one selected', () => {
+    const html = render([makeItem()], 1, 'CONFIRMED');
+    expect(html).toContain('role="tablist"');
+    const tabs = [...html.matchAll(/role="tab"[^>]*aria-selected="(true|false)"[^>]*>([^<]*)</g)].map((m) => [m[2], m[1]]);
+    expect(tabs).toEqual([['Хүлээгдэж буй', 'false'], ['Жинхэнэ тохирол', 'true'], ['Худал тохирол', 'false'], ['Бүгд', 'false']]);
+  });
+  it('F7-6: pending tab has no status/decision-date columns; the link says "Шийдвэрлэх"', () => {
+    const text = visibleText(render([makeItem()]));
+    expect(text).not.toContain('Шийдвэрлэсэн огноо');
+    expect(text).toContain('Шийдвэрлэх');
+  });
+  it('F7-6: a resolved hit stays visible under the other tabs with its status and decision date; the link says "Харах"', () => {
+    const resolved = makeItem({ status: 'FALSE_POSITIVE', reviewedBy: 'compliance-2', reviewedAt: '2026-10-28T10:00:00.000Z', reviewComment: 'Өөр хүн' });
+    const text = visibleText(render([resolved], 1, 'ALL'));
+    expect(text).toContain('Ганболд Бат-Эрдэнэ');
+    expect(text).toContain('Худал тохирол');
+    expect(text).toContain('Шийдвэрлэсэн огноо');
+    expect(text).toContain('2026-10-28');
+    expect(text).toContain('Харах');
+    expect(text).not.toContain('Шийдвэрлэх');
+  });
+  it('F7-6: empty message is tab-specific (pending keeps the original text)', () => {
+    expect(visibleText(render([], 0, 'OPEN'))).toContain('Шийдвэрлэх тохирол алга');
+    expect(visibleText(render([], 0, 'CONFIRMED'))).toContain('Энэ төлөвт тохирол алга');
+    expect(visibleText(render([], 0, 'CONFIRMED'))).not.toContain('Шийдвэрлэх тохирол алга');
   });
   it('empty queue → explicit empty message', () => {
     expect(visibleText(render([]))).toContain('Шийдвэрлэх тохирол алга');
   });
   it('load error is shown as an alert', () => {
-    const html = renderToString(<AmlQueueView items={[]} total={0} page={1} pageSize={20} loading={false} error={new ApiError(403, 'FORBIDDEN', 'Insufficient role')} onPageChange={() => undefined} />);
+    const html = renderToString(<AmlQueueView items={[]} total={0} page={1} pageSize={20} tab="OPEN" loading={false} error={new ApiError(403, 'FORBIDDEN', 'Insufficient role')} onPageChange={() => undefined} onTabChange={() => undefined} />);
     expect(html).toContain('role="alert"');
     expect(visibleText(html)).toContain('AML тохирлыг шийдвэрлэх эрхгүй байна');
   });
@@ -152,6 +204,33 @@ describe('AmlScreeningView', () => {
     expect(hit).toContain('Өөр хүн, төрсөн он зөрүүтэй');
     expect(visibleText(html)).toContain('Шалгалтын дараа цэвэрлэгдсэн');
   });
+  it('F7-3: CONFIRMED_MATCH says the application will NOT be submitted and never "awaiting decision"', () => {
+    const confirmed = makeHit({ status: 'CONFIRMED', reviewedBy: 'compliance-2', reviewedAt: '2026-10-28T10:00:00.000Z', reviewComment: 'Нотолгоо баттай' });
+    const html = render(makeDetail({ status: 'CONFIRMED_MATCH', blocking: true, hits: [confirmed] }));
+    const text = visibleText(html);
+    expect(text).toContain('Тохирол баталгаажсан');
+    expect(text).toContain('Тохирол баталгаажсан — энэ харилцагчийн зээлийн хүсэлт илгээгдэхгүй');
+    expect(text).not.toContain('шийдвэр хүлээж байна');
+    expect(html).toContain('ant-alert-error');
+    expect(html).not.toContain('ant-alert-warning');
+  });
+  it('F7-3: REVIEW_REQUIRED keeps the "awaiting decision" notice (warning) and not the confirmed one', () => {
+    const html = render(makeDetail({ status: 'REVIEW_REQUIRED', blocking: true }));
+    expect(visibleText(html)).toContain('Хүсэлт илгээх боломжгүй (шийдвэр хүлээж байна)');
+    expect(visibleText(html)).not.toContain('энэ харилцагчийн зээлийн хүсэлт илгээгдэхгүй');
+    expect(html).toContain('ant-alert-warning');
+  });
+  it('F7-3: a non-blocking screening shows no blocking notice at all', () => {
+    const reviewed = makeHit({ status: 'FALSE_POSITIVE', reviewedBy: 'compliance-2', reviewedAt: '2026-10-28T10:00:00.000Z', reviewComment: 'Өөр хүн' });
+    const html = render(makeDetail({ status: 'CLEARED_AFTER_REVIEW', blocking: false, hits: [reviewed] }));
+    expect(visibleText(html)).not.toContain('илгээх боломжгүй');
+    expect(visibleText(html)).not.toContain('илгээгдэхгүй');
+  });
+  it('F7-7: the BLOCKING level is called «Блоклох» in the hit card too (same word as the queue), never «Хаах»', () => {
+    const text = textOfTestId(render(), 'aml-hit-hit-1') ?? '';
+    expect(text).toContain('Блоклох');
+    expect(text).not.toContain('Хаах');
+  });
   it('four-eyes: the user who requested the screening sees a notice instead of the form', () => {
     const html = render(makeDetail(), 'officer-1');
     expect(textOfTestId(html, 'aml-review-hit-1')).toBeNull();
@@ -173,5 +252,20 @@ describe('i18n: every literal `aml.*` key used in the compliance feature exists'
     }
     expect(missing).toEqual([]);
     expect(dictionary.has('nav.aml_review')).toBe(true);
+  });
+});
+
+describe('F7-7: one word for the blocking level across the whole AML UI', () => {
+  const amlTexts = () => messageKeys().filter((k) => k.startsWith('aml.')).map((k) => [k, t(k)] as const);
+  it('no `aml.*` text uses «Хаах»/«хаалт»/«хаагд» (read as "close" although the level means "blocks the application")', () => {
+    const offenders = amlTexts().filter(([, v]) => /хаах|хаалт|хаагд/i.test(v)).map(([k]) => k);
+    expect(offenders).toEqual([]);
+  });
+  it('every queue tab has a label', () => {
+    for (const tab of AML_QUEUE_TABS) expect(t(`aml.queue.tab.${tab}`)).not.toBe(`aml.queue.tab.${tab}`);
+  });
+  it('both severity levels have an explanatory tooltip text', () => {
+    expect(t('aml.severity.hint.BLOCKING')).toContain('илгээгдэхгүй');
+    expect(t('aml.severity.hint.WARNING')).toContain('блоклохгүй');
   });
 });

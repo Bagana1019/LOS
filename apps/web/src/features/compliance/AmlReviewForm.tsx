@@ -1,26 +1,52 @@
 'use client';
-import { Button, Form, Input, Radio } from 'antd';
+import { Alert, App, Button, Descriptions, Flex, Form, Input, Radio, Typography } from 'antd';
 import type { AmlHitReviewRequest } from '@los/contracts';
 import { t } from '../../lib/i18n';
-import { validateReviewReason } from './aml.utils';
+import { reviewConfirmCopy, validateReviewReason } from './aml.utils';
 
 export interface AmlReviewFormProps {
   hitId: string;
+  /** Жагсаалтын бүртгэлийн нэр — баталгаажуулах цонхонд "юуг шийдэж байгаа"-г харуулна. */
+  hitName: string;
+  /** Шалгагдсан харилцагчийн нэр. */
+  customerName: string;
   submitting: boolean;
   onSubmit: (hitId: string, body: AmlHitReviewRequest) => void;
 }
 
 const DECISIONS: readonly AmlHitReviewRequest['decision'][] = ['FALSE_POSITIVE', 'CONFIRMED'];
 
-/** Нэг hit-ийн шийдвэр (§5): жинхэнэ / худал тохирол + заавал тайлбар. */
-export function AmlReviewForm({ hitId, submitting, onSubmit }: AmlReviewFormProps) {
+/** Нэг hit-ийн шийдвэр (§5): жинхэнэ / худал тохирол + заавал тайлбар. Шийдвэр буцаагдахгүй тул хадгалахаас өмнө баталгаажуулна (F7-2). */
+export function AmlReviewForm({ hitId, hitName, customerName, submitting, onSubmit }: AmlReviewFormProps) {
   const [form] = Form.useForm<{ decision?: AmlHitReviewRequest['decision']; comment: string }>();
+  const { modal } = App.useApp();
+
+  const confirmSave = (body: AmlHitReviewRequest) => {
+    const copy = reviewConfirmCopy(body.decision);
+    modal.confirm({
+      title: t('aml.review.confirmTitle'),
+      content: (
+        <Flex vertical gap={12}>
+          <Descriptions size="small" column={1}>
+            <Descriptions.Item label={t('aml.hit.customer')}>{customerName}</Descriptions.Item>
+            <Descriptions.Item label={t('aml.hit.entry')}>{hitName}</Descriptions.Item>
+            <Descriptions.Item label={t('aml.review.decision')}><Typography.Text strong>{copy.decision}</Typography.Text></Descriptions.Item>
+          </Descriptions>
+          <Alert type="warning" showIcon message={t('aml.review.confirmFinal')} description={copy.consequence} />
+        </Flex>
+      ),
+      okText: t('aml.review.confirmOk'),
+      cancelText: t('aml.review.confirmCancel'),
+      onOk: () => onSubmit(hitId, body),
+    });
+  };
+
   return (
     <div data-testid={`aml-review-${hitId}`}>
       <Form
         form={form}
         layout="vertical"
-        onFinish={(v) => v.decision && onSubmit(hitId, { decision: v.decision, comment: v.comment.trim() })}
+        onFinish={(v) => v.decision && confirmSave({ decision: v.decision, comment: v.comment.trim() })}
       >
         <Form.Item name="decision" label={t('aml.review.decision')} rules={[{ required: true, message: t('aml.review.decisionRequired') }]}>
           <Radio.Group>

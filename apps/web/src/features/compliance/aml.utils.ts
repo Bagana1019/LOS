@@ -1,5 +1,5 @@
 // Compliance · AML шалгалтын цэвэр туслахууд (I/O байхгүй). Дүрэм нь @los/contracts-оос — UI давхар тодорхойлохгүй.
-import { AmlHitReviewRequest, type AmlHit } from '@los/contracts';
+import { AmlHitReviewRequest, type AmlHit, type AmlScreeningDetail } from '@los/contracts';
 import { ApiError } from '../../lib/api';
 import { t } from '../../lib/i18n';
 
@@ -12,6 +12,27 @@ export function validateReviewReason(text: string): string | null {
   const parsed = AmlHitReviewRequest.shape.comment.safeParse(text);
   if (parsed.success) return null;
   return parsed.error.issues.some((i) => i.code === 'too_big') ? t('aml.review.reasonTooLong') : t('aml.review.reasonTooShort');
+}
+
+/** F7-6: дарааллын tab = `GET /aml/hits`-ийн ганц `status` шүүлтүүр (OPEN | CONFIRMED | FALSE_POSITIVE); `ALL` — шүүлтүүргүй. */
+export const AML_QUEUE_TABS = ['OPEN', 'CONFIRMED', 'FALSE_POSITIVE', 'ALL'] as const;
+export type AmlQueueTab = typeof AML_QUEUE_TABS[number];
+
+export interface BlockingNotice { type: 'warning' | 'error'; key: 'aml.detail.blocking' | 'aml.detail.blockingConfirmed' }
+
+/** F7-3: хүсэлт илгээхийг хориглосон мэдэгдэл. Баталгаажсан тохирол "шийдвэр хүлээж байна" биш — тусдаа (алдааны) текст. */
+export function blockingNotice(status: AmlScreeningDetail['status'], blocking: boolean): BlockingNotice | null {
+  if (!blocking) return null;
+  return status === 'CONFIRMED_MATCH'
+    ? { type: 'error', key: 'aml.detail.blockingConfirmed' }
+    : { type: 'warning', key: 'aml.detail.blocking' };
+}
+
+export interface ReviewConfirmCopy { decision: string; consequence: string }
+
+/** F7-2: баталгаажуулах цонхны текст — сонгосон шийдвэрийн нэр ба үр дагавар (шийдвэр буцаагдахгүй тул заавал харуулна). */
+export function reviewConfirmCopy(decision: AmlHitReviewRequest['decision']): ReviewConfirmCopy {
+  return { decision: t(`aml.review.${decision}`), consequence: t(`aml.review.consequence.${decision}`) };
 }
 
 const SELF_REVIEW = /reviewer must differ/i;

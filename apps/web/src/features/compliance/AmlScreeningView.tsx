@@ -4,8 +4,9 @@ import { Alert, Card, Col, Descriptions, Flex, Row, Tag, Typography } from 'antd
 import type { AmlHit, AmlHitReviewRequest, AmlScreeningDetail } from '@los/contracts';
 import { EMPTY_VALUE, formatDateTime, formatPercent } from '../../lib/format';
 import { t } from '../../lib/i18n';
-import { AML_QUEUE_HREF, hitEvidence, isOwnScreening } from './aml.utils';
+import { AML_QUEUE_HREF, blockingNotice, hitEvidence, isOwnScreening } from './aml.utils';
 import { AmlReviewForm } from './AmlReviewForm';
+import { SeverityTag } from './SeverityTag';
 
 const { Title, Link } = Typography;
 
@@ -86,7 +87,7 @@ function HitCard({ hit, own, ...p }: { hit: AmlHit; own: boolean } & AmlScreenin
   const title = (
     <Flex gap={8} wrap align="center">
       <span>{t(`aml.list.${hit.list}`)}</span>
-      <Tag color={hit.severity === 'BLOCKING' ? 'red' : 'gold'}>{t(`aml.severity.${hit.severity}`)}</Tag>
+      <SeverityTag severity={hit.severity} />
       <Tag>{t(`aml.matchType.${hit.matchType}`)}</Tag>
       <span>{t('aml.hit.score')}: {formatPercent(hit.score, 0)}</span>
     </Flex>
@@ -98,7 +99,7 @@ function HitCard({ hit, own, ...p }: { hit: AmlHit; own: boolean } & AmlScreenin
           <SideBySide hit={hit} detail={p.detail} />
           {hit.status !== 'OPEN' ? <Decision hit={hit} /> : null}
           {hit.status === 'OPEN' && own ? <Alert type="info" showIcon message={t('aml.review.selfReview')} /> : null}
-          {hit.status === 'OPEN' && !own ? <AmlReviewForm hitId={hit.id} submitting={p.submittingHitId === hit.id} onSubmit={p.onReview} /> : null}
+          {hit.status === 'OPEN' && !own ? <AmlReviewForm hitId={hit.id} hitName={hitEvidence(hit).name} customerName={p.detail.subjectName} submitting={p.submittingHitId === hit.id} onSubmit={p.onReview} /> : null}
         </Flex>
       </Card>
     </article>
@@ -109,6 +110,7 @@ function HitCard({ hit, own, ...p }: { hit: AmlHit; own: boolean } & AmlScreenin
 export function AmlScreeningView(props: AmlScreeningViewProps) {
   const { detail, currentUserId } = props;
   const own = isOwnScreening(detail.screenedBy, currentUserId);
+  const notice = blockingNotice(detail.status, detail.blocking);
   return (
     <Flex vertical gap={16}>
       <Link href={AML_QUEUE_HREF}>{t('aml.detail.back')}</Link>
@@ -117,7 +119,7 @@ export function AmlScreeningView(props: AmlScreeningViewProps) {
         <Tag color={STATUS_COLOR[detail.status]}>{t(`aml.status.${detail.status}`)}</Tag>
         <span>{t('aml.detail.risk')}: {t(`aml.risk.${detail.riskLevel}`)} ({detail.riskScore})</span>
       </Flex>
-      {detail.blocking ? <Alert type="warning" showIcon message={t('aml.detail.blocking')} /> : null}
+      {notice ? <Alert type={notice.type} showIcon message={t(notice.key)} /> : null}
       <Descriptions size="small" column={{ xs: 1, md: 2 }}>
         <Descriptions.Item label={t('aml.detail.screenedBy')}>{orDash(detail.screenedBy)}</Descriptions.Item>
         <Descriptions.Item label={t('aml.detail.screenedAt')}>{formatDateTime(detail.screenedAt)}</Descriptions.Item>
