@@ -62,8 +62,59 @@ const SCOPE_DISTINGUISHING_TOKEN = {
   BRANCH: { token: '{BRANCH}', message: 'Тоолуур салбар тутам тусдаа тоологдох тул загварт салбарын {BRANCH} хэсэг заавал байх ёстой, эс бөгөөс өөр салбарт давхардсан дугаар гарна' },
 } as const;
 
+/**
+ * BR-11 · F9-21: загварт зөвшөөрөгдөх хэсгүүд. `formatContractNo` (origination/approval.rules.ts) яг эдгээрийг орлуулдаг —
+ * жагсаалтад байхгүй `{...}` нь дугаарт хаалттайгаа орно ("LN-{YYYY}-1"). Алдааны мессеж ба UI-ийн заавар энэ нэг жагсаалтаас гарна.
+ */
+export const CONTRACT_NUMBER_TOKENS = [
+  { token: '{PREFIX}', label: 'угтвар' },
+  { token: '{BRANCH}', label: 'салбарын код' },
+  { token: '{YYMMDD}', label: 'он, сар, өдөр' },
+  { token: '{SEQ}', label: 'дараалал' },
+  { token: '{SEQ:n}', label: 'n оронтой дараалал' },
+] as const;
+/** `{SEQ:n}`: тоолуур `next_seq` нь int32 (10 орон); хэтэрвэл `padStart` RangeError шидэж батлалт унана. */
+export const CONTRACT_SEQ_MAX_WIDTH = 10;
+
+const BRACED_PART_RE = /\{[^{}]*\}/g;
+const KNOWN_PART_RE = /^\{(?:PREFIX|BRANCH|YYMMDD|SEQ(?::\d+)?)\}$/;
+const SEQ_PART_RE = /^\{SEQ(?::(\d+))?\}$/;
+/** Гэрээний дугаар DMS-д файлын нэр болдог (dms `safeFileStem`) — эдгээр тэмдэгтийг тэнд `_` болгон солидог тул дугаар ≠ файлын нэр болно. */
+const FILE_NAME_UNSAFE = '\\/:*?"<>|';
+const TOKEN_LIST = CONTRACT_NUMBER_TOKENS.map(({ token, label }) => `${token} (${label})`).join(', ');
+
+const isControlChar = (ch: string): boolean => ch.charCodeAt(0) < 0x20 || ch.charCodeAt(0) === 0x7f;
+const unsafeCharLabel = (ch: string): string => (isControlChar(ch) ? 'хяналтын тэмдэгт' : `"${ch}"`);
+
+function seqPartIssues(parts: readonly string[]): string[] {
+  const seqParts = parts.filter((p) => SEQ_PART_RE.test(p));
+  if (seqParts.length === 0) return ['{SEQ} хэсэг заавал байх ёстой'];
+  const issues = seqParts.length > 1 ? [`{SEQ} хэсэг яг нэг л удаа байх ёстой (одоо ${seqParts.length} удаа байна)`] : [];
+  for (const part of seqParts) {
+    const width = Number(SEQ_PART_RE.exec(part)?.[1] ?? 0);
+    if (width > CONTRACT_SEQ_MAX_WIDTH) issues.push(`{SEQ:n}-ийн n нь ${CONTRACT_SEQ_MAX_WIDTH}-аас ихгүй байх ёстой: ${part}`);
+  }
+  return issues;
+}
+
+/** Загварын текстийг шалгаж, алдаа бүрийн мессежийг (чухал нь эхэнд) буцаана. Зөв бол хоосон. */
+function contractPatternIssues(pattern: string): string[] {
+  const parts = pattern.match(BRACED_PART_RE) ?? [];
+  const literal = pattern.replace(BRACED_PART_RE, '');
+  const unknown = [...new Set(parts.filter((p) => !KNOWN_PART_RE.test(p)))];
+  const unsafe = [...new Set([...literal].filter((ch) => FILE_NAME_UNSAFE.includes(ch) || isControlChar(ch)).map(unsafeCharLabel))];
+  const issues: string[] = [];
+  if (unknown.length > 0) issues.push(`Загварт танигдаагүй хэсэг байна: ${unknown.join(', ')}. Зөвхөн дараах хэсгийг ашиглана: ${TOKEN_LIST}`);
+  if (/[{}]/.test(literal)) issues.push(`Загварт хаалт ганцаараа байж болохгүй, хэсэг бүр {…} хэлбэрээр бүтэн байх ёстой. Ашиглах хэсгүүд: ${TOKEN_LIST}`);
+  if (unsafe.length > 0) issues.push(`Загварт ${unsafe.join(', ')} тэмдэгт байж болохгүй: гэрээний дугаар файлын нэр болдог тул ${[...FILE_NAME_UNSAFE].join(' ')} тэмдэгт хориотой`);
+  return [...issues, ...seqPartIssues(parts)];
+}
+
 export const ContractNumberTemplateBody = z.object({
-  pattern: z.string().trim().min(1).max(80).refine((p) => /\{SEQ(?::\d+)?\}/.test(p), '{SEQ} хэсэг заавал байх ёстой'),
+  pattern: z.string().trim()
+    .min(1, 'Загвар хоосон байж болохгүй')
+    .max(80, 'Загвар 80 тэмдэгтээс хэтрэхгүй байх ёстой')
+    .superRefine((p, ctx) => { for (const message of contractPatternIssues(p)) ctx.addIssue({ code: z.ZodIssueCode.custom, message }); }),
   prefix: z.string().trim().max(12).regex(/^[A-Za-z0-9]*$/, 'Угтвар зөвхөн үсэг, тоо'),
   seqScope: z.enum(['DAY', 'BRANCH', 'GLOBAL']),
 }).superRefine((tpl, ctx) => {

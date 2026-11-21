@@ -179,6 +179,50 @@ describe.skipIf(!hasTestDb)('admin API (DB)', () => {
     expect(await t.prisma.auditLog.count({ where: { orgId: ORG, action: 'CONTRACT_TEMPLATE_UPDATED' } })).toBe(2);
   });
 
+  // F9-21 · загварын хэсэг бүр дугаар үүсгэгчид орлуулагддаг байх ёстой; эс бөгөөс `{...}` гэрээний дугаарт шууд орно ("LN-{YYYY}-1").
+  describe('гэрээний дугаарын загвар: хэсгийн шалгалт (F9-21)', () => {
+    const putTemplate = (pattern: string, seqScope = 'GLOBAL') => http().put('/api/contract-number-template').set(admin()).send({ pattern, prefix: 'LN', seqScope });
+
+    it.each([
+      ['{PREFIX}-{YYYY}-{SEQ}', '{YYYY}'], // танигдаагүй хэсэг (олдворын яг оролт)
+      ['{FOO}{SEQ}', '{FOO}'],
+      ['{PREFIX}{SEQ}{SEQ}', 'нэг л удаа'], // давхар {SEQ}
+      ['{PREFIX}/{SEQ}', '/'], // файлын нэр эвддэг тэмдэгт
+      ['{SEQ:99999999999}', '{SEQ:99999999999}'], // padStart RangeError-ийн эрсдэл
+    ])('%s -> 400 VALIDATION_FAILED, монгол мессеж (%s), юу ч хадгалагдахгүй', async (pattern, fragment) => {
+      const res = await putTemplate(pattern);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_FAILED');
+      expect(res.body.details[0]).toMatchObject({ path: 'pattern', message: expect.stringContaining(fragment) });
+      expect(res.body.details[0].message).toMatch(/[А-Яа-яӨөҮү]/);
+      expect(await t.prisma.contractNumberTemplate.count({ where: { orgId: ORG } })).toBe(0);
+      expect(await t.prisma.auditLog.count({ where: { orgId: ORG, action: 'CONTRACT_TEMPLATE_UPDATED' } })).toBe(0);
+    });
+
+    it('танигдаагүй хэсгийн мессеж дэмжигдэх бүх хэсгийг жагсаана', async () => {
+      const message: string = (await putTemplate('{PREFIX}-{YYYY}-{SEQ}')).body.details[0].message;
+      for (const token of ['{PREFIX}', '{BRANCH}', '{YYMMDD}', '{SEQ}', '{SEQ:n}']) expect(message).toContain(token);
+    });
+
+    it('зөв загвар хадгалагдана: -, _ , . тусгаарлагч ба {SEQ:10} хүртэл', async () => {
+      expect((await putTemplate('{PREFIX}-{SEQ:4}')).status).toBe(200);
+      expect((await putTemplate('{PREFIX}_{SEQ:10}')).status).toBe(200);
+      expect((await putTemplate('{PREFIX}.{SEQ}')).body).toMatchObject({ pattern: '{PREFIX}.{SEQ}', prefix: 'LN' });
+    });
+
+    it('шалгалт нэмэгдэхээс өмнө хадгалсан буруу загвар: унших унахгүй, хадгалахад л шалгана, тоолуур хэвээр', async () => {
+      await t.prisma.contractNumberTemplate.create({ data: { orgId: ORG, pattern: '{PREFIX}-{YYYY}-{SEQ}', prefix: 'LN', seqScope: 'GLOBAL', nextSeq: 5 } });
+      const read = await http().get('/api/contract-number-template').set(admin());
+      expect(read.status).toBe(200);
+      expect(read.body).toMatchObject({ pattern: '{PREFIX}-{YYYY}-{SEQ}', prefix: 'LN', seqScope: 'GLOBAL' });
+      expect((await putTemplate('{PREFIX}-{YYYY}-{SEQ}')).status).toBe(400); // хуучин утгыг хэвээр дахин хадгалах боломжгүй
+      const fixed = await putTemplate('{PREFIX}-{SEQ:4}');
+      expect(fixed.status).toBe(200);
+      const row = await t.prisma.contractNumberTemplate.findFirstOrThrow({ where: { orgId: ORG } });
+      expect(row).toMatchObject({ pattern: '{PREFIX}-{SEQ:4}', nextSeq: 5 });
+    });
+  });
+
   it('салбарын код (contract.branch_codes) Q-124: 4 нүдээр хадгалагдана, давхардсан код 422, шалтгаангүй 400', async () => {
     const put = (value: unknown, reason?: string, who = admin()) => http().put('/api/settings/contract.branch_codes').set(who).send({ value, ...(reason ? { reason } : {}) });
     expect((await put({ 'branch-a': '100' })).status).toBe(400); // шалтгаан заавал (MC-BR-4)
