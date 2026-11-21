@@ -1,8 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Alert, App, Button, Form, Input, InputNumber, Modal, Select, Switch, Tooltip } from 'antd';
+import { Alert, App, Button, Form, Input, Modal, Select, Switch, Tooltip } from 'antd';
 import { mn } from '@los/ui';
 import type { MakerCheckerPolicyDto } from '@los/contracts';
+import { PlainNumberInput } from '../../admin/PlainNumberInput';
 import { useUpdatePolicy } from '../hooks';
 import { CHECKER_ROLES, describeChange, fmt, roleLabel, type CheckerRole } from '../labels';
 import { COMMENT_MIN, EXPIRES_MAX, EXPIRES_MIN, textErrorMessage, validateText } from '../validation';
@@ -131,7 +132,8 @@ export function PolicyEditModal({ policy, presetEnabled, onClose, onOpenRequest 
             },
           ]}
         >
-          <InputNumber min={EXPIRES_MIN} max={EXPIRES_MAX} precision={0} style={{ width: 160 }} />
+          {/* InputNumber min/max нь 0→1, 1000→720 гэж чимээгүй засдаг байсан (F9-28): текст хэвээр үлдэж, дээрх шалгалт алдаа үзүүлж, илгээх товч идэвхгүй. */}
+          <PlainNumberInput style={{ width: 160 }} />
         </Form.Item>
         <Form.Item
           name="reason"

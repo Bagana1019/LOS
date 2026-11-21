@@ -1,15 +1,28 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
-import { App, Alert, Button, Flex, InputNumber, Input, Select, Skeleton, Table, Typography } from 'antd';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { App, Alert, Button, Flex, Input, Select, Skeleton, Table, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
-import { APPROVAL_LEVELS_TARGET_TYPE, validateApprovalLevels, type ApprovalLevelInput } from '@los/contracts';
+import { APPROVAL_LEVELS_TARGET_TYPE, validateApprovalLevels } from '@los/contracts';
+import { MoneyInput } from '../../components/form';
 import { t, formatMoney } from '../../lib/i18n';
 import { errorText } from './admin.utils';
 import { useLevels, useSaveLevels, useUsers } from './admin.hooks';
+import { firstLevelProblem, levelProblems, levelsFromRows, patchLevel, type LevelRow } from './approval-levels-form';
 import { BackLink } from './SettingsHome';
 import { PendingChangeNotice, ReasonField, reasonOk, submittedText } from './FourEyes';
+import { PlainNumberInput } from './PlainNumberInput';
 
-type Row = ApprovalLevelInput;
+type Row = LevelRow;
+
+/** Тоон талбар + (байвал) доор нь алдааны мессеж. Мессежийг тест `${id}-error`-оор олно. */
+function FieldCell({ id, problem, children }: { id: string; problem?: string; children: ReactNode }) {
+  return (
+    <Flex vertical gap={2}>
+      {children}
+      {problem ? <Typography.Text type="danger" role="alert" style={{ fontSize: 12 }} data-testid={`${id}-error`}>{problem}</Typography.Text> : null}
+    </Flex>
+  );
+}
 const APPROVER_ROLES = ['APPROVER', 'BRANCH_MANAGER', 'ADMIN'];
 
 /** BR-13 · Зээлийн дүнгээр шатлах батлах түвшин, босго, SLA, батлагчид. Босго завсаргүй байх шалгалт `validateApprovalLevels` (сервер давхар шалгана). */
@@ -22,14 +35,11 @@ export function ApprovalLevelsPage() {
   const [reason, setReason] = useState('');
   useEffect(() => { if (levels.data) setRows(levels.data.map(({ id: _id, ...r }) => r)); }, [levels.data]);
 
-  const error = useMemo(() => validateApprovalLevels(rows), [rows]);
+  // Талбарын алдаа (тоо биш, хүрээнээс гарсан, хоосон) түрүүлнэ; босго завсаргүй эсэх шалгалт зөвхөн талбарууд зөв үед (NaN-д утгагүй).
+  const fieldProblem = useMemo(() => firstLevelProblem(rows), [rows]);
+  const error = useMemo(() => (fieldProblem ? null : validateApprovalLevels(rows)), [rows, fieldProblem]);
   const userOptions = (users.data ?? []).filter((u) => u.isActive && u.roles.some((r) => APPROVER_ROLES.includes(r))).map((u) => ({ value: u.id, label: `${u.fullName} (${u.username})` }));
-  const patch = (i: number, p: Partial<Row>) => setRows((rs) => {
-    const next = rs.map((r, j) => (j === i ? { ...r, ...p } : r));
-    // Дээд дүн өөрчлөгдвөл дараагийн түвшний доод дүн дагана (завсар үүсгэхгүй)
-    if ('amountTo' in p && next[i + 1] && p.amountTo != null) next[i + 1] = { ...next[i + 1]!, amountFrom: p.amountTo };
-    return next;
-  });
+  const patch = (i: number, p: Partial<Row>) => setRows((rs) => patchLevel(rs, i, p));
   const add = () => setRows((rs) => {
     const last = rs[rs.length - 1];
     const from = last?.amountTo ?? (last ? last.amountFrom + 1_000_000 : 0);
@@ -44,11 +54,28 @@ export function ApprovalLevelsPage() {
     { title: t('admin.levels.col.from'), width: 150, render: (_, r) => formatMoney(r.amountFrom, 'MNT') },
     {
       title: t('admin.levels.col.to'), width: 190,
-      render: (_, r, i) => (i === rows.length - 1
-        ? <Typography.Text type="secondary">{t('admin.levels.unbounded')}</Typography.Text>
-        : <InputNumber style={{ width: '100%' }} min={1} step={1_000_000} value={r.amountTo ?? undefined} onChange={(v) => patch(i, { amountTo: v == null ? null : Number(v) })} />),
+      render: (_, r, i) => {
+        if (i === rows.length - 1) return <Typography.Text type="secondary">{t('admin.levels.unbounded')}</Typography.Text>;
+        const problem = levelProblems(r, false).amountTo;
+        // "5сая" → 5,000,000 (ойлгогдоно), "-5"/"есөн сая" → алдаа; текстийг чимээгүй өөрчлөхгүй (F2-8).
+        return (
+          <FieldCell id={`level-${i}-to`} problem={problem}>
+            <MoneyInput data-testid={`level-${i}-to`} aria-label={t('admin.levels.col.to')} status={problem ? 'error' : undefined} value={r.amountTo} onChange={(v) => patch(i, { amountTo: v === undefined ? null : v })} />
+          </FieldCell>
+        );
+      },
     },
-    { title: t('admin.levels.col.sla'), width: 110, render: (_, r, i) => <InputNumber min={1} max={720} value={r.slaHours} onChange={(v) => patch(i, { slaHours: Number(v ?? 24) })} /> },
+    {
+      title: t('admin.levels.col.sla'), width: 130,
+      render: (_, r, i) => {
+        const problem = levelProblems(r, i === rows.length - 1).slaHours;
+        return (
+          <FieldCell id={`level-${i}-sla`} problem={problem}>
+            <PlainNumberInput data-testid={`level-${i}-sla`} aria-label={t('admin.levels.col.sla')} status={problem ? 'error' : undefined} value={r.slaHours} onChange={(v) => patch(i, { slaHours: v })} />
+          </FieldCell>
+        );
+      },
+    },
     {
       title: t('admin.levels.col.members'),
       render: (_, r, i) => (
@@ -59,7 +86,7 @@ export function ApprovalLevelsPage() {
     },
   ];
 
-  const onSave = () => save.mutate({ levels: rows, reason: reason.trim() }, {
+  const onSave = () => save.mutate({ levels: levelsFromRows(rows), reason: reason.trim() }, {
     onSuccess: (r) => { setReason(''); void message.success(submittedText(r, 'admin.levels.applied_direct')); },
     onError: (e) => void message.error(errorText(e)),
   });
@@ -76,6 +103,7 @@ export function ApprovalLevelsPage() {
           <>
             <Table<Row> rowKey="levelNo" size="small" pagination={false} columns={columns} dataSource={rows} scroll={{ x: 900 }} />
             {rows.some((r) => r.members.length === 0) ? <Alert type="warning" showIcon message={t('admin.levels.empty_members')} /> : null}
+            {fieldProblem ? <Alert type="error" showIcon message={fieldProblem} data-testid="level-field-problem" /> : null}
             {error ? <Alert type="error" showIcon message={error} /> : null}
             <Alert type="info" showIcon message={t('admin.four_eyes.notice')} />
             <ReasonField value={reason} onChange={setReason} />
@@ -83,7 +111,7 @@ export function ApprovalLevelsPage() {
               <Button onClick={add} disabled={rows.length >= 10}>{t('admin.levels.add')}</Button>
               <Button onClick={removeLast} disabled={rows.length <= 1}>{t('admin.levels.remove_last')}</Button>
               <Button onClick={() => levels.data && setRows(levels.data.map(({ id: _id, ...r }) => r))}>{t('admin.levels.reset')}</Button>
-              <Button type="primary" onClick={onSave} loading={save.isPending} disabled={!!error || rows.length === 0 || !reasonOk(reason)}>{t('admin.four_eyes.submit')}</Button>
+              <Button type="primary" onClick={onSave} loading={save.isPending} disabled={!!fieldProblem || !!error || rows.length === 0 || !reasonOk(reason)}>{t('admin.four_eyes.submit')}</Button>
             </Flex>
           </>
         )}

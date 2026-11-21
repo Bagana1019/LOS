@@ -1,9 +1,11 @@
 'use client';
-import { App as AntApp, Alert, Button, Card, Collapse, Descriptions, Flex, Form, Input, InputNumber, Tag, Typography } from 'antd';
+import { App as AntApp, Alert, Button, Card, Collapse, Descriptions, Flex, Form, Input, Tag, Typography } from 'antd';
 import { isManualValueAsset, type CollateralView, type SuggestValuationResponse } from '@los/contracts';
 import { MAX_MONEY, MoneyInput, moneyRules } from '../../components/form';
 import { EMPTY_VALUE, formatDate, formatDateTime, formatMnt, formatPercent } from '../../lib/format';
 import { t } from '../../lib/i18n';
+import { PlainNumberInput } from '../admin/PlainNumberInput';
+import { plainNumberRules } from '../admin/plain-number-rules';
 import { canWriteBlocked } from './write-gates';
 import { ApiErrorAlert } from '../documents/shared/ApiErrorAlert';
 import { buildSaveValuationRequest, isDemoSuggestion, overrideReasonRequired, suggestionWarningKey, toFieldErrors, unavailableReasonKey, valuationStatus } from './collateral.utils';
@@ -13,6 +15,9 @@ import { StatusTag } from './StatusTag';
 import type { TabProps } from './TabProps';
 import { ValuationHistory } from './ValuationHistory';
 import { useSaveValuation, useSuggestValuation } from './useCollateral';
+
+/** Гүйлтийн дээд хязгаар (км) — гэрээний `SaveValuationRequest.mileageKm`-тэй ижил (өмнө нь InputNumber max). */
+const MILEAGE_MAX_KM = 2_000_000;
 
 /** Үнэлгээ (FR-14): одоогийн үнэлгээ, системийн санал + haircut, ЗЭЗ-ийн эцсийн дүн (өөрчилбөл шалтгаан заавал), гадны лицензтэй үнэлгээ, түүх. */
 export function ValuationTab({ applicationId, item, write, onChanged }: TabProps) {
@@ -87,9 +92,11 @@ function InternalValuationForm({ applicationId, item, write, onChanged }: TabPro
   const reasonRequired = overrideReasonRequired({ manualValueRequired: manual, suggestion, marketValue });
   const storedMileage = typeof item.description.mileageKm === 'number' ? item.description.mileageKm : undefined;
 
-  const runSuggest = () =>
+  const runSuggest = async () => {
+    // Гүйлтийн текст буруу ("5сая", "-5") бол санал авахгүй: алдаа талбарт гарна (өмнө нь чимээгүй орхигдож, гүйлтгүй санал авдаг байв).
+    try { await form.validateFields(['mileageKm']); } catch { return; }
     suggest.mutate(
-      { collateralId: item.id, ...(typeof mileage === 'number' ? { mileageKm: mileage } : {}) },
+      { collateralId: item.id, ...(typeof mileage === 'number' && Number.isFinite(mileage) ? { mileageKm: mileage } : {}) },
       {
         onSuccess: (res) => {
           // Саналыг эцсийн дүнгийн талбарт урьдчилан бөглөнө (ЗЭЗ засаж болно). Санал байхгүй бол оруулсан дүн хэвээр.
@@ -97,6 +104,7 @@ function InternalValuationForm({ applicationId, item, write, onChanged }: TabPro
         },
       },
     );
+  };
 
   const onFinish = (values: FormValues) => {
     const built = buildSaveValuationRequest({
@@ -125,14 +133,14 @@ function InternalValuationForm({ applicationId, item, write, onChanged }: TabPro
         onFinish={onFinish}
       >
         {item.assetType === 'VEHICLE' ? (
-          <Form.Item name="mileageKm" label={t('collateral.valuation.mileage')} extra={t('collateral.valuation.mileageHint')}>
-            <InputNumber<number> min={0} max={2_000_000} precision={0} style={{ width: '100%', maxWidth: 260 }} suffix={t('collateral.unit.km')} />
+          <Form.Item name="mileageKm" label={t('collateral.valuation.mileage')} extra={t('collateral.valuation.mileageHint')} rules={plainNumberRules({ label: t('collateral.valuation.mileage'), min: 0, max: MILEAGE_MAX_KM, integer: true })}>
+            <PlainNumberInput suffix={t('collateral.unit.km')} style={{ maxWidth: 260 }} />
           </Form.Item>
         ) : null}
 
         <Flex vertical gap={12} style={{ marginBottom: 16 }}>
           <div>
-            <Button onClick={runSuggest} loading={suggest.isPending} disabled={gate.disabled}>{t('collateral.valuation.suggest')}</Button>
+            <Button onClick={() => void runSuggest()} loading={suggest.isPending} disabled={gate.disabled}>{t('collateral.valuation.suggest')}</Button>
           </div>
           <ApiErrorAlert error={suggest.error} scope="collateral" />
           {result ? <SuggestionPanel result={result} /> : isManualValueAsset(item.assetType) ? <Typography.Text type="secondary">{t('collateral.valuation.manualHint')}</Typography.Text> : null}

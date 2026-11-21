@@ -1,11 +1,13 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
-import { Empty, Flex, InputNumber, List, Skeleton, Tag, Typography } from 'antd';
+import { Empty, Flex, List, Skeleton, Tag, Typography } from 'antd';
 import { EMPTY_VALUE, formatPercent } from '../../lib/format';
 import { t } from '../../lib/i18n';
+import { PlainNumberInput } from '../admin/PlainNumberInput';
 import { ApiErrorAlert } from '../documents/shared/ApiErrorAlert';
 import { assetTypeKey, stepHref } from './collateral.utils';
+import { withinDaysProblem } from './monitoring-days';
 import { useCollateralMonitoring } from './useCollateral';
 
 interface Props {
@@ -20,13 +22,21 @@ const REASON_COLOR = { REVALUATION_DUE: 'warning', INSURANCE_EXPIRING: 'warning'
  * Энэ бүрэлдэхүүнд route, цэс нэмээгүй — тайлан/хяналтын самбарт нэмэхэд бэлэн экспорт.
  */
 export function CollateralMonitoringList({ defaultWithinDays = 30 }: Props) {
-  const [days, setDays] = useState(defaultWithinDays);
-  const q = useCollateralMonitoring(days);
+  // `days` = талбарт бичсэн утга (хоосон/тоо биш байж болно); `applied` = жагсаалтыг татсан сүүлийн ЗӨВ утга.
+  const [days, setDays] = useState<number | undefined>(defaultWithinDays);
+  const [applied, setApplied] = useState(defaultWithinDays);
+  const problem = withinDaysProblem(days);
+  const q = useCollateralMonitoring(applied);
+  const onDaysChange = (value: number | undefined) => {
+    setDays(value);
+    if (value !== undefined && withinDaysProblem(value) === null) setApplied(value);
+  };
   return (
     <Flex vertical gap={12} data-testid="collateral-monitoring">
       <Flex align="center" gap={8} wrap>
         <label htmlFor="collateral-monitoring-days">{t('collateral.monitoring.withinDays')}</label>
-        <InputNumber id="collateral-monitoring-days" min={0} max={3650} precision={0} value={days} onChange={(v) => setDays(typeof v === 'number' ? v : defaultWithinDays)} />
+        <PlainNumberInput id="collateral-monitoring-days" style={{ width: 120 }} status={problem ? 'error' : undefined} aria-invalid={problem ? true : undefined} aria-describedby={problem ? 'collateral-monitoring-days-error' : undefined} value={days} onChange={onDaysChange} />
+        {problem ? <Typography.Text type="danger" role="alert" id="collateral-monitoring-days-error" data-testid="collateral-monitoring-days-error">{problem}</Typography.Text> : null}
       </Flex>
       {q.isPending ? (
         <Skeleton active paragraph={{ rows: 3 }} />
