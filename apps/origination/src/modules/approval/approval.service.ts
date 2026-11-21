@@ -134,7 +134,7 @@ export class ApprovalService {
     await this.machine.apply(tx, ctx, app.id, 'RETURNED', { via: 'SYSTEM', reason: comment });
     await tx.loanApplicationStep.updateMany({ where: { applicationId: app.id, stepKey: 'decision', status: { not: 'LOCKED' } }, data: { status: 'PENDING', completedAt: null, updatedBy: ctx.userId } });
     await this.events.publish(tx, { type: 'ApplicationReturned', applicationId: app.id, levelNo: active.levelNo, comment }, ctx);
-    await this.notifications.notifyUsers({ orgId: ctx.orgId, userIds: [app.officerId], type: 'RETURNED', applicationId: app.id, payload: { applicationNo: app.appNo, amount: num(app.amount) } }, tx);
+    await this.notifications.notifyUsers({ orgId: ctx.orgId, userIds: [app.officerId], type: 'RETURNED', applicationId: app.id, payload: { applicationNo: app.appNo, amount: num(app.amount), comment } }, tx); // F3-3: the single RETURNED bell carries the reason
   }
 
   private async notifyLevel(tx: Tx, app: LoanApplication, level: LevelRow): Promise<void> {
