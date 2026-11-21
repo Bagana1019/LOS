@@ -15,7 +15,7 @@
 //    changedAt = max(цаг, өмнөх updatedAt + 1ms): цаг буцсан/ижил ms-д ч дараалал алдагдахгүй.
 import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import type { ZodError, z } from 'zod';
-import type { BlacklistEntry, BlacklistImportResult } from '@los/contracts';
+import { BLACKLIST_STALE, type BlacklistEntry, type BlacklistImportResult } from '@los/contracts';
 import { hashRegisterNo, normalizeRegisterNo } from '@los/database';
 import { MakerCheckerService } from '../maker-checker/maker-checker.service';
 import { BLACKLIST_CHANGE_ACTION, BLACKLIST_CHANGE_TARGET } from './blacklist-escalation.handler';
@@ -35,7 +35,9 @@ type Outcome = 'created' | 'updated' | 'skipped';
 export type ImportItem = { row: number; data: unknown } | { row: number; error: string };
 
 const DUPLICATE_MESSAGE = 'An entry with the same register number and list type already exists';
-const STALE_MESSAGE = 'Blacklist entry was modified concurrently, retry';
+/** F8-9: хуучирсан маягт / зэрэг засвар — НЭГ 409 хэлбэр `{ code, message }`; UI `code`-оор "Шинэчлэх" үйлдлийг харуулна. */
+const STALE_MESSAGE = 'Бичлэг өөр хэрэглэгчээр өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу';
+const staleConflict = () => new ConflictException({ code: BLACKLIST_STALE, message: STALE_MESSAGE });
 /** Импортын мөр DB алдаагаар унавал: алдааны текст (утга агуулж болзошгүй) хариу/лог-д орохгүй. */
 const ROW_FAILED_MESSAGE = 'Row could not be saved (internal error)';
 
@@ -95,6 +97,8 @@ export class BlacklistService {
 
   async update(ctx: RequestContext, id: string, patch: z.infer<typeof BlacklistPatchBody>): Promise<BlacklistEntry> {
     const row = await this.mustFind(ctx, id);
+    // F8-9: маягтын ачаалсан updatedAt-аас хойш өөр засвар орсон бол чимээгүй дарахгүй. Огноог мөч (instant)-ээр харьцуулна; өгөөгүй бол шалгалтгүй.
+    if (patch.expectedUpdatedAt !== undefined && new Date(patch.expectedUpdatedAt).getTime() !== row.updatedAt.getTime()) throw staleConflict();
     // F8-1: регистр эсвэл төрөл өөрчлөгдөх бол үр дүнгийн хос (регистр, төрөл) `check`-ээр олдох ёстой. Бусад засвар (нэр, идэвхгүй болгох) хуучин буруу мөрийг түгжихгүй.
     if (patch.registerNo !== undefined || patch.customerType !== undefined) {
       assertRegisterMatchesType(patch.registerNo ?? this.cipher.decrypt(row.registerNoEncrypted), patch.customerType ?? row.customerType);
@@ -302,7 +306,7 @@ export class BlacklistService {
       await this.repo.saveWithEvent(row, this.event(ctx, row, occurredAt), expectedUpdatedAt, audit);
     } catch (e) {
       if (e instanceof DuplicateBlacklistEntryError) throw new ConflictException(DUPLICATE_MESSAGE);
-      if (e instanceof StaleBlacklistEntryError) throw new ConflictException(STALE_MESSAGE);
+      if (e instanceof StaleBlacklistEntryError) throw staleConflict();
       throw e;
     }
   }
@@ -335,7 +339,7 @@ export class BlacklistService {
       id: row.id, orgId: row.orgId, registerNo: this.cipher.decrypt(row.registerNoEncrypted), customerType: row.customerType,
       name: row.name, listType: row.listType, severity: row.severity, source: row.source, validUntil: row.validUntil?.toISOString() ?? null,
       deactivationReason: row.deactivationReason, pendingSeverity: row.pendingSeverity, reasonCode: row.reasonCode, reasonText: row.reasonText,
-      isActive: row.isActive, registeredBy: row.registeredBy, registeredAt: row.registeredAt.toISOString(),
+      isActive: row.isActive, registeredBy: row.registeredBy, registeredAt: row.registeredAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
     };
   }
 }

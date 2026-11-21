@@ -355,7 +355,7 @@ describe.skipIf(!process.env.TEST_DATABASE_URL)('PrismaBlacklistRepository (Post
           const loser = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
           expect(loser?.reason).toBeInstanceOf(ConflictException);
           expect((loser?.reason as ConflictException).getStatus()).toBe(409);
-          expect((loser?.reason as ConflictException).message).toContain('modified concurrently');
+          expect((loser?.reason as ConflictException).getResponse()).toEqual({ code: 'BLACKLIST_STALE', message: expect.stringContaining('өөр хэрэглэгчээр өөрчлөгдсөн') }); // F8-9
 
           const row = await repo.findById(orgId, id);
           const events = await eventsOf(id);

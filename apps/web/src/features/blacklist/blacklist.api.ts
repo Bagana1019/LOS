@@ -8,7 +8,9 @@ const Page = z.object({ total: z.number(), items: z.array(BlacklistEntry) });
 export type BlacklistPage = z.infer<typeof Page>;
 
 export const fetchBlacklist = (p: BlacklistListParams) => originationFetch<BlacklistPage>(`/blacklist${qs({ ...p })}`, { schema: Page });
-export const createBlacklistEntry = (body: BlacklistEntryInput) => originationFetch<BlacklistEntry>('/blacklist', { method: 'POST', body, schema: BlacklistEntry });
+/** F8-9: нэг бичлэгийн хамгийн сүүлийн төлөв (хуучирсан маягтыг «Шинэчлэх»-д ашиглана). */
+export const fetchBlacklistEntry = (id: string) => originationFetch<BlacklistEntry>(`/blacklist/${encodeURIComponent(id)}`, { schema: BlacklistEntry });
+export const createBlacklistEntry =(body: BlacklistEntryInput) => originationFetch<BlacklistEntry>('/blacklist', { method: 'POST', body, schema: BlacklistEntry });
 export const updateBlacklistEntry = (id: string, body: BlacklistEntryUpdate) => originationFetch<BlacklistEntry>(`/blacklist/${encodeURIComponent(id)}`, { method: 'PATCH', body, schema: BlacklistEntry });
 /** Q-133: шалтгаан заавал. */
 export const deactivateBlacklistEntry = (id: string, reason: string) => originationFetch<BlacklistEntry>(`/blacklist/${encodeURIComponent(id)}/deactivate`, { method: 'POST', body: { reason }, schema: BlacklistEntry });

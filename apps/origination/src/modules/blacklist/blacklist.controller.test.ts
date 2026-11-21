@@ -303,6 +303,23 @@ describe('BlacklistController (HTTP)', () => {
       await api().patch('/api/blacklist/nope').set(ADMIN).send({ name: 'x' }).expect(404);
     });
 
+    // F8-9: PATCH-д expectedUpdatedAt — 200 (таарсан) / 409 BLACKLIST_STALE (өөр) / 400 (буруу хэлбэр) / талбаргүй бол хуучин ажиллагаа
+    it('F8-9: PATCH with the loaded updatedAt is 200, with an outdated one 409 {code, message}, with a malformed one 400, without the field 200', async () => {
+      const created = (await api().post('/api/blacklist').set(ADMIN).send(entryInput()).expect(201)).body;
+      expect(typeof created.updatedAt).toBe('string');
+      const url = `/api/blacklist/${created.id}`;
+
+      const tabA = await api().patch(url).set(ADMIN).send({ name: 'A-гийн нэр', expectedUpdatedAt: created.updatedAt }).expect(200);
+      expect(tabA.body).toMatchObject({ name: 'A-гийн нэр', updatedAt: expect.any(String) });
+
+      const tabB = await api().patch(url).set(ADMIN).send({ reasonText: 'B-гийн шалтгаан', expectedUpdatedAt: '2000-01-01T00:00:00.000Z' }).expect(409);
+      expect(tabB.body).toMatchObject({ code: 'BLACKLIST_STALE', message: 'Бичлэг өөр хэрэглэгчээр өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу' });
+      expect((await api().get(url).set(ADMIN)).body).toMatchObject({ name: 'A-гийн нэр', reasonText: 'Delinquent over 90 days' });
+
+      await api().patch(url).set(ADMIN).send({ name: 'X', expectedUpdatedAt: 'yesterday' }).expect(400);
+      await api().patch(url).set(ADMIN).send({ name: 'Талбаргүй' }).expect(200);
+    });
+
     it('accepts the GET response body back as a PATCH (reasonText: null round-trips) without emitting an event', async () => {
       const created = await api().post('/api/blacklist').set(ADMIN).send({ ...entryInput(), reasonText: undefined }).expect(201);
       expect(created.body.reasonText).toBeNull();

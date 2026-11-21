@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  AML_ID_MAX_LENGTH, AmlHitReviewRequest, AmlPolicy, AmlScreenRequest, AmlSubject, BlacklistEntryInput, BlacklistEntryUpdate, DEFAULT_AML_POLICY,
+  AML_ID_MAX_LENGTH, AmlHitReviewRequest, AmlPolicy, AmlScreenRequest, AmlSubject, BLACKLIST_STALE, BlacklistEntry, BlacklistEntryInput, BlacklistEntryUpdate, DEFAULT_AML_POLICY,
   isUsableRegisterNo, MAX_NAME_TOKENS, MAX_SUBJECT_NAME_TOKENS, nameTokenCount, normalizedRegisterNoLength,
 } from './compliance';
 import { BorrowerRole } from './enums';
@@ -356,6 +356,41 @@ describe('BlacklistEntryInput / BlacklistEntryUpdate', () => {
     expect(BlacklistEntryUpdate.safeParse({ reasonText: 5 }).success).toBe(false);
     // Create-д null зөвшөөрөгдөхгүй хэвээр (зөвхөн засварт арилгана).
     expect(BlacklistEntryInput.safeParse({ ...entry, reasonText: null }).success).toBe(false);
+  });
+
+  // F8-9: хоёр tab-ын зэрэгцээ засварыг чимээгүй дарахаас сэргийлэх optimistic concurrency
+  describe('expectedUpdatedAt (F8-9)', () => {
+    const AT = '2026-11-21T09:30:15.123Z';
+
+    it('Update accepts an optional ISO datetime and keeps it; absent stays absent (backwards compatible)', () => {
+      expect(BlacklistEntryUpdate.parse({ name: 'Болд', expectedUpdatedAt: AT })).toEqual({ name: 'Болд', expectedUpdatedAt: AT });
+      expect(BlacklistEntryUpdate.parse({ name: 'Болд' })).toEqual({ name: 'Болд' });
+      expect(BlacklistEntryUpdate.parse({})).not.toHaveProperty('expectedUpdatedAt');
+    });
+
+    it('Update rejects a non-datetime, null and a number so a typo can never silently disable the check', () => {
+      for (const bad of ['yesterday', '2026-11-21', '', null, 1_763_717_415_123]) {
+        expect(BlacklistEntryUpdate.safeParse({ expectedUpdatedAt: bad }).success, String(bad)).toBe(false);
+      }
+    });
+
+    it('expectedUpdatedAt is an edit-only field: Create ignores it (it is not part of the entry)', () => {
+      expect(BlacklistEntryInput.parse({ ...entry, expectedUpdatedAt: AT })).not.toHaveProperty('expectedUpdatedAt');
+    });
+
+    it('the entry returned to clients exposes updatedAt (so the form can echo it back); older servers without it still parse', () => {
+      const full = {
+        ...entry, listType: 'DELINQUENT', severity: 'BLACK', source: 'INTERNAL', id: 'e1', orgId: 'o1', validUntil: null, deactivationReason: null,
+        pendingSeverity: null, reasonText: null, isActive: true, registeredBy: 'u1', registeredAt: AT,
+      };
+      expect(BlacklistEntry.parse({ ...full, updatedAt: AT }).updatedAt).toBe(AT);
+      expect(BlacklistEntry.parse(full).updatedAt).toBeUndefined();
+      expect(BlacklistEntry.safeParse({ ...full, updatedAt: 'not-a-date' }).success).toBe(false);
+    });
+
+    it('exports the stable error code the UI keys on', () => {
+      expect(BLACKLIST_STALE).toBe('BLACKLIST_STALE');
+    });
   });
 });
 

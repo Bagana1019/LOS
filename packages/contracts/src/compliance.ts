@@ -278,7 +278,14 @@ export const BlacklistEntryUpdate = BlacklistEntryInput.partial().extend({
   isActive: z.boolean().optional(),
   /** Q-133: идэвхгүй болгоход (`isActive: false`) заавал. */
   deactivationReason: z.string().trim().min(3).max(500).nullable().optional(),
+  /**
+   * F8-9: маягтын ачаалсан `updatedAt`. Өгөгдсөн ба хадгалагдсан утгаас ӨӨР бол 409 `BLACKLIST_STALE` (2 tab бие биенийхээ засварыг дарахгүй).
+   * Өгөөгүй бол өмнөх шигээ шалгалтгүй (backwards compatible).
+   */
+  expectedUpdatedAt: z.string().datetime({ offset: true }).optional(),
 });
+/** F8-9: хуучирсан маягтын засварт 409-ийн `code` (UI үүгээр "Шинэчлэх" үйлдлийг харуулна). */
+export const BLACKLIST_STALE = 'BLACKLIST_STALE';
 /** Q-133: `POST /blacklist/:id/deactivate` */
 export const BlacklistDeactivateBody = z.object({ reason: z.string().trim().min(3, 'reason is required').max(500) });
 export type BlacklistDeactivateBody = z.infer<typeof BlacklistDeactivateBody>;
@@ -294,6 +301,8 @@ export const BlacklistEntry = BlacklistEntryInput.extend({
   isActive: z.boolean(),
   registeredBy: z.string(),
   registeredAt: z.string().datetime(),
+  /** F8-9: сүүлд өөрчлөгдсөн цаг (ms). Маягт үүнийг `expectedUpdatedAt` болгон буцаана. Хуучин сервер өгөхгүй байж болох тул optional. */
+  updatedAt: z.string().datetime().optional(),
 });
 export type BlacklistEntry = z.infer<typeof BlacklistEntry>;
 export const BlacklistImportRow = BlacklistEntryInput;
