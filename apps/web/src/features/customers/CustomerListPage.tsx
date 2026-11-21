@@ -6,9 +6,13 @@ import type { ColumnsType } from 'antd/es/table';
 import { CustomerType, type CustomerSummary } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { useAuth } from '../../lib/auth/auth-context';
+import { registerSearchHint, type RegisterSearchHint } from './register-hint';
 import { useCustomerList } from './useCustomers';
 
 const { Title, Text } = Typography;
+
+/** F1-1: регистр зөвхөн бүтнээр тулгагдах тул хэсэгчилсэн / Latin регистрийн хайлт хоосон үед тайлбарлана. */
+const SEARCH_HINT_KEY: Record<RegisterSearchHint, string> = { PARTIAL: 'customer.search.hint.partial', LATIN: 'customer.search.hint.latin' };
 
 /** FR-2.2: харилцагчийн жагсаалт + хайлт (регистр / овог нэр / утас). */
 export function CustomerListPage() {
@@ -21,6 +25,7 @@ export function CustomerListPage() {
   const list = useCustomerList({ q: q || undefined, customerType: type, page, pageSize });
   const canWrite = !!me && me.permissions.includes('customer:write');
 
+  const searchHint = registerSearchHint(q);
   const open = (id: string) => router.push(`/customer/${id}`);
   const columns: ColumnsType<CustomerSummary> = [
     { title: t('customer.col.register'), dataIndex: 'registerNoMasked', key: 'register', render: (v: string, r) => <a href={`/customer/${r.id}`} onClick={(e) => { e.preventDefault(); open(r.id); }}>{v}</a> },
@@ -61,7 +66,12 @@ export function CustomerListPage() {
         loading={list.isFetching}
         dataSource={list.data?.items ?? []}
         columns={columns}
-        locale={{ emptyText: t('customer.list.empty') }}
+        locale={{ emptyText: (
+          <div data-testid="customer-list-empty">
+            {t('customer.list.empty')}
+            {searchHint ? <div><Text type="secondary" data-testid="customer-search-hint">{t(SEARCH_HINT_KEY[searchHint])}</Text></div> : null}
+          </div>
+        ) }}
         pagination={{ current: page, pageSize, total: list.data?.total ?? 0, showSizeChanger: true, onChange: (p, s) => { setPage(p); setPageSize(s); } }}
       />
     </div>

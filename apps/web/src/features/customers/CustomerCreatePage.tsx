@@ -12,6 +12,8 @@ import { describeCustomerError } from './customer-error';
 import { lookupToFetchResult, usesCitizenOtp } from './customer-legal';
 import { lookupCustomer } from './customers.api';
 import { xypOtpToFetchResult } from './customers.utils';
+import { registerInputProblem } from './register-hint';
+import { isOtpCodeUnusable } from './xyp-otp-state';
 import { useCreateCustomer, useLookupCustomer, useXypFetch, useXypOtp } from './useCustomers';
 import { XypOtpStep } from './XypOtpStep';
 
@@ -69,7 +71,7 @@ export function CustomerCreatePage() {
     xyp.reset();
     lookup.reset();
     create.reset();
-    if (!customerType) { setLocalError(t('error.INVALID_REGISTER_NO')); return; }
+    if (!customerType) { setLocalError(t(registerInputProblem(input) === 'LATIN' ? 'customer.new.registerLatin' : 'error.INVALID_REGISTER_NO')); return; } // F1-5
     setRegister(normalized);
     if (usesCitizenOtp(customerType)) requestCode(normalized);
     else checkLegal(normalized);
@@ -135,7 +137,7 @@ export function CustomerCreatePage() {
 
       {otpStep && !mode ? (
         <XypOtpStep
-          requestedAt={otpStep.requestedAt} errorMessage={xypErr?.message ?? null} submitting={xyp.isPending} resending={otp.isPending}
+          requestedAt={otpStep.requestedAt} errorMessage={xypErr?.message ?? null} exhausted={isOtpCodeUnusable(xypErr?.code)} submitting={xyp.isPending} resending={otp.isPending}
           onSubmit={verify} onResend={() => { if (register) requestCode(register); }} onManual={() => { setOtpStep(null); setMode({ kind: 'manual' }); }} onCancel={reset}
         />
       ) : null}
