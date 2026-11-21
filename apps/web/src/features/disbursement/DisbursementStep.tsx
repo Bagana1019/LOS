@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { Alert, Button, Card, Descriptions, Flex, Form, Input, InputNumber, List, Modal, Radio, Skeleton, Tag, Typography, App as AntApp } from 'antd';
-import type { UpdateDisbursementRequest } from '@los/contracts';
+import type { DisbursementView, UpdateDisbursementRequest } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { useAuth } from '../../lib/auth/auth-context';
 import { formatDateTime, formatMnt } from '../../lib/format';
@@ -10,6 +10,14 @@ import { useApproveDisbursement, useDisbursement, useRejectDisbursement, useSubm
 
 interface Props { applicationId: string; onChanged?: () => void }
 type FormValues = { disburseAmount?: number; disburseDate?: string; bankCode?: string; accountNo?: string; holderName?: string; accountOwnerType?: 'SELF' | 'THIRD_PARTY' };
+
+/** Серверт хадгалагдсан утга → формын утга. Хадгалсны дараа формыг үүгээр дахин тохируулна: дэлгэц дээр харагдаж буй утга ЯГ серверийнх байх ёстой (F5-3). */
+const formValuesOf = (d: DisbursementView): FormValues => ({
+  disburseAmount: d.disburseAmount || d.approvedAmount, disburseDate: d.disburseDate ?? new Date().toISOString().slice(0, 10), bankCode: d.bankCode ?? undefined,
+  holderName: d.holderName ?? undefined, accountOwnerType: d.accountOwnerType ?? 'SELF',
+});
+/** F5-3: 0 / хоосон дүнг `body()` чимээгүй алгасаж "хадгалагдлаа" гэдэг байсан — одоо талбарын алдаа. Contract: `disburseAmount` > 0. */
+const positiveAmount = (_: unknown, v: unknown): Promise<void> => (typeof v === 'number' && v > 0 ? Promise.resolve() : Promise.reject(new Error(t('disb.err.amount'))));
 
 /** Wizard-н "Зээл олгох хүсэлт" алхам (`/los/loan-application/:id/disburse`): данс, дүн, огноо → илгээх (G4) → Core-д олгох (G5, өөр хэрэглэгч). FR-12. */
 export function DisbursementStep({ applicationId, onChanged }: Props) {
@@ -30,7 +38,7 @@ export function DisbursementStep({ applicationId, onChanged }: Props) {
   const draft = d.status === 'DRAFT';
   const canEdit = draft && perms.has('disbursement:request');
   const pending = d.status === 'SUBMITTED' || d.status === 'FAILED';
-  const initial: FormValues = { disburseAmount: d.disburseAmount || d.approvedAmount, disburseDate: d.disburseDate ?? new Date().toISOString().slice(0, 10), bankCode: d.bankCode ?? undefined, holderName: d.holderName ?? undefined, accountOwnerType: d.accountOwnerType ?? 'SELF' };
+  const initial = formValuesOf(d);
   const body = (v: FormValues): UpdateDisbursementRequest => ({
     ...(v.disburseAmount ? { disburseAmount: v.disburseAmount } : {}), ...(v.disburseDate ? { disburseDate: v.disburseDate } : {}),
     ...(v.bankCode ? { bankCode: v.bankCode } : {}), ...(v.accountNo ? { accountNo: v.accountNo } : {}), ...(v.holderName ? { holderName: v.holderName } : {}), ...(v.accountOwnerType ? { accountOwnerType: v.accountOwnerType } : {}),
@@ -58,10 +66,10 @@ export function DisbursementStep({ applicationId, onChanged }: Props) {
       </Card>
       {canEdit ? (
         <Card size="small" title={t('disb.form')}>
-          <Form<FormValues> form={form} layout="vertical" initialValues={initial} onFinish={(v) => update.mutateAsync(body(v)).then(done('disb.saved')).catch(() => undefined)}>
+          <Form<FormValues> form={form} layout="vertical" initialValues={initial} onFinish={(v) => update.mutateAsync(body(v)).then((res) => { form.setFieldsValue({ ...formValuesOf(res), accountNo: undefined }); done('disb.saved')(); }).catch(() => undefined)}>
             <Flex gap={16} wrap>
-              <Form.Item name="disburseAmount" label={t('disb.field.amount')}><InputNumber min={0} style={{ width: 200 }} data-testid="disb-amount" /></Form.Item>
-              <Form.Item name="disburseDate" label={t('disb.field.date')}><Input type="date" style={{ width: 160 }} data-testid="disb-date" /></Form.Item>
+              <Form.Item name="disburseAmount" label={t('disb.field.amount')} rules={[{ validator: positiveAmount }]}><InputNumber min={0} style={{ width: 200 }} data-testid="disb-amount" /></Form.Item>
+              <Form.Item name="disburseDate" label={t('disb.field.date')} rules={[{ required: true, message: t('disb.err.date') }]}><Input type="date" style={{ width: 160 }} data-testid="disb-date" /></Form.Item>
               <Form.Item name="bankCode" label={t('disb.field.bank')}><Input style={{ width: 140 }} maxLength={20} data-testid="disb-bank" /></Form.Item>
               <Form.Item name="accountNo" label={t('disb.field.accountNo')} extra={d.accountNoMasked ? t('disb.field.accountHint', { masked: d.accountNoMasked }) : undefined}><Input style={{ width: 220 }} maxLength={34} data-testid="disb-account" /></Form.Item>
               <Form.Item name="holderName" label={t('disb.field.holder')}><Input style={{ width: 220 }} maxLength={200} data-testid="disb-holder" /></Form.Item>
