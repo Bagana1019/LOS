@@ -20,6 +20,7 @@ import { hashRegisterNo, normalizeRegisterNo } from '@los/database';
 import { MakerCheckerService } from '../maker-checker/maker-checker.service';
 import { BLACKLIST_CHANGE_ACTION, BLACKLIST_CHANGE_TARGET } from './blacklist-escalation.handler';
 import type { RequestContext } from './blacklist.context';
+import { assertRegisterMatchesType, InvalidRegisterError } from './blacklist.register';
 import {
   BLACKLIST_REPOSITORY, DuplicateBlacklistEntryError, StaleBlacklistEntryError,
   type BlacklistAudit, type BlacklistChangedEvent, type BlacklistRepository, type BlacklistRow,
@@ -94,6 +95,10 @@ export class BlacklistService {
 
   async update(ctx: RequestContext, id: string, patch: z.infer<typeof BlacklistPatchBody>): Promise<BlacklistEntry> {
     const row = await this.mustFind(ctx, id);
+    // F8-1: регистр эсвэл төрөл өөрчлөгдөх бол үр дүнгийн хос (регистр, төрөл) `check`-ээр олдох ёстой. Бусад засвар (нэр, идэвхгүй болгох) хуучин буруу мөрийг түгжихгүй.
+    if (patch.registerNo !== undefined || patch.customerType !== undefined) {
+      assertRegisterMatchesType(patch.registerNo ?? this.cipher.decrypt(row.registerNoEncrypted), patch.customerType ?? row.customerType);
+    }
     const next: BlacklistRow = { ...row };
     if (patch.registerNo !== undefined) {
       const registerNoHash = hashRegisterNo(patch.registerNo);
@@ -185,7 +190,9 @@ export class BlacklistService {
         if (reg.submit) await this.requestBlack(ctx, reg.row);
       } catch (e) {
         // Нэг мөрийн DB алдаа өмнө нь commit хийсэн мөрүүдийг тайлангүй үлдээж болохгүй: мөрийн алдаа болгож үргэлжлүүлнэ.
-        if (e instanceof ConflictException) {
+        if (e instanceof InvalidRegisterError) {
+          result.errors.push({ row: item.row, message: `${e.field}: ${e.message}` }); // F8-1: тогтмол мессеж, регистрийг эхo хийхгүй
+        } else if (e instanceof ConflictException) {
           result.errors.push({ row: item.row, message: e.message });
         } else {
           this.logger.error(`blacklist import row ${item.row} failed: ${errorLabel(e)} (correlationId=${ctx.correlationId})`);
@@ -198,6 +205,7 @@ export class BlacklistService {
 
   /** (org, register, listType)-ээр upsert. conflictIfActive: POST → идэвхтэй байвал 409; импорт → нэгтгэнэ/алгасна. `submit` = Хар болгох 4 нүдний хүсэлт илгээх шаардлагатай (Q-132). */
   private async register(ctx: RequestContext, input: CreateInput, conflictIfActive: boolean): Promise<{ outcome: Outcome; row: BlacklistRow; submit: boolean }> {
+    assertRegisterMatchesType(input.registerNo, input.customerType); // F8-1: POST ба импортын нэг шалгалт
     const registerNoHash = hashRegisterNo(input.registerNo);
     const reasonText = input.reasonText || null;
     const existing = await this.repo.findByKey(ctx.orgId, registerNoHash, input.listType);
