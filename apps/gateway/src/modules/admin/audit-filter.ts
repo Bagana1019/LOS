@@ -1,12 +1,7 @@
 import { AUDIT_ACTOR_LIMIT, type AuditActorOption } from '@los/contracts';
 
-/** LIKE-ийн орлуулагч (`%`, `_`) болон escape тэмдэгт (`\`)-ийг шууд тэмдэгт болгоно: Prisma `contains` нь escape хийдэггүй. */
-const escapeLike = (v: string): string => v.replace(/[\\%_]/g, '\\$&');
-
-/** F9-24 · Объект/үйлдлийн шүүлт: хэсэгчилсэн (contains), том/жижиг үсэг үл ялгах (ILIKE). */
-export function containsInsensitive(value: string) {
-  return { contains: escapeLike(value), mode: 'insensitive' as const };
-}
+/** F9-24 · Объект/үйлдлийн шүүлт (хэсэгчилсэн, том/жижиг үсэг үл ялгах, `%` `_` `\` escape-тэй): origination-ы аудит жагсаалттай нэг helper (@los/database). */
+export { containsInsensitive } from '@los/database';
 
 export interface ActorRow { id: string; username: string; fullName: string }
 

@@ -3,7 +3,7 @@ import {
   APPROVAL_LEVELS_ACTION_REPLACE, APPROVAL_LEVELS_TARGET_ID, APPROVAL_LEVELS_TARGET_TYPE,
   type ApprovalLevelDto, type AuditLogPage, type AuditLogQuery, type ContractNumberTemplateBody, type ReplaceApprovalLevelsRequest, type RequestContext, type SubmitChangeResult,
 } from '@los/contracts';
-import { buildEvent, enqueueOutbox, recordAudit } from '@los/database';
+import { buildEvent, containsInsensitive, enqueueOutbox, recordAudit } from '@los/database';
 import { DomainError } from '@los/nest-common';
 import { PrismaService } from '../../prisma.service';
 import { actorFrom } from '../maker-checker/actor';
@@ -62,8 +62,8 @@ export class AdminService {
   async audit(ctx: RequestContext, q: AuditLogQuery): Promise<AuditLogPage> {
     const where = {
       orgId: ctx.orgId,
-      ...(q.entity ? { entity: q.entity } : {}), ...(q.entityId ? { entityId: q.entityId } : {}), ...(q.actorId ? { actorId: q.actorId } : {}),
-      ...(q.action ? { action: q.action } : {}), ...(q.applicationId ? { applicationId: q.applicationId } : {}),
+      ...(q.entity ? { entity: containsInsensitive(q.entity) } : {}), ...(q.entityId ? { entityId: q.entityId } : {}), ...(q.actorId ? { actorId: q.actorId } : {}), // F9-24: объект/үйлдэл хэсэгчилсэн + үсгийн хэлбэр үл ялгана (gateway-тэй ижил)
+      ...(q.action ? { action: containsInsensitive(q.action) } : {}), ...(q.applicationId ? { applicationId: q.applicationId } : {}),
       ...(q.from || q.to ? { at: { ...(q.from ? { gte: new Date(q.from) } : {}), ...(q.to ? { lte: new Date(q.to) } : {}) } } : {}),
     };
     const [total, rows] = await Promise.all([
