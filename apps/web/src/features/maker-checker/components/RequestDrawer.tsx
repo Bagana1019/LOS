@@ -5,8 +5,11 @@ import type { ChangeRequestDto } from '@los/contracts';
 import { useNow, useRequest } from '../hooks';
 import { errorText, isApiError } from '../errors';
 import { DiffTable } from './DiffTable';
-import { diffSides, fieldLabelFor } from '../customer-change';
+import { buildChangeView, targetContext, targetName } from '../change-view';
 import { fmt } from '../labels';
+import { useBlacklistEntry, useDirectoryNames, useProductName } from '../lookups';
+import { rangeWarnings } from '../range-warnings';
+import { RangeWarningsAlert } from './RangeWarningsAlert';
 import { RequestActions } from './RequestActions';
 import { RequestSummary } from './RequestSummary';
 import { RequestTimeline } from './RequestTimeline';
@@ -57,24 +60,34 @@ function StatusNotes({ dto }: { dto: ChangeRequestDto }) {
 
 function DrawerBody({ dto }: { dto: ChangeRequestDto }) {
   const now = useNow();
-  const sides = diffSides(dto);
-  const labelOf = fieldLabelFor(dto.targetType);
+  const view = buildChangeView(dto);
+  const names = useDirectoryNames();
+  // Best-effort lookups (F8-3): a blacklisted person's name/register and a product's name. Failures keep the id as secondary text.
+  const entry = useBlacklistEntry(dto.targetId, dto.targetType === 'BLACKLIST_ENTRY');
+  const product = useProductName(dto.targetId, dto.targetType === 'PRODUCT' && targetName(dto, {}) === null);
+  const name = targetName(dto, { blacklistName: entry.data?.name, productName: product.data });
+  const target = { name, unavailable: entry.isError || product.isError, context: targetContext(dto, entry.data) };
+  const warnings = dto.status === 'PENDING' ? rangeWarnings(dto) : [];
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
       <StatusNotes dto={dto} />
-      <RequestSummary dto={dto} now={now} />
+      <RangeWarningsAlert warnings={warnings} />
+      <RequestSummary dto={dto} now={now} names={names} target={target} />
       <section>
         <Title level={5}>{mn['maker_checker.drawer.reason']}</Title>
         <Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{dto.reason}</Paragraph>
       </section>
       <section>
         <Title level={5}>{mn['maker_checker.drawer.diff']}</Title>
-        {sides.sealedFields ? (
-          <Paragraph type="secondary">{fmt(mn['maker_checker.customer.sealed_fields'], { fields: sides.sealedFields.map(labelOf).join(', ') })}</Paragraph>
+        {view.note && <Paragraph type="secondary">{view.note}</Paragraph>}
+        {view.sealedFields ? (
+          <Paragraph type="secondary">{fmt(mn['maker_checker.customer.sealed_fields'], { fields: view.sealedFields.map(view.labelOf).join(', ') })}</Paragraph>
         ) : (
           <>
-            {sides.before == null && <Paragraph type="secondary">{mn['maker_checker.diff.no_before']}</Paragraph>}
-            <DiffTable before={sides.before} payload={sides.after} labelOf={labelOf} />
+            {view.before == null && <Paragraph type="secondary">{mn['maker_checker.diff.no_before']}</Paragraph>}
+            <div data-testid="mc-diff">
+              <DiffTable before={view.before} payload={view.after} labelOf={view.labelOf} valueOf={view.valueOf} />
+            </div>
           </>
         )}
         <Collapse
@@ -86,6 +99,9 @@ function DrawerBody({ dto }: { dto: ChangeRequestDto }) {
               label: mn['maker_checker.drawer.raw'],
               children: (
                 <Space direction="vertical" style={{ width: '100%' }}>
+                  <Text type="secondary" code>
+                    {dto.targetType} / {dto.action}
+                  </Text>
                   <Text type="secondary">{mn['maker_checker.raw.before']}</Text>
                   <pre style={{ margin: 0, maxHeight: 280, overflow: 'auto', fontSize: 12 }}>{pretty(dto.before)}</pre>
                   <Text type="secondary">{mn['maker_checker.raw.payload']}</Text>
@@ -98,7 +114,7 @@ function DrawerBody({ dto }: { dto: ChangeRequestDto }) {
       </section>
       <section>
         <Title level={5}>{mn['maker_checker.drawer.timeline']}</Title>
-        <RequestTimeline history={dto.history} />
+        <RequestTimeline history={dto.history} userName={names.user} />
       </section>
     </Space>
   );

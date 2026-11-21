@@ -6,6 +6,7 @@ import { mn } from '@los/ui';
 import { useNow, useRequests } from '../hooks';
 import { isForbidden, errorText } from '../errors';
 import { describeChange, fmt, statusLabel } from '../labels';
+import { useDirectoryNames } from '../lookups';
 import { formatDateTime, formatRemaining, isUrgent, msUntil } from '../time';
 import { RequestActions } from './RequestActions';
 import { StatusTag } from './StatusTag';
@@ -54,6 +55,7 @@ export function RequestsTable({ scope, handlers, onOpen }: Props) {
   const [pageSize, setPageSize] = useState(20);
   const [status, setStatus] = useState<ChangeRequestStatus | undefined>();
   const now = useNow();
+  const names = useDirectoryNames();
   const { data, error, isPending, isFetching, refetch } = useRequests({ scope, status, page, pageSize });
 
   // After a decision the current page can run empty (the request left this scope): step back to the last page.
@@ -82,7 +84,7 @@ export function RequestsTable({ scope, handlers, onOpen }: Props) {
     { title: mn['maker_checker.col.created_at'], dataIndex: 'createdAt', width: 140, render: (v: string) => formatDateTime(v) },
     { title: mn['maker_checker.col.type'], key: 'type', width: 190, render: (_, r) => <TypeCell dto={r} /> },
     { title: mn['maker_checker.col.target'], dataIndex: 'targetId', width: 120, ellipsis: true },
-    { title: mn['maker_checker.col.maker'], dataIndex: 'makerId', width: 110, ellipsis: true },
+    { title: mn['maker_checker.col.maker'], dataIndex: 'makerId', width: 110, ellipsis: true, render: (id: string) => names.user(id) ?? id },
     { title: mn['maker_checker.col.reason'], dataIndex: 'reason', width: 180, ellipsis: true },
     { title: mn['maker_checker.col.expires_at'], key: 'expiresAt', width: 150, render: (_, r) => <ExpiryCell dto={r} now={now} /> },
     {
