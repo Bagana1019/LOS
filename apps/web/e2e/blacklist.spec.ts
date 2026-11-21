@@ -36,10 +36,13 @@ test('цэс: Хар жагсаалт нь Тохиргооны яг дээр, �
   await page.getByLabel('Регистрийн дугаар').fill('уб 11112222');
   await page.getByLabel('Нэр', { exact: true }).fill('Шинэ Этгээд');
   await page.getByText('Саарал', { exact: true }).last().click();
+  // F8-7: ангилал өгөгдмөлгүй, заавал сонгоно (хайлтгүй Select-ийн input далд тул `.ant-select`-ийг дарна).
+  await page.getByRole('dialog').locator('.ant-form-item', { hasText: 'Жагсаалтын ангилал' }).locator('.ant-select').click();
+  await page.getByTitle('Ажиглалт', { exact: true }).click();
   await page.getByLabel('Шалтгаан', { exact: true }).click();
   await page.getByTitle('Сэжигтэй үйл ажиллагаа').click();
   await page.getByRole('button', { name: 'Хадгалах' }).click();
-  await expect.poll(() => api.lastCall('POST', '/blacklist')?.body).toMatchObject({ registerNo: 'УБ11112222', severity: 'GREY', reasonCode: 'SUSPICION', customerType: 'INDIVIDUAL' });
+  await expect.poll(() => api.lastCall('POST', '/blacklist')?.body).toMatchObject({ registerNo: 'УБ11112222', severity: 'GREY', listType: 'WATCH', reasonCode: 'SUSPICION', customerType: 'INDIVIDUAL' });
 
   await page.getByRole('button', { name: 'Идэвхгүй болгох' }).first().click();
   await page.getByTestId('deactivation-reason').fill('Төлбөр барагдсан');
