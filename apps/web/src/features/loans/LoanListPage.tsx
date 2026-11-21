@@ -6,8 +6,9 @@ import type { SorterResult } from 'antd/es/table/interface';
 import { APPLICATION_PAGE_SIZES, ApplicationSort, type ApplicationRow, type ApplicationStatus } from '@los/contracts';
 import { formatMoney, t } from '../../lib/i18n';
 import { applicationHref } from '../applications/applications.utils';
+import { directoryLabels } from '../applications/directory';
 import { ListLoadError } from '../applications/ListLoadError';
-import { useApplicationList } from '../applications/useApplications';
+import { useApplicationList, useDirectory } from '../applications/useApplications';
 import { isLoanTab, LOAN_TABS, loanPaymentsHref } from './loans.utils';
 
 const { Title, Text } = Typography;
@@ -36,6 +37,9 @@ export function LoanListPage() {
     router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   };
   const list = useApplicationList({ status, q: q || undefined, sort, dir, page, pageSize });
+  // F5-14: салбарыг UUID биш нэрээр — хүсэлтийн жагсаалттай ижил лавлах (`GET /directory`).
+  const directory = useDirectory();
+  const labels = directoryLabels(directory.data, directory.isLoading, { unknown: t('application.directory.unknown'), system: t('application.list.system') });
   const order = (key: string) => (sort === key ? (dir === 'asc' ? 'ascend' : 'descend') : null);
 
   const columns: ColumnsType<ApplicationRow> = [
@@ -43,7 +47,7 @@ export function LoanListPage() {
     { title: t('application.col.customer'), key: 'customer', render: (_, r) => r.primaryBorrower?.displayName ?? '—' },
     { title: t('application.col.register'), key: 'register', render: (_, r) => r.primaryBorrower?.registerNoMasked ?? '—' },
     { title: t('application.col.product'), dataIndex: 'productName', key: 'product', render: (v: string | null) => v ?? '—' },
-    { title: t('application.col.branch'), dataIndex: 'branchId', key: 'branch' },
+    { title: t('application.col.branch'), dataIndex: 'branchId', key: 'branch', render: (v: string) => labels.branch(v), onCell: () => ({ style: { whiteSpace: 'nowrap' } }) },
     { title: t('application.col.amount'), dataIndex: 'amount', key: 'amount', align: 'right', sorter: true, sortOrder: order('amount'), render: (v: number | null, r) => (v == null ? '—' : formatMoney(v, r.currency)) },
     { title: t('application.col.rate'), dataIndex: 'interestRate', key: 'rate', align: 'right', render: (v: number | null) => (v == null ? '—' : `${v}%`) },
     { title: t('application.col.term'), dataIndex: 'termMonths', key: 'term', align: 'right', render: (v: number | null) => (v == null ? '—' : v) },
