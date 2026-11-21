@@ -29,12 +29,30 @@ export type ApprovalLevelState = typeof ApprovalLevelState[number];
 export const ApprovalVoteView = z.object({ approverId: z.string(), decision: z.enum(ApprovalDecision), comment: z.string().nullable(), decidedAt: z.string() });
 export type ApprovalVoteView = z.infer<typeof ApprovalVoteView>;
 
+/**
+ * F3-11: түвшинд томилогдсон батлагч — `approval_level_member` мөр. Хэрэглэгчээр (`userId`) эсвэл дүрээр (`role`, нөгөө нь null) томилно.
+ * Нэр origination-д байхгүй (iam schema) тул зөвхөн id / дүр; web `/directory`-оор нэр болгоно.
+ */
+export const ApprovalLevelApprover = z.object({ userId: z.string().nullable(), role: z.string().nullable() })
+  .refine((a) => a.userId != null || a.role != null, { message: 'userId эсвэл role заавал' });
+export type ApprovalLevelApprover = z.infer<typeof ApprovalLevelApprover>;
+
+/**
+ * F3-11: хэрэглэгч яагаад санал өгч чадахгүй байгаа шалтгаан (`canVote=false`). Сервер `canVote`-тай НЭГ функцээр тооцдог тул хэзээ ч зөрөхгүй.
+ * NOT_IN_APPROVAL — хүсэлт батлах шатанд биш (эсвэл идэвхтэй түвшин алга); OWN_APPLICATION — өөрийн хүсэлт; NOT_LEVEL_APPROVER — идэвхтэй түвшний батлагч биш;
+ * ALREADY_VOTED — идэвхтэй түвшинд санал өгсөн.
+ */
+export const CannotVoteReason = ['NOT_IN_APPROVAL', 'OWN_APPLICATION', 'NOT_LEVEL_APPROVER', 'ALREADY_VOTED'] as const;
+export type CannotVoteReason = typeof CannotVoteReason[number];
+
 export const ApprovalTimelineLevel = z.object({
   levelNo: z.number().int(), name: z.string(), state: z.enum(ApprovalLevelState),
   startedAt: z.string().nullable(), dueAt: z.string().nullable(), overdue: z.boolean(),
   /** Олонхийн босго: хамгийн цөөндөө `required` санал / нийт `total` батлагч. */
   quorum: z.object({ required: z.number().int(), total: z.number().int() }),
   votes: z.array(ApprovalVoteView),
+  /** F3-11: энэ түвшинд санал өгөх эрхтэй томилогдсон батлагчид (санал өгсөн эсэхээс үл хамаарна). */
+  approvers: z.array(ApprovalLevelApprover),
 });
 export type ApprovalTimelineLevel = z.infer<typeof ApprovalTimelineLevel>;
 
@@ -88,7 +106,9 @@ export const DecisionView = z.object({
   decisionRecord: DecisionRecordView.nullable(),
   /** Одоогийн хэрэглэгч идэвхтэй түвшинд санал өгөх эрхтэй эсэх. */
   canVote: z.boolean(),
-});
+  /** F3-11: `canVote=false` үед яагаад; `canVote=true` үед null. */
+  cannotVoteReason: z.enum(CannotVoteReason).nullable(),
+}).refine((v) => v.canVote === (v.cannotVoteReason === null), { message: 'canVote ба cannotVoteReason зөрсөн', path: ['cannotVoteReason'] });
 export type DecisionView = z.infer<typeof DecisionView>;
 
 export const MyApprovalItem = z.object({

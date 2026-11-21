@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DecisionView, MyApprovalItem, VoteRequest } from './approval';
+import { ApprovalTimelineLevel, CannotVoteReason, DecisionView, MyApprovalItem, VoteRequest } from './approval';
 
 // FR-1.5 / FR-10.2 (M3 review): санал өгөгч харсан түвшин, хувилбар дээрээ л санал өгнө — хоцрогдсон жагсаалтаас өөр шийдвэрт санал өгөхгүй.
 describe('VoteRequest: хүлээгдэж буй levelNo / version', () => {
@@ -56,7 +56,7 @@ describe('DecisionView.summary.risk (F3-1)', () => {
     applicationId: 'a', appNo: 'LA-1', status: 'IN_APPROVAL', version: 1,
     summary: { borrowerName: 'Б', registerNoMasked: null, productName: 'P', currency: 'MNT', amount: 5_000_000, termMonths: 12, interestRate: 28, monthlyPayment: 482_529.94, collateralCount: 2, selectedMethod: 'A_SALARY', ...summaryExtra },
     progress: { completed: 8, total: 8, missing: [] }, canSubmit: false,
-    approval: { currentLevel: 1, totalLevels: 1, levels: [] }, versions: [], decisionRecord: null, canVote: true,
+    approval: { currentLevel: 1, totalLevels: 1, levels: [] }, versions: [], decisionRecord: null, canVote: true, cannotVoteReason: null,
   });
 
   it('хадгалагдсан үзүүлэлтүүдтэй risk блокыг хадгална (устгахгүй)', () => {
@@ -72,5 +72,53 @@ describe('DecisionView.summary.risk (F3-1)', () => {
   it('одоо байгаа summary талбарууд хэвээр (нэмэлт өөрчлөлт)', () => {
     const s = DecisionView.parse(view({ risk })).summary;
     expect(s).toMatchObject({ amount: 5_000_000, monthlyPayment: 482_529.94, collateralCount: 2, selectedMethod: 'A_SALARY' });
+  });
+});
+
+// F3-11: шийдвэрийн хуудас хэн санал өгч болохыг (түвшин бүрийн `approvers`) ба яагаад өгч чадахгүйг (`cannotVoteReason`) хэлнэ.
+describe('DecisionView: approvers + cannotVoteReason (F3-11)', () => {
+  const level = (extra: Record<string, unknown> = {}) => ({
+    levelNo: 1, name: 'Салбар', state: 'PENDING', startedAt: null, dueAt: null, overdue: false, quorum: { required: 1, total: 1 }, votes: [],
+    approvers: [{ userId: 'u-1', role: null }], ...extra,
+  });
+  const view = (extra: Record<string, unknown> = {}) => ({
+    applicationId: 'a', appNo: 'LA-1', status: 'IN_APPROVAL', version: 1,
+    summary: { borrowerName: null, registerNoMasked: null, productName: null, currency: 'MNT', amount: 1, termMonths: 1, interestRate: 1, monthlyPayment: null, collateralCount: 0, selectedMethod: null },
+    progress: { completed: 8, total: 8, missing: [], reasons: {} }, canSubmit: false,
+    approval: { currentLevel: 1, totalLevels: 1, levels: [level()] }, versions: [], decisionRecord: null, canVote: false, cannotVoteReason: 'NOT_LEVEL_APPROVER', ...extra,
+  });
+
+  it('CannotVoteReason нь яг дөрвөн шалтгаан', () => {
+    expect([...CannotVoteReason].sort()).toEqual(['ALREADY_VOTED', 'NOT_IN_APPROVAL', 'NOT_LEVEL_APPROVER', 'OWN_APPLICATION']);
+  });
+  it('шалтгаантай (canVote=false) ба шалтгаангүй (canVote=true, null) хариу хүчинтэй', () => {
+    const denied = DecisionView.parse(view());
+    expect(denied.cannotVoteReason).toBe('NOT_LEVEL_APPROVER');
+    expect(denied.approval.levels[0].approvers).toEqual([{ userId: 'u-1', role: null }]);
+    expect(DecisionView.parse(view({ canVote: true, cannotVoteReason: null })).cannotVoteReason).toBeNull();
+  });
+  it.each([['ALREADY_VOTED'], ['OWN_APPLICATION'], ['NOT_IN_APPROVAL'], ['NOT_LEVEL_APPROVER']])('%s хүлээн авна', (reason) => {
+    expect(DecisionView.safeParse(view({ cannotVoteReason: reason })).success).toBe(true);
+  });
+  it.each([['UNKNOWN'], [''], [undefined], [false]])('буруу cannotVoteReason %j татгалзана', (reason) => {
+    expect(DecisionView.safeParse(view({ cannotVoteReason: reason })).success).toBe(false);
+  });
+  it('cannotVoteReason талбар заавал (хуучин хариу татгалзана)', () => {
+    const { cannotVoteReason: _omit, ...legacy } = view();
+    expect(DecisionView.safeParse(legacy).success).toBe(false);
+  });
+  it('canVote ба cannotVoteReason зөрвөл татгалзана (хэзээ ч зөрөх ёсгүй)', () => {
+    expect(DecisionView.safeParse(view({ canVote: true, cannotVoteReason: 'ALREADY_VOTED' })).success).toBe(false);
+    expect(DecisionView.safeParse(view({ canVote: false, cannotVoteReason: null })).success).toBe(false);
+  });
+  it('түвшний approvers заавал; userId эсвэл дүр (нөгөө нь null) хүлээн авна', () => {
+    expect(ApprovalTimelineLevel.safeParse(level({ approvers: [{ userId: null, role: 'APPROVER' }, { userId: 'u-2', role: null }] })).success).toBe(true);
+    expect(ApprovalTimelineLevel.safeParse(level({ approvers: [] })).success).toBe(true);
+    const { approvers: _omit, ...legacy } = level();
+    expect(ApprovalTimelineLevel.safeParse(legacy).success).toBe(false);
+  });
+  it('approvers-ийн мөр userId, role хоёулаа байх ёстой (зөвхөн нэг нь null байж болно, хоёулаа null биш)', () => {
+    expect(ApprovalTimelineLevel.safeParse(level({ approvers: [{ userId: null, role: null }] })).success).toBe(false);
+    expect(ApprovalTimelineLevel.safeParse(level({ approvers: [{ userId: 'u-1' }] })).success).toBe(false);
   });
 });

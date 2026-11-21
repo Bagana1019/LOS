@@ -5,8 +5,10 @@ import type { ApprovalTimelineLevel } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatDateTime, formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
+import { useDirectory } from '../applications/useApplications';
 import { useDecision, useVote, voteTargetOf } from './decision.api';
 import { methodLabel, progressCounts } from './decision.risk';
+import { approversLine, cannotVoteMessage, showCannotVote } from './decision.voters';
 import { useWizardStageCounts } from './decision.wizard-counts';
 import { RiskSummaryCard } from './RiskSummaryCard';
 
@@ -19,6 +21,7 @@ export function DecisionStep({ applicationId, onChanged }: Props) {
   const q = useDecision(applicationId);
   const vote = useVote(applicationId, onChanged);
   const stage1 = useWizardStageCounts(applicationId);
+  const directory = useDirectory(); // F3-11: батлагчийн нэр (хүсэлтийн жагсаалттай ижил `/directory` кэш)
   const [returning, setReturning] = useState(false);
   const [comment, setComment] = useState('');
   if (q.isLoading) return <Skeleton active />;
@@ -65,6 +68,7 @@ export function DecisionStep({ applicationId, onChanged }: Props) {
               <div>
                 <Tag>{t(`decide.level.${l.state}`)}</Tag>{l.overdue ? <Tag color="error">{t('decide.overdue')}</Tag> : null}
                 <span>{t('decide.quorum', { required: l.quorum.required, total: l.quorum.total })}</span>
+                <div data-testid={`level-approvers-${l.levelNo}`}>{approversLine(l.approvers, directory.data, directory.isLoading)}</div>
                 {l.dueAt ? <div>{t('decide.due', { date: formatDateTime(l.dueAt) })}</div> : null}
                 {l.votes.map((v) => <div key={v.approverId}>{t(`decide.vote.${v.decision}`)} · {formatDateTime(v.decidedAt)}{v.comment ? ` — ${v.comment}` : ''}</div>)}
               </div>
@@ -72,6 +76,7 @@ export function DecisionStep({ applicationId, onChanged }: Props) {
           }))} />
         </Card>
       ) : <Alert type="info" showIcon message={d.canSubmit ? t('decide.readyToSubmit') : t('decide.notSubmitted')} />}
+      {showCannotVote(d) ? <Alert type="info" showIcon data-testid="cannot-vote-reason" message={cannotVoteMessage(d.cannotVoteReason)} /> : null}
       {d.canVote ? (
         <Flex gap={8}>
           <Button type="primary" loading={vote.isPending} data-testid="vote-approve" onClick={() => Modal.confirm({ title: t('decide.confirmApprove'), okText: t('decide.approve'), cancelText: t('decide.cancel'), onOk: () => send('APPROVE') })}>{t('decide.approve')}</Button>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { counterScopeKey, hasBranchToken, dueAt, evaluateLevel, formatContractNo, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, ubDate } from './approval.rules';
+import { cannotVoteReason, counterScopeKey, hasBranchToken, dueAt, evaluateLevel, formatContractNo, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, ubDate } from './approval.rules';
 
 // FR-1.5: санал өгөгчийн харсан түвшин / хувилбар одоогийн төлөвтэй зөрвөл хоцрогдсон. Өгөөгүй талбарыг шалгахгүй.
 describe('isVoteTargetStale', () => {
@@ -77,5 +77,40 @@ describe('SLA, гэрээний дугаар (BR-11)', () => {
   it('{BRANCH} хэсэгтэй загвар салбарын код шаардана', () => {
     expect(hasBranchToken('{PREFIX}{BRANCH}{YYMMDD}{SEQ:2}')).toBe(true);
     expect(hasBranchToken('{PREFIX}-{YYMMDD}-{SEQ:3}')).toBe(false);
+  });
+});
+
+// F3-11: `canVote`-ийн ЦОРЫН ГАНЦ шийдвэр — яагаад санал өгч чадахгүйг нэрлэнэ. Шалгалтын дараалал нь `ApprovalService.vote`-ийн алдааны дараалалтай ижил.
+describe('cannotVoteReason', () => {
+  const BR = 'branch-1';
+  const app = { officerId: 'officer-1', createdBy: 'officer-1' as string | null, branchId: BR };
+  const approver = { userId: 'ap-1', roles: ['APPROVER'], branchId: null as string | null };
+  const active = (members: Array<{ userId: string | null; role: string | null; branchId: string | null }>, voted: string[] = []) => ({ members, votedApproverIds: voted });
+  const byUser = (userId: string) => ({ userId, role: null, branchId: null });
+  const input = (o: Partial<Parameters<typeof cannotVoteReason>[0]> = {}): Parameters<typeof cannotVoteReason>[0] => ({ status: 'IN_APPROVAL', active: active([byUser('ap-1')]), user: approver, app, ...o });
+
+  it('идэвхтэй түвшний гишүүн, санал өгөөгүй, өөрийн хүсэлт биш → null (санал өгч болно)', () => expect(cannotVoteReason(input())).toBeNull());
+  it('хүсэлт IN_APPROVAL биш → NOT_IN_APPROVAL', () => {
+    for (const status of ['DRAFT', 'SUBMITTED', 'APPROVED', 'RETURNED', 'REJECTED']) expect(cannotVoteReason(input({ status }))).toBe('NOT_IN_APPROVAL');
+  });
+  it('IN_APPROVAL боловч идэвхтэй түвшин байхгүй → NOT_IN_APPROVAL', () => expect(cannotVoteReason(input({ active: null }))).toBe('NOT_IN_APPROVAL'));
+  it('хариуцсан ЗЭЗ өөрөө → OWN_APPLICATION (гишүүн байсан ч)', () => {
+    expect(cannotVoteReason(input({ user: { ...approver, userId: 'officer-1' }, active: active([byUser('officer-1')]) }))).toBe('OWN_APPLICATION');
+  });
+  it('үүсгэгч өөрөө → OWN_APPLICATION', () => {
+    expect(cannotVoteReason(input({ app: { ...app, createdBy: 'ap-1' } }))).toBe('OWN_APPLICATION');
+  });
+  it('идэвхтэй түвшний гишүүн биш → NOT_LEVEL_APPROVER', () => expect(cannotVoteReason(input({ active: active([byUser('ap-2')]) }))).toBe('NOT_LEVEL_APPROVER'));
+  it('нэвтрээгүй (userId байхгүй) → NOT_LEVEL_APPROVER', () => expect(cannotVoteReason(input({ user: { ...approver, userId: undefined as never } }))).toBe('NOT_LEVEL_APPROVER'));
+  it('идэвхтэй түвшинд санал өгсөн → ALREADY_VOTED', () => expect(cannotVoteReason(input({ active: active([byUser('ap-1'), byUser('ap-2')], ['ap-1']) }))).toBe('ALREADY_VOTED'));
+  it('өөр хүн санал өгсөн нь миний эрхэд нөлөөлөхгүй', () => expect(cannotVoteReason(input({ active: active([byUser('ap-1'), byUser('ap-2')], ['ap-2']) }))).toBeNull());
+  it('дүрээр томилсон гишүүн: дүр + хүсэлтийн салбар таарвал null, салбар зөрвөл NOT_LEVEL_APPROVER', () => {
+    const roleMember = { userId: null, role: 'APPROVER', branchId: null };
+    expect(cannotVoteReason(input({ active: active([roleMember]), user: { ...approver, branchId: BR } }))).toBeNull();
+    expect(cannotVoteReason(input({ active: active([roleMember]), user: { ...approver, branchId: 'branch-2' } }))).toBe('NOT_LEVEL_APPROVER');
+  });
+  it('нэг хэрэглэгчид нэг шалтгаан: IN_APPROVAL биш нь бусдаас түрүүлнэ, өөрийн хүсэлт нь гишүүнчлэлээс түрүүлнэ', () => {
+    expect(cannotVoteReason(input({ status: 'APPROVED', user: { ...approver, userId: 'officer-1' } }))).toBe('NOT_IN_APPROVAL');
+    expect(cannotVoteReason(input({ user: { ...approver, userId: 'officer-1' } }))).toBe('OWN_APPLICATION');
   });
 });

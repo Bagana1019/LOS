@@ -30,9 +30,9 @@ function makeView(o: { risk?: DecisionRisk | null } = {}): DecisionView {
     progress: { completed: 8, total: 8, missing: [], reasons: {} }, canSubmit: false,
     approval: {
       currentLevel: 1, totalLevels: 1,
-      levels: [{ levelNo: 1, name: 'Салбар', state: 'PENDING', startedAt: '2026-11-20T04:00:00.000Z', dueAt: '2026-11-21T04:00:00.000Z', overdue: false, quorum: { required: 1, total: 1 }, votes: [] }],
+      levels: [{ levelNo: 1, name: 'Салбар', state: 'PENDING', startedAt: '2026-11-20T04:00:00.000Z', dueAt: '2026-11-21T04:00:00.000Z', overdue: false, quorum: { required: 1, total: 1 }, votes: [], approvers: [{ userId: null, role: 'BRANCH_MANAGER' }] }],
     },
-    versions: [], decisionRecord: null, canVote: true,
+    versions: [], decisionRecord: null, canVote: true, cannotVoteReason: null,
   };
 }
 
@@ -46,6 +46,7 @@ async function setup(page: Page, o: { risk?: DecisionRisk | null; role?: UserRol
   const api = new MockApi(o.role ?? 'BRANCH_MANAGER');
   api.get('/applications/:id', ({ params }) => ({ json: inApprovalDetail(params.id) }));
   api.get(DECISION, () => ({ json: makeView({ risk: o.risk }) }));
+  api.get('/directory', { json: { branches: {}, users: {} } }); // F3-11: шийдвэрийн хуудас батлагчийн нэрийг лавлахаас авна
   await api.install(page);
   const guard = guardConsole(page);
   return { api, guard };
