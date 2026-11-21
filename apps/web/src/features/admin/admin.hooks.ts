@@ -1,10 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChangeRequestPage, type AuditLogQuery, type ContractNumberTemplateBody, type CreateBranchBody, type CreateUserBody, type ProductCreateRequest, type ProductSetActiveRequest, type ProductUpdateRequest,
   type ReplaceApprovalLevelsRequest, type SavePricingTiersRequest, type UpdateBranchBody, type UpdateUserBody,
 } from '@los/contracts';
 import { listRequests } from '../maker-checker/api';
 import * as api from './admin.api';
+import { distinctAuditValues } from './audit-filters';
 
 const key = (...p: unknown[]) => ['admin', ...p] as const;
 
@@ -15,6 +17,32 @@ export const useSettings = () => useQuery({ queryKey: key('settings'), queryFn: 
 export const useTemplate = () => useQuery({ queryKey: key('template'), queryFn: api.fetchTemplate });
 export const useAudit = (source: 'origination' | 'auth', q: Partial<AuditLogQuery>) =>
   useQuery({ queryKey: key('audit', source, q), queryFn: () => (source === 'auth' ? api.fetchAuthAudit(q) : api.fetchOriginationAudit(q)) });
+
+/** Contracts `AuditLogQuery.pageSize`-ийн дээд хэмжээ: объект/үйлдлийн сонголтыг API-ийн сүүлийн мөрүүдийн бодит утгаас гаргана. */
+const AUDIT_FACET_SAMPLE_SIZE = 200;
+const AUDIT_FACET_STALE_MS = 5 * 60_000;
+/** F9-24 · Объект/үйлдлийн санал болгох жагсаалт: шүүлтгүй сүүлийн мөрүүдийн бодит (давхардалгүй) утга. */
+export const useAuditFacets = (source: 'origination' | 'auth') =>
+  useQuery({
+    queryKey: key('audit-facets', source),
+    queryFn: () => (source === 'auth' ? api.fetchAuthAudit({ pageSize: AUDIT_FACET_SAMPLE_SIZE }) : api.fetchOriginationAudit({ pageSize: AUDIT_FACET_SAMPLE_SIZE })),
+    select: (page) => distinctAuditValues(page.items),
+    staleTime: AUDIT_FACET_STALE_MS,
+  });
+
+/** F9-24 · "Хэн" шүүлт: нэр/нэвтрэх нэрээр хайлт (алдаа гарвал дахин оролдохгүй — хайлтын талбар шууд мэдэгдэнэ). */
+export const useAuditActors = (q: string) =>
+  useQuery({ queryKey: key('audit-actors', q), queryFn: () => api.fetchAuditActors(q), staleTime: 60_000, retry: false, placeholderData: keepPreviousData });
+
+/** Бичиж дуусахыг хүлээж утгыг хойшлуулна (хайлт бүрийн товчлуур бүрт дуудлага явуулахгүй). */
+export function useDebouncedText(value: string, delayMs: number): string {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(id);
+  }, [value, delayMs]);
+  return debounced;
+}
 
 export function useSaveLevels() {
   const qc = useQueryClient();

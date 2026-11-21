@@ -1,5 +1,5 @@
 import { Body, Controller, ForbiddenException, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, Req } from '@nestjs/common';
-import { AssignUserBranchBody, AuditLogQuery, CreateBranchBody, CreateUserBody, UpdateBranchBody, UpdateUserBody, hasPermission, type Permission, type SessionUser } from '@los/contracts';
+import { AssignUserBranchBody, AuditActorQuery, AuditLogQuery, CreateBranchBody, CreateUserBody, UpdateBranchBody, UpdateUserBody, hasPermission, type Permission, type SessionUser } from '@los/contracts';
 import { ZodValidationPipe, contextOf } from '@los/nest-common';
 import { AdminService } from './admin.service';
 
@@ -48,6 +48,10 @@ export class AdminController {
   reactivateUser(@Req() req: Req_, @Param('id', new ParseUUIDPipe()) id: string) { const u = this.actor(req, 'user:manage'); return this.admin.setUserActive(u.orgId, u.id, id, true, this.meta(req)); }
   @Post('users/:id/reset-password') @HttpCode(200)
   resetPassword(@Req() req: Req_, @Param('id', new ParseUUIDPipe()) id: string) { const u = this.actor(req, 'user:manage'); return this.admin.resetPassword(u.orgId, u.id, id, this.meta(req)); }
+
+  /** F9-24 · "Хэн" шүүлт: нэр/нэвтрэх нэрээр хайж id олно. Эрх `audit:read` (user:manage шаардахгүй — COMPLIANCE аудит харна). */
+  @Get('audit-actors')
+  auditActors(@Req() req: Req_, @Query(new ZodValidationPipe(AuditActorQuery)) q: AuditActorQuery) { return this.admin.auditActors(this.actor(req, 'audit:read').orgId, q.q); }
 
   @Get('audit-logs')
   audit(@Req() req: Req_, @Query(new ZodValidationPipe(AuditLogQuery)) q: AuditLogQuery) { return this.admin.audit(this.actor(req, 'audit:read').orgId, q); }

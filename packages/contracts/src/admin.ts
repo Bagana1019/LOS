@@ -145,3 +145,11 @@ export const AuditLogRow = z.object({
 });
 export const AuditLogPage = z.object({ items: z.array(AuditLogRow), total: z.number(), page: z.number(), pageSize: z.number() });
 export type AuditLogPage = z.infer<typeof AuditLogPage>;
+
+// F9-24 · Аудитын "Хэн" шүүлт: нэр/нэвтрэх нэрээр хайж id олно (`GET /admin/audit-actors`, audit:read). Нууц мэдээлэлгүй: зөвхөн id, нэвтрэх нэр, овог нэр.
+export const AUDIT_ACTOR_Q_MAX = 60;
+export const AUDIT_ACTOR_LIMIT = 20;
+export const AuditActorQuery = z.object({ q: z.string().trim().max(AUDIT_ACTOR_Q_MAX).optional() });
+export type AuditActorQuery = z.infer<typeof AuditActorQuery>;
+export const AuditActorOption = z.object({ id: z.string(), username: z.string(), fullName: z.string() });
+export type AuditActorOption = z.infer<typeof AuditActorOption>;
