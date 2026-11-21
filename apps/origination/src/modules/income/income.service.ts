@@ -22,6 +22,9 @@ const TX_OPTIONS = { timeout: 15_000, maxWait: 10_000 };
 const NOT_EDITABLE = 'Хүсэлт "Шинэ" эсвэл "Буцаасан" төлөвт байх үед л орлогыг өөрчилнө';
 const num = (v: { toNumber(): number } | number | null | undefined): number | null => (v === null || v === undefined ? null : typeof v === 'number' ? v : v.toNumber());
 
+/** Аудитад бүтнээр хадгалагдах, НДШ-ээр дарагдсан гар цалингийн мөр (F2-14: хэрэглэгчийн оруулсан дүнг сэргээх нотолгоо). */
+interface SupersededSalaryAudit { year: number; month: number; employer: string | null; salary: number; contributionPaid: number | null }
+
 /**
  * FR-4 · Орлого (wizard-ийн 3-р алхам, BSA-гүй хувилбар): НДШ цалин, гар цалин/орлого, хугацаа сонгож сарын дундаж, өрхийн/бизнесийн зардал.
  * Мутаци бүр: эрх → (гадны дуудлага — НДШ, транзакцаас гадна) → нэг транзакц { хүсэлтийн мөрийг FOR UPDATE → төлөв → бичих → дундаж шинэчлэх → `income` алхам →
@@ -59,9 +62,9 @@ export class IncomeService {
           data: items.map((r) => ({ orgId: app.orgId, applicationId: app.id, customerId, employer: r.employer, year: r.year, month: r.month, salary: r.salary, contributionPaid: r.contributionPaid, source: 'NDSH', createdBy: ctx.userId, updatedBy: ctx.userId })),
         });
       }
-      const supersededManual = await this.dropSupersededManual(tx, app.id, customerId, items);
+      const supersededRows = await this.dropSupersededManual(tx, app.id, customerId, items);
       await this.refreshAverage(tx, app, customerId, ctx);
-      return { customerId, rows: items.length, supersededManual };
+      return { customerId, rows: items.length, supersededManual: supersededRows.length, supersededRows };
     });
   }
 
@@ -194,13 +197,20 @@ export class IncomeService {
     if (conflict) throw new DomainError(SALARY_CONFLICT_CODE[conflict], salaryConflictMessage(conflict, input), 409, { year: input.year, month: input.month });
   }
 
-  /** НДШ дахин татсаны дараа НДШ-ийн мөртэй давхардсан (ижил сар + хоосон/ижил ажил олгогч) гар цалингийн мөрийг хасна — НДШ эх сурвалжийн үнэн. Хассан мөрийн тоо. */
-  private async dropSupersededManual(tx: Tx, applicationId: string, customerId: string, ndsh: ReadonlyArray<{ year: number; month: number; employer: string | null }>): Promise<number> {
-    if (!ndsh.length) return 0;
-    const manual = await tx.incomeSalary.findMany({ where: { applicationId, customerId, source: 'MANUAL' }, select: { id: true, year: true, month: true, employer: true } });
-    const ids = supersededManualIds(manual.map((m) => ({ ...m, source: 'MANUAL' as const })), ndsh.map((n) => ({ ...n, source: 'NDSH' as const })));
-    if (ids.length) await tx.incomeSalary.deleteMany({ where: { id: { in: ids } } });
-    return ids.length;
+  /**
+   * НДШ дахин татсаны дараа НДШ-ийн мөртэй давхардсан (ижил сар + хоосон/ижил ажил олгогч) гар цалингийн мөрийг хасна — НДШ эх сурвалжийн үнэн.
+   * Хассан мөр бүрийг (сар, ажил олгогч, дүн) буцаана: дуудагч аудитад бүтнээр бичнэ, ингэснээр ЗЭЗ-ийн оруулсан дүнг сэргээх боломжтой (F2-14, эзэмшигчийн шийдвэр A+).
+   */
+  private async dropSupersededManual(tx: Tx, applicationId: string, customerId: string, ndsh: ReadonlyArray<{ year: number; month: number; employer: string | null }>): Promise<SupersededSalaryAudit[]> {
+    if (!ndsh.length) return [];
+    const manual = await tx.incomeSalary.findMany({
+      where: { applicationId, customerId, source: 'MANUAL' }, orderBy: [{ year: 'asc' }, { month: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, year: true, month: true, employer: true, salary: true, contributionPaid: true },
+    });
+    const ids = new Set(supersededManualIds(manual.map((m) => ({ ...m, source: 'MANUAL' as const })), ndsh.map((n) => ({ ...n, source: 'NDSH' as const }))));
+    if (!ids.size) return [];
+    await tx.incomeSalary.deleteMany({ where: { id: { in: [...ids] } } });
+    return manual.filter((m) => ids.has(m.id)).map((m) => ({ year: m.year, month: m.month, employer: m.employer, salary: m.salary.toNumber(), contributionPaid: num(m.contributionPaid) }));
   }
 
   private async requireParticipant(db: Tx, applicationId: string, customerId: string) {

@@ -331,4 +331,24 @@ describe.skipIf(!hasTestDb)('income API (DB)', () => {
     const audit = await t.prisma.auditLog.findFirstOrThrow({ where: { applicationId: app.id, action: 'INCOME_NDSH_FETCHED' } });
     expect(audit.afterJson).toMatchObject({ rows: 12, supersededManual: 1 });
   });
+
+  // F2-14 · эзэмшигчийн шийдвэр (A+, 2026-11-21): устгасан гар мөр бүрийг (сар, ажил олгогч, дүн) аудитад бүтнээр хадгална — тоо л үлдээвэл ЗЭЗ-ийн оруулсан дүнг сэргээх боломжгүй.
+  it('F2-14 (A+): the audit entry of an НДШ fetch keeps every dropped manual row in full (month, employer, salary, contribution), in month order; rows that stay are not listed', async () => {
+    const { app, primary } = await setup();
+    expect((await addSalary(app.id, { customerId: primary.id, employer: ' монгол  ШУУДАН ххк ', year: 2026, month: 8, salary: 1_400_000, contributionPaid: 140_000 })).status).toBe(201); // ижил ажил олгогч
+    expect((await addSalary(app.id, { customerId: primary.id, year: 2026, month: 10, salary: 1_500_000 })).status).toBe(201); // ажил олгогчгүй
+    expect((await addSalary(app.id, { customerId: primary.id, employer: 'Хоёр дахь ажил', year: 2026, month: 9, salary: 500_000 })).status).toBe(201); // нэмэлт ажил — үлдэнэ
+    await fetchNdsh(app.id, primary.id);
+    const audit = await t.prisma.auditLog.findFirstOrThrow({ where: { applicationId: app.id, action: 'INCOME_NDSH_FETCHED' }, orderBy: { at: 'desc' } });
+    const after = audit.afterJson as { supersededManual: number; supersededRows: Array<Record<string, unknown>> };
+    expect(after.supersededManual).toBe(2);
+    expect(after.supersededRows).toEqual([
+      { year: 2026, month: 8, employer: expect.stringMatching(/монгол\s+шуудан\s+ххк/i), salary: 1_400_000, contributionPaid: 140_000 },
+      { year: 2026, month: 10, employer: null, salary: 1_500_000, contributionPaid: null },
+    ]);
+    // давтан татахад хасах гар мөр үлдээгүй → хоосон жагсаалт
+    await fetchNdsh(app.id, primary.id);
+    const again = (await t.prisma.auditLog.findFirstOrThrow({ where: { applicationId: app.id, action: 'INCOME_NDSH_FETCHED' }, orderBy: { at: 'desc' } })).afterJson as { supersededManual: number; supersededRows: unknown[] };
+    expect(again).toMatchObject({ supersededManual: 0, supersededRows: [] });
+  });
 });
