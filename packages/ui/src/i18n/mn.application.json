@@ -19,6 +19,7 @@
   "application.mine.overdue": "Хэтэрсэн",
   "application.mine.empty": "Таны батлах хүсэлт алга",
   "application.mine.voteFailed": "Санал бүртгэж чадсангүй",
+  "application.mine.forbidden": "Танд батлах хүсэлтийн жагсаалтыг харах эрх байхгүй",
   "application.col.appNo": "№",
   "application.col.branch": "Салбар",
   "application.col.officer": "Хариуцсан ЗЭЗ",
