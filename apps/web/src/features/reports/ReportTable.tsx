@@ -4,6 +4,8 @@ import { Empty, Table, Tag, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
 import type { ReportDefinitionView, ReportResult, ReportRow } from '@los/contracts';
 import { t } from '../../lib/i18n';
+import { directoryCellText, directoryColumnKind } from './report-lookups';
+import { useLookups } from './useLookups';
 import {
   PAGE_SIZES, columnAlign, columnPixelWidth, effectiveSort, formatCell, formatTotal, nextSort, statusColor, statusLabel, tableScrollWidth, toAntdOrder, totalKeysOf, totalsCurrency,
   type ReportViewState, type SortDir,
@@ -30,6 +32,7 @@ interface Props {
 /** Сервер талын хуудаслалт (10/20/50/100) ба эрэмбэтэй хүснэгт. Багана төрлөөр форматлагдана, нийлбэр мөр нь бүх шүүлттэй мөрийн нийлбэр (хуудсынх биш). */
 export function ReportTable({ definition, result, loading, state, onChange }: Props) {
   const active = effectiveSort(state, definition);
+  const lookups = useLookups(); // F11-4 c: салбар / ЗЭЗ-ийн id багана нэрээр (API өөрчлөгдөөгүй, Excel-тэй адил)
   const rows = result?.rows ?? [];
   // Мөрт тогтвортой ID байхгүй (тайлан = нэгтгэл) тул хуудас+дугаараар түлхүүр үүсгэнэ (antd rowKey-ийн index параметр deprecated).
   const dataSource = useMemo(() => rows.map((row, i) => ({ ...row, [ROW_KEY]: `${result?.page ?? 1}:${i}` })), [rows, result?.page]);
@@ -48,6 +51,8 @@ export function ReportTable({ definition, result, loading, state, onChange }: Pr
     showSorterTooltip: false,
     render: (_: unknown, row: ReportRow) => {
       const value = row[c.key];
+      const directoryKind = directoryColumnKind(c.key);
+      if (directoryKind !== null && typeof value === 'string' && value !== '') return directoryCellText(directoryKind, value, lookups, t);
       if (c.type === 'status' && value !== null && value !== undefined && value !== '') {
         const code = String(value);
         return <Tag bordered={false} color={statusColor(code)} style={{ marginInlineEnd: 0 }}>{statusLabel(c, code)}</Tag>;

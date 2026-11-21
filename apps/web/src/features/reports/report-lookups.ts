@@ -73,6 +73,27 @@ export function catalogFieldModel(value: string, options: readonly LookupOption[
   return selectModel({ options, value, nameOf: () => null, ready: true });
 }
 
+// ── F11-4 c: JSON тайлангийн хүснэгтийн салбар / ЗЭЗ баганад нэр (Excel-ийн DIRECTORY_COLUMNS-тэй ижил түлхүүр) ────────────────────────
+const DIRECTORY_COLUMN_KINDS: Readonly<Record<string, Exclude<LookupKind, 'product'>>> = { branchId: 'branch', officerId: 'officer' };
+
+/** Тайлангийн баганын түлхүүр салбар / ЗЭЗ-ийн id багана мөн эсэх (өөр багана null). */
+export function directoryColumnKind(columnKey: string): Exclude<LookupKind, 'product'> | null {
+  return Object.prototype.hasOwnProperty.call(DIRECTORY_COLUMN_KINDS, columnKey) ? (DIRECTORY_COLUMN_KINDS[columnKey] ?? null) : null;
+}
+
+/** BR-12: ЗЭЗ-гүй (системээс үүссэн) хүсэлтийн `officerId` нь id биш шошго (apps/origination report-sql.ts `LOAN_TAIL_COLUMNS`) — нэр болгон хөрвүүлэхгүй. */
+export const SYSTEM_OFFICER_LABEL = 'Систем';
+
+/**
+ * Хүснэгтийн нэг нүд: id → нэр. Хэзээ ч түүхий id биш: лавлахад байхгүй/нэр хоосон/лавлах алдаатай бол "Тодорхойгүй"; ачаалж байвал "—".
+ * Салбарын багана зөвхөн салбарын, ЗЭЗ зөвхөн хэрэглэгчийн map-аар тайлагдана.
+ */
+export function directoryCellText(kind: Exclude<LookupKind, 'product'>, value: string, l: Pick<Lookups, 'directory' | 'status'>, tr: Translate): string {
+  if (kind === 'officer' && value === SYSTEM_OFFICER_LABEL) return value;
+  if (!l.directory) return l.status === 'loading' ? EMPTY : tr('report.table.unknownName');
+  return nameInMap(kind === 'branch' ? l.directory.branches : l.directory.users, value) ?? tr('report.table.unknownName');
+}
+
 /**
  * Толгойн "Хүрээ: …" мөрөнд UUID биш нэр. Лавлах ачаалж байвал "—"; алдаатай бол нэр тайлах боломжгүй тул id; ачаалсан боловч байхгүй бол "олдсонгүй (id)".
  */
