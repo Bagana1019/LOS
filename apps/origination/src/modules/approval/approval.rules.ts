@@ -1,4 +1,4 @@
-import type { ApprovalDecision, RequestContext } from '@los/contracts';
+import type { ApprovalDecision, CannotVoteReason, RequestContext } from '@los/contracts';
 
 // Модуль 10 — батлах урсгалын цэвэр дүрмүүд (I/O байхгүй). BR-13: түвшин дүнгээр шатлагдана; олонхийн санал.
 
@@ -41,6 +41,28 @@ export function isLevelMember(members: readonly MemberLike[], user: Pick<Request
     if (!m.role || !user.roles.includes(m.role)) return false;
     return m.branchId ? user.branchId === m.branchId && applicationBranchId === m.branchId : user.branchId === applicationBranchId;
   });
+}
+
+export interface VoteEligibilityInput {
+  status: string;
+  /** Идэвхтэй (хугацаатай) түвшин: гишүүд ба тэнд санал өгсөн approverId-ууд. Идэвхтэй түвшин байхгүй бол null. */
+  active: { members: readonly MemberLike[]; votedApproverIds: readonly string[] } | null;
+  user: Pick<RequestContext, 'userId' | 'roles' | 'branchId'>;
+  app: { officerId: string | null; createdBy: string | null; branchId: string };
+}
+
+/**
+ * F3-11: хэрэглэгч яагаад санал өгч чадахгүй вэ (null = чадна). `canVote`-ийн ЦОРЫН ГАНЦ эх сурвалж — `canVote = reason === null` тул шалтгаан хэзээ ч
+ * `canVote`-той зөрөхгүй. Дараалал нь `ApprovalService.vote`-ийн татгалзах дарааллаар (NOT_IN_APPROVAL → SELF_APPROVAL → NOT_LEVEL_APPROVER → ALREADY_VOTED),
+ * иймд UI-ийн хэлсэн шалтгаан нь санал өгөхөд буцах алдаатай таарна.
+ */
+export function cannotVoteReason({ status, active, user, app }: VoteEligibilityInput): CannotVoteReason | null {
+  if (status !== 'IN_APPROVAL' || !active) return 'NOT_IN_APPROVAL';
+  const userId = user.userId;
+  if (userId && (userId === app.officerId || userId === app.createdBy)) return 'OWN_APPLICATION';
+  if (!userId || !isLevelMember(active.members, user, app.branchId)) return 'NOT_LEVEL_APPROVER';
+  if (active.votedApproverIds.includes(userId)) return 'ALREADY_VOTED';
+  return null;
 }
 
 /** SLA дуусах хугацаа (FR-10.2). */

@@ -16,7 +16,7 @@ import { customerDisplayName, customerRegisterNoMasked } from '../borrower/custo
 import { NotificationService } from '../notification/notification.service';
 import { aggregateIncome } from '../score/score-input.assembler';
 import { readSnapshot } from '../score/score.rules';
-import { dueAt, evaluateLevel, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, type LevelLike } from './approval.rules';
+import { cannotVoteReason, dueAt, evaluateLevel, isLevelMember, isOverdue, isVoteTargetStale, requiredVotes, selectLevels, type LevelLike } from './approval.rules';
 import { ContractNumberService } from './contract-number.service';
 import { buildDecisionRisk } from './decision-risk';
 
@@ -183,12 +183,17 @@ export class ApprovalService {
         levelNo: r.levelNo, name: lvl?.name ?? `Түвшин ${r.levelNo}`, state, startedAt: r.dueAt || r.status !== 'PENDING' ? r.startedAt.toISOString() : null, dueAt: r.dueAt?.toISOString() ?? null,
         overdue: state === 'PENDING' && isOverdue(r.dueAt, now), quorum: { required: requiredVotes(total), total },
         votes: r.votes.map((v) => ({ approverId: v.approverId, decision: v.decision as ApprovalDecision, comment: v.comment, decidedAt: v.decidedAt.toISOString() })),
+        // F3-11: id / дүр л (нэр нь gateway iam schema-д; origination унших ёсгүй). Хуудсыг нээх эрх `access.load`-оор аль хэдийн шалгагдсан.
+        approvers: (lvl?.members ?? []).map((m) => ({ userId: m.userId, role: m.role })),
       };
     });
     const active = this.activeOf(reqs);
     const activeLevel = active ? pool.find((l) => l.levelNo === active.levelNo) : undefined;
-    const canVote = !!(app.status === 'IN_APPROVAL' && active && activeLevel && ctx.userId && ctx.userId !== app.officerId && ctx.userId !== app.createdBy
-      && isLevelMember(activeLevel.members, ctx, app.branchId) && !active.votes.some((v) => v.approverId === ctx.userId));
+    // F3-11: `canVote` ба шалтгаан нь НЭГ функцээс — хэзээ ч зөрөхгүй.
+    const reason = cannotVoteReason({
+      status: app.status, user: ctx, app,
+      active: active && activeLevel ? { members: activeLevel.members, votedApproverIds: active.votes.map((v) => v.approverId) } : null,
+    });
     const primary = app.borrowers[0]?.customer;
     const versionNos = [...new Set(all.map((r) => r.version))];
     const record = app.decisions[0];
@@ -209,7 +214,7 @@ export class ApprovalService {
         return { version, outcome, returnedComment: returned?.votes.find((v) => v.decision === 'RETURN' && v.comment)?.comment ?? null } as DecisionView['versions'][number];
       }),
       decisionRecord: record ? { decisionNo: record.decisionNo, decidedAt: record.decidedAt.toISOString(), minutesText: record.minutesText, contractNo: app.contractNo } : null,
-      canVote,
+      canVote: reason === null, cannotVoteReason: reason,
     };
   }
 
