@@ -1,10 +1,12 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
 import { Alert, Button, Card, Flex, Skeleton, Statistic, Table, Tag, Typography, message } from 'antd';
 import type { BsaLosBorrowerRow } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
+import { PushConfirmModal } from './PushConfirmModal';
 import { useBsaOverview, useCombined, useCreateAnalysis, usePush, useSyncPayment } from './useBsa';
 
 /** M12c: хүсэлтийн BSA тойм (`/los/bsa/:applicationId`) — зээлдэгч бүрийн шинжилгээ, «Системрүү татах» (INT-4), нэгтгэсэн ӨОХ (BSA-BR-9). */
@@ -16,13 +18,20 @@ export function BsaOverview({ applicationId }: { applicationId: string }) {
   const multi = (q.data?.borrowers.filter((b) => b.analysisId).length ?? 0) > 1;
   const combined = useCombined(applicationId, multi && Boolean(q.data?.available));
   const [api, holder] = message.useMessage();
+  const [confirming, setConfirming] = useState<BsaLosBorrowerRow | null>(null);
   if (q.isLoading) return <Skeleton active aria-label={t('bsa.loading')} />;
   if (q.error || !q.data) return <ApiErrorAlert error={q.error} onRetry={() => void q.refetch()} />;
   const data = q.data;
   const editable = data.editable;
-  const onPush = (analysisId: string) => push.mutate(analysisId, {
-    onSuccess: (r) => void api.success(r.reportAttached ? t('bsa.push.ok') : `${t('bsa.push.ok')} ${t('bsa.push.noReport')}`),
-  });
+  // BSA-FR-5.3: татах нь шинжилгээг түгжих тул эхлээд баталгаажуулна.
+  const onConfirmPush = () => {
+    const analysisId = confirming?.analysisId;
+    if (!analysisId) return;
+    push.mutate(analysisId, {
+      onSuccess: (r) => void api.success(r.reportAttached ? t('bsa.push.ok') : `${t('bsa.push.ok')} ${t('bsa.push.noReport')}`),
+      onSettled: () => setConfirming(null),
+    });
+  };
 
   return (
     <Flex vertical gap={16}>
@@ -55,7 +64,7 @@ export function BsaOverview({ applicationId }: { applicationId: string }) {
                 {b.analysisId ? (
                   <>
                     <Link href={`/los/bsa/${encodeURIComponent(applicationId)}/${encodeURIComponent(b.analysisId)}`}><Button>{t('bsa.action.open')}</Button></Link>
-                    <Button type="primary" onClick={() => onPush(b.analysisId as string)} loading={push.isPending} disabled={!editable || !data.available}>{t('bsa.action.push')}</Button>
+                    <Button type="primary" onClick={() => setConfirming(b)} loading={push.isPending} disabled={!editable || !data.available}>{t('bsa.action.push')}</Button>
                   </>
                 ) : (
                   <Button type="primary" onClick={() => create.mutate({ customerId: b.customerId })} loading={create.isPending} disabled={!editable || !data.available}>{t('bsa.action.create')}</Button>
@@ -64,6 +73,16 @@ export function BsaOverview({ applicationId }: { applicationId: string }) {
             ),
           },
         ]}
+      />
+      <PushConfirmModal
+        open={confirming !== null}
+        borrowerName={confirming?.displayName ?? ''}
+        pending={confirming?.pendingSuspiciousCount ?? null}
+        proposedPayment={data.proposedMonthlyPayment}
+        dtiPercent={confirming?.dtiPercent ?? null}
+        loading={push.isPending}
+        onConfirm={onConfirmPush}
+        onCancel={() => setConfirming(null)}
       />
       {create.error ? <ApiErrorAlert error={create.error} /> : null}
       {push.error ? <ApiErrorAlert error={push.error} /> : null}
