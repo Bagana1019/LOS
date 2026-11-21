@@ -84,6 +84,8 @@ interface Props {
   result: UnderwriteResult | null;
   selected: CalcMethod | null;
   pending: boolean;
+  /** F3-8: `result` хуучирсан хадгалсан тооцооллынх — шууд тоонуудыг саарал, «Хуучирсан» болгоно. */
+  stale?: boolean;
   previewError: unknown;
   /** Хадгалсан тооцооллын нөхцөл байхгүй, саадтай үед slider идэвхгүй */
   disabled: boolean;
@@ -93,7 +95,7 @@ interface Props {
 }
 
 /** FR-8.3: дүн / хугацаа / хүү slider + тоон оролт (бүтээгдэхүүний хязгаарт, BR-6); шууд сарын төлбөр, нийт өрийн үйлчилгээ, хүүгийн орлого. */
-export function TermSliders({ applicationId, terms, limits, savedTerms, dirty, result, selected, pending, previewError, disabled, onChange, onReset, onRetryPreview }: Props) {
+export function TermSliders({ applicationId, terms, limits, savedTerms, dirty, result, selected, pending, stale = false, previewError, disabled, onChange, onReset, onRetryPreview }: Props) {
   const { token } = theme.useToken();
   const specs = limits ? sliderSpecs(limits) : null;
   const check = terms ? checkTerms(terms, limits) : null;
@@ -171,7 +173,7 @@ export function TermSliders({ applicationId, terms, limits, savedTerms, dirty, r
 
         <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, paddingTop: 12 }}>
           <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>{t('score.live.title')}</Typography.Text>
-          <LiveNumbers result={result} selected={selected} pending={pending} />
+          <LiveNumbers result={result} selected={selected} pending={pending} stale={stale} />
         </div>
         {previewError ? <ScoreErrorAlert error={previewError} title={t('score.error.previewTitle')} onRetry={onRetryPreview} /> : null}
       </Flex>

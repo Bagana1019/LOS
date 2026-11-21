@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Alert, Button, Card, Flex, Form, Input, InputNumber, Select, Skeleton, Statistic, Table, Tag, Typography, App as AntApp } from 'antd';
 import { ScheduleTypeEnum, type ScheduleParamsRequest, type ScheduleRowView, type ScheduleView } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
@@ -11,6 +11,14 @@ interface Props { applicationId: string; onChanged?: () => void }
 type FormValues = { startDate: string; firstPaymentDate: string; type: ScheduleParamsRequest['type']; graceMonths: number };
 const today = () => new Date().toISOString().slice(0, 10);
 const nextMonth = () => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d.toISOString().slice(0, 10); };
+const STALE_OPACITY = 0.55;
+
+/** Хүснэгтийн төлвийн шошго: урьдчилсан харагдац / хуучирсан / хадгалсан. Шошго өөрөө саарал болохгүй (хүснэгтийн гадна). */
+function statusTag(preview: boolean, saved: boolean, stale: boolean): ReactNode {
+  if (preview) return <Tag color="processing" data-testid="sched-status-tag">{t('sched.previewTag')}</Tag>;
+  if (!saved) return null;
+  return stale ? <Tag color="warning" data-testid="sched-status-tag">{t('sched.staleTag')}</Tag> : <Tag color="success" data-testid="sched-status-tag">{t('sched.savedTag')}</Tag>;
+}
 
 /** Wizard-н 6-р алхам "Эргэн төлөлтийн хуваарь" (`/los/loan-application/:id/installment`): параметр, урьдчилан харах, хадгалах, Excel. FR-7. */
 export function ScheduleStep({ applicationId, onChanged }: Props) {
@@ -24,6 +32,7 @@ export function ScheduleStep({ applicationId, onChanged }: Props) {
   if (q.error || !q.data) return <ApiErrorAlert error={q.error} onRetry={() => void q.refetch()} />;
   const { editable, schedule } = q.data;
   const view = shown ?? schedule;
+  const stale = schedule?.isStale === true && !shown; // F3-7: урьдчилсан харагдац нь шинэ тооцоо тул хуучирсан биш
   const p = schedule?.params;
   const initial: FormValues = { startDate: p?.startDate ?? today(), firstPaymentDate: p?.firstPaymentDate ?? nextMonth(), type: p?.type ?? 'ANNUITY', graceMonths: p?.graceMonths ?? 0 };
   const params = (v: FormValues): ScheduleParamsRequest => ({ startDate: v.startDate, firstPaymentDate: v.firstPaymentDate, type: v.type, graceMonths: v.graceMonths ?? 0 });
@@ -57,14 +66,16 @@ export function ScheduleStep({ applicationId, onChanged }: Props) {
       </Card>
       {view ? (
         <>
-          <Flex gap={32} wrap>
-            <Statistic title={t('sched.sum.count')} value={view.summary.installments} />
-            <Statistic title={t('sched.sum.principal')} value={formatMnt(view.summary.totalPrincipal)} />
-            <Statistic title={t('sched.sum.interest')} value={formatMnt(view.summary.totalInterest)} />
-            <Statistic title={t('sched.sum.total')} value={formatMnt(view.summary.totalPayment)} />
-            {shown ? <Tag color="processing">{t('sched.previewTag')}</Tag> : schedule ? <Tag color="success">{t('sched.savedTag')}</Tag> : null}
+          <div>{statusTag(Boolean(shown), Boolean(schedule), stale)}</div>
+          <Flex vertical gap={16} data-testid="sched-results" data-stale={stale} style={{ opacity: stale ? STALE_OPACITY : 1, transition: 'opacity .15s' }}>
+            <Flex gap={32} wrap>
+              <Statistic title={t('sched.sum.count')} value={view.summary.installments} />
+              <Statistic title={t('sched.sum.principal')} value={formatMnt(view.summary.totalPrincipal)} />
+              <Statistic title={t('sched.sum.interest')} value={formatMnt(view.summary.totalInterest)} />
+              <Statistic title={t('sched.sum.total')} value={formatMnt(view.summary.totalPayment)} />
+            </Flex>
+            <Table<ScheduleRowView> size="small" rowKey="seq" columns={columns} dataSource={view.rows} pagination={{ pageSize: 12, hideOnSinglePage: true }} data-testid="sched-table" />
           </Flex>
-          <Table<ScheduleRowView> size="small" rowKey="seq" columns={columns} dataSource={view.rows} pagination={{ pageSize: 12, hideOnSinglePage: true }} data-testid="sched-table" />
           {schedule && !shown ? <div><Button onClick={() => void exportSchedule(applicationId).catch(() => void message.error(t('sched.exportFailed')))}>{t('sched.export')}</Button></div> : null}
         </>
       ) : <Alert type="info" showIcon message={t('sched.empty')} />}
