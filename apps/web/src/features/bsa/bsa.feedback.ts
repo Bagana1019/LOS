@@ -3,6 +3,7 @@ import { formatMnt } from '../../lib/format';
 import { ApiError } from '../../lib/http';
 import { t } from '../../lib/i18n';
 import { describeError } from '../borrowers/borrowers.utils';
+import type { ResolveAction, ResolveImpact } from './bsa.resolve';
 
 // BSA дэлгэцийн үр дүн, алдааны мэдээллийн цэвэр логик (I/O байхгүй): хуулга оруулах, төлбөр шинэчлэх, дохио шийдвэрлэх, импорт ажлын төлөв.
 
@@ -120,10 +121,31 @@ export function syncPaymentFeedback(o: { updated: number; payment: number | null
 
 // ── сэжигтэй дохио шийдвэрлэх (F6-12) ──────────────────────────────────────────────────
 
-/** Шийдвэрлэсний дараах мэдэгдэл. «Хүлээгдэж буй» шүүлтүүртэй үед мөр жагсаалтаас алга болдог тул шалтгааныг хэлнэ. */
-export function resolveFeedback(action: 'APPROVE' | 'EXCLUDE' | 'RECLASSIFY', count: number, o: { categoryName?: string | null; pendingFilter?: boolean }): string {
+export interface ResolveFeedbackOptions {
+  categoryName?: string | null;
+  pendingFilter?: boolean;
+  /** Сервер алгассан дохионы тоо (аль хэдийн шийдвэрлэгдсэн / олдоогүй). */
+  skipped?: number;
+  /** Хэдэн гүйлгээний ангилал солигдсон (F6-10); null = ангилал өөрчлөгддөггүй үйлдэл (зөвшөөрөх). */
+  impact?: ResolveImpact | null;
+}
+
+/** Гүйлгээний ангилал хэд солигдсон, чиглэл таарахгүй тул хэд нь хэвээр үлдсэнийг хэлнэ (F6-10). */
+function impactSentences(impact: ResolveImpact): string[] {
+  const changed = impact.changed > 0 ? t('bsa.fb.resolve.txnChanged', { count: impact.changed }) : t('bsa.fb.resolve.txnNone');
+  if (impact.unchanged === 0 || impact.unchangedDirection === null) return [changed];
+  return [changed, t(`bsa.fb.resolve.txnUnchanged.${impact.unchangedDirection}`, { count: impact.unchanged })];
+}
+
+/**
+ * Шийдвэрлэсний дараах мэдэгдэл: `count` = сервер шийдвэрлэсэн дохионы тоо. Алгассан дохио, ангилал солигдсон гүйлгээний тоог хэлнэ.
+ * «Хүлээгдэж буй» шүүлтүүртэй үед мөр жагсаалтаас алга болдог тул шалтгааныг хамгийн сүүлд хэлнэ.
+ */
+export function resolveFeedback(action: ResolveAction, count: number, o: ResolveFeedbackOptions): string {
   const base = action === 'RECLASSIFY'
     ? (o.categoryName ? t('bsa.fb.resolve.RECLASSIFY', { count, category: o.categoryName }) : t('bsa.fb.resolve.RECLASSIFY.plain', { count }))
     : t(`bsa.fb.resolve.${action}`, { count });
-  return o.pendingFilter ? `${base} ${t('bsa.fb.resolve.filterHint')}` : base;
+  const skipped = o.skipped && o.skipped > 0 ? [t('bsa.fb.resolve.skipped', { count: o.skipped })] : [];
+  const hint = o.pendingFilter ? [t('bsa.fb.resolve.filterHint')] : [];
+  return [base, ...(o.impact ? impactSentences(o.impact) : []), ...skipped, ...hint].join(' ');
 }

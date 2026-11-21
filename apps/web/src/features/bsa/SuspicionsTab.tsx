@@ -7,6 +7,7 @@ import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { resolveFeedback } from './bsa.feedback';
 import { categoryGroups, categoryName, directionSummary, directionsOf, formatConfidence, type BsaCategory } from './bsa.helpers';
+import { readResolveOutcome, resolveImpact, type ResolveAction } from './bsa.resolve';
 import { useCategories, useResolve, useSuspicions } from './useBsa';
 
 interface Props { applicationId: string; analysisId: string; draft: boolean }
@@ -43,16 +44,25 @@ export function SuspicionsTab({ applicationId, analysisId, draft }: Props) {
   if (q.error || !q.data) return <ApiErrorAlert error={q.error} onRetry={() => void q.refetch()} />;
 
   const counts = q.data.counts;
+  const selectedRows = q.data.items.filter((r) => selected.includes(r.id));
   // Сонгосон дохионы чиглэлд таарах ангиллыг л санал болгоно; чиглэл солигдоход хуучин сонголт хүчингүй болно.
-  const groups = categoryGroups(cats, directionsOf(q.data.items.filter((r) => selected.includes(r.id))));
+  const groups = categoryGroups(cats, directionsOf(selectedRows));
   const chosen = groups.some((g) => g.options.some((o) => o.value === category)) ? category : undefined;
-  // F6-12: үр дүнг (хэдэн дохио, юу хийсэн) хэлнэ; «Хүлээгдэж буй» шүүлтүүртэй үед мөр жагсаалтаас алга болдгийг тайлбарлана.
-  const act = (action: 'APPROVE' | 'EXCLUDE' | 'RECLASSIFY') => {
+  // F6-12 / F6-10: үр дүнг (серверийн шийдвэрлэсэн дохио, ангилал солигдсон гүйлгээ) хэлнэ; «Хүлээгдэж буй» шүүлтүүртэй үед мөр жагсаалтаас алга болдгийг тайлбарлана.
+  const act = (action: ResolveAction) => {
     const count = selected.length;
-    const categoryLabel = action === 'RECLASSIFY' ? categoryName(chosen ?? null, cats) : null;
+    const target = action === 'RECLASSIFY' ? cats.find((c) => c.code === chosen) : undefined;
     resolve.mutate(
       { ids: selected, action, ...(action === 'RECLASSIFY' && chosen ? { categoryCode: chosen } : {}), ...(comment.trim() ? { comment: comment.trim() } : {}) },
-      { onSuccess: () => { setSelected([]); setCategory(undefined); void toast.success(resolveFeedback(action, count, { categoryName: categoryLabel, pendingFilter: status === 'PENDING' })); } },
+      {
+        onSuccess: (raw) => {
+          const outcome = readResolveOutcome(raw, count);
+          const impact = resolveImpact(action, selectedRows, target ? { code: target.code, direction: target.direction } : null);
+          setSelected([]);
+          setCategory(undefined);
+          void toast.success(resolveFeedback(action, outcome.resolved, { categoryName: target?.name ?? null, pendingFilter: status === 'PENDING', skipped: outcome.skipped, impact }));
+        },
+      },
     );
   };
 

@@ -53,7 +53,9 @@ export function BsaOverview({ applicationId }: { applicationId: string }) {
     <Flex vertical gap={16}>
       {holder}
       <div>
-        <Typography.Title level={4} style={{ margin: 0 }}>{t('bsa.title')}</Typography.Title>
+        {/* F6-1: BSA хуудаснаас хүсэлт рүү буцах зам (sidebar-д зөвхөн үндсэн цэс байдаг). */}
+        <Link href={`/los/loan-application/${encodeURIComponent(applicationId)}`}>{t('bsa.action.backToApplication')}</Link>
+        <Typography.Title level={4} style={{ margin: '4px 0 0' }}>{t('bsa.title')}</Typography.Title>
         <Typography.Text type="secondary">{t('bsa.subtitle')}</Typography.Text>
       </div>
       {!data.available ? <Alert type="warning" showIcon message={t('bsa.unavailable')} /> : null}
