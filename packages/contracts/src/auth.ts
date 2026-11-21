@@ -58,7 +58,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, readonly Permission[]> = {
   ADMIN: ['customer:read', 'application:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'settings:manage', 'audit:read', 'user:manage', 'change-request:read', 'erp-sync:manage'],
   // Комплаенс (Q-128): хар/саарал жагсаалт бүртгэх, 4 нүдээр батлах, аудит харах. Зээл батлахгүй, тохиргоо өөрчлөхгүй.
   // `application:read` БАЙХГҮЙ (N2): origination-ийн хүсэлт/зээлийн жагсаалт COMPLIANCE-д 403 өгдөг тул цэс харуулахгүй.
-  COMPLIANCE: ['customer:read', 'blacklist:read', 'blacklist:manage', 'report:read', 'audit:read', 'change-request:read', 'aml:review'],
+  // F12-4: `report:read` БАЙХГҮЙ — тайлангийн сервис (`report.controller` @Roles) COMPLIANCE-г 403-оор татгалздаг тул цэсэнд "Тайлан" харуулахгүй (зээлдэгчийн нэр, үлдэгдэл бүх салбараар; үүргээс давсан өгөгдөл).
+  COMPLIANCE: ['customer:read', 'blacklist:read', 'blacklist:manage', 'audit:read', 'change-request:read', 'aml:review'],
 };
 
 export function permissionsFor(roles: readonly string[]): Permission[] {

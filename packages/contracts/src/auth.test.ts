@@ -19,12 +19,12 @@ describe('RBAC (docs/01 §3)', () => {
     expect(resolveDataScope(['HACKER'])).toBe('NONE');
     expect(resolveDataScope([])).toBe('NONE');
   });
-  it('menu: settings only for admin; every role sees customer/report, every role but COMPLIANCE sees application/loan (N2)', () => {
+  it('menu: settings only for admin; every role sees customer, every role but COMPLIANCE sees report/application/loan (N2, F12-4)', () => {
     const ids = (roles: string[]) => menuFor(roles).map((m) => m.id);
     expect(ids(['ADMIN'])).toContain('settings');
     for (const r of ['OFFICER', 'BRANCH_MANAGER', 'APPROVER']) expect(ids([r])).not.toContain('settings');
-    for (const r of UserRole) expect(ids([r])).toEqual(expect.arrayContaining(['customer', 'report']));
-    for (const r of UserRole.filter((x) => x !== 'COMPLIANCE')) expect(ids([r])).toEqual(expect.arrayContaining(['application', 'loan']));
+    for (const r of UserRole) expect(ids([r])).toContain('customer');
+    for (const r of UserRole.filter((x) => x !== 'COMPLIANCE')) expect(ids([r])).toEqual(expect.arrayContaining(['report', 'application', 'loan']));
     expect(menuFor([])).toEqual([]);
   });
   it('blacklist is a top-level item right above settings (not a sub-menu); menuFor does not mutate MENU', () => {
@@ -49,7 +49,13 @@ describe('RBAC (docs/01 §3)', () => {
     const ids = menuFor(['COMPLIANCE']).map((m) => m.id);
     expect(ids).not.toContain('application');
     expect(ids).not.toContain('loan');
-    expect(ids).toEqual(expect.arrayContaining(['aml-review', 'blacklist', 'report', 'maker-checker']));
+    expect(ids).toEqual(expect.arrayContaining(['aml-review', 'blacklist', 'maker-checker']));
+  });
+  // F12-4 (эзэмшигчийн шийдвэр, сонголт A): тайлангийн сервер (`report.controller` @Roles) COMPLIANCE-г 403-оор татгалздаг тул цэсэнд "Тайлан" харуулахгүй (N2-той ижил зарчим).
+  it('F12-4: report:read is held only by the roles the report API lets read, so COMPLIANCE gets no Тайлан menu', () => {
+    const holders = UserRole.filter((r) => ROLE_PERMISSIONS[r].includes('report:read'));
+    expect([...holders].sort()).toEqual(['ADMIN', 'APPROVER', 'BRANCH_MANAGER', 'OFFICER']);
+    expect(menuFor(['COMPLIANCE']).map((m) => m.id)).not.toContain('report');
   });
   it('AuthResponse schema accepts a menu built by menuFor', () => {
     const roles = ['ADMIN'] as const;
