@@ -1,10 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { App as AntApp, Alert, Button, Input, Modal } from 'antd';
+import { App as AntApp, Input, Modal } from 'antd';
 import type { ApprovalDecision, MyApprovalItem } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { applicationHref, describeApplicationError } from './applications.utils';
+import { ListLoadError } from './ListLoadError';
 import { buildVoteRequest, isStaleVoteError } from './my-approvals';
 import { MyApprovalsTable } from './MyApprovalsTable';
 import { useListVote, useMyApprovals } from './useApplications';
@@ -48,7 +49,7 @@ export function MyApprovalsPanel() {
 
   return (
     <>
-      {mine.isError ? <Alert type="error" showIcon message={t('application.list.error')} action={<Button size="small" onClick={() => void mine.refetch()}>{t('application.list.retry')}</Button>} style={{ marginBottom: 12 }} /> : null}
+      {mine.isError ? <ListLoadError error={mine.error} errorKey="application.list.error" forbiddenKey="application.mine.forbidden" onRetry={() => void mine.refetch()} /> : null}
       <MyApprovalsTable
         items={mine.data?.items ?? []}
         loading={mine.isFetching}
