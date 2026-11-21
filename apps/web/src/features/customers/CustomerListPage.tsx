@@ -28,7 +28,8 @@ export function CustomerListPage() {
   const searchHint = registerSearchHint(q);
   const open = (id: string) => router.push(`/customer/${id}`);
   const columns: ColumnsType<CustomerSummary> = [
-    { title: t('customer.col.register'), dataIndex: 'registerNoMasked', key: 'register', render: (v: string, r) => <a href={`/customer/${r.id}`} onClick={(e) => { e.preventDefault(); open(r.id); }}>{v}</a> },
+    // F12-6: жижиг дэлгэцэд хүснэгт өөрөө хажуу тийш гүйх тул регистр (хүсэлт нээх холбоос) зүүн талд бэхлэгдэнэ.
+    { title: t('customer.col.register'), dataIndex: 'registerNoMasked', key: 'register', fixed: 'left', render: (v: string, r) => <a href={`/customer/${r.id}`} onClick={(e) => { e.preventDefault(); open(r.id); }}>{v}</a> },
     { title: t('customer.col.type'), dataIndex: 'customerType', key: 'type', render: (v: CustomerType) => <Tag>{t(`customer.type.${v}`)}</Tag> },
     { title: t('customer.col.name'), key: 'name', render: (_, r) => [r.lastName, r.firstName].filter(Boolean).join(' ') },
     { title: t('customer.col.phone'), dataIndex: 'phone', key: 'phone', render: (v: string | null) => v ?? '—' },
@@ -66,6 +67,7 @@ export function CustomerListPage() {
         loading={list.isFetching}
         dataSource={list.data?.items ?? []}
         columns={columns}
+        scroll={{ x: 'max-content' }}
         locale={{ emptyText: (
           <div data-testid="customer-list-empty">
             {t('customer.list.empty')}
