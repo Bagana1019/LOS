@@ -65,6 +65,24 @@ describe('buildPayload / validateCustomer', () => {
     expect(names).toContain('residenceAddress.province');
   });
 
+  // F1-13: дэд талбарын алдаа (employment.phone) гарахад validateCustomer дараагийн алдаа хайхаар `employment`-г бүхэлд нь устгадаг. Дараагийн шалгалт
+  // түүнийг "заавал бөглөнө" гэж давхар мэдэгдэж, бөглөсөн байгууллагын нэр хайрцагт худал алдаа харагддаг байсан.
+  it('F1-13: утасны дэд талбар буруу байхад бөглөсөн байгууллагыг "заавал бөглөнө" гэж давхар мэдэгдэхгүй', () => {
+    const p = buildPayload({ ...full, employment: { organization: 'ХХК', position: 'Менежер', phone: '7011-22' } }, fixed);
+    const issues = validateCustomer(p);
+    expect(issues.map((i) => i.name.join('.'))).toEqual(['employment.phone']);
+    expect(issues[0]!.message).not.toMatch(/Заавал/);
+  });
+
+  it('F1-13: нэг объектын хоёр өөр дэд талбарын алдаа хоёулаа нэг л удаа гарч, бөглөсөн талбарт худал алдаа үүсэхгүй', () => {
+    const p = buildPayload({ ...full, employment: { organization: 'ХХК', position: 'Менежер', phone: '7011-22', address: 'а'.repeat(301) } }, fixed);
+    const names = validateCustomer(p).map((i) => i.name.join('.'));
+    expect(new Set(names).size).toBe(names.length);
+    expect(names).toEqual(expect.arrayContaining(['employment.phone', 'employment.address']));
+    expect(names).not.toContain('employment.organization');
+    expect(names).not.toContain('employment.position');
+  });
+
   it('байгууллага: иргэний талбар шаардахгүй', () => {
     const legal = { firstName: 'Монгол ХХК', phone: '99112233', email: 'a@b.mn', activitySector: 'Худалдаа', segment: 'SME', officialAddress: addr, residenceSameAsOfficial: true };
     expect(validateCustomer(buildPayload(legal, { customerType: 'LEGAL_ENTITY', registerNo: '1234567' }))).toEqual([]);
