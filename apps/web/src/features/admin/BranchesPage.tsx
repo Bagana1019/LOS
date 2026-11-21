@@ -5,6 +5,7 @@ import type { TableColumnsType } from 'antd';
 import { CreateBranchBody, SETTING_TARGET_TYPE, UpdateBranchBody, type AdminBranchDto } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { errorText, validateBranchCodes } from './admin.utils';
+import { branchCodeRules, branchNameRules } from './branch-form';
 import { useBranches, useCreateBranch, useProposeSetting, useSetBranchActive, useSettings, useUpdateBranch } from './admin.hooks';
 import { BackLink } from './SettingsHome';
 import { PendingChangeNotice, ReasonField, reasonOk, submittedText } from './FourEyes';
@@ -29,7 +30,9 @@ export function BranchesPage() {
   const codeError = validateBranchCodes(codes);
 
   const open = (b: AdminBranchDto | 'new') => { form.resetFields(); if (b !== 'new') form.setFieldsValue({ name: b.name, code: b.code }); setEditing(b); };
-  const onSubmit = () => {
+  const onSubmit = async () => {
+    // F9-12: талбар бүрийн дүрэм (Form rules) — алдаа тухайн талбарт Монголоор, нэгэн зэрэг; toast биш
+    try { await form.validateFields(); } catch { return; }
     const v = form.getFieldsValue();
     const done = (key: string) => ({ onSuccess: () => { setEditing(null); void message.success(t(key as never)); }, onError: (e: unknown) => void message.error(errorText(e)) });
     if (editing === 'new') {
@@ -71,8 +74,8 @@ export function BranchesPage() {
   const codeCols: TableColumnsType<AdminBranchDto> = [
     { title: t('admin.branches.col.name'), dataIndex: 'name' },
     {
-      title: t('admin.branches.col.code'), width: 180,
-      render: (_, b) => <Input value={codes[b.id] ?? ''} maxLength={12} placeholder={b.code} onChange={(e) => setCodes((c) => ({ ...c, [b.id]: e.target.value }))} aria-label={`${t('admin.branches.col.code')} ${b.name}`} />,
+      title: t('admin.branches.contract_code.col'), width: 200, // F9-11: "Салбарын код"-оос тусдаа нэр
+      render: (_, b) => <Input value={codes[b.id] ?? ''} maxLength={12} placeholder={b.code} onChange={(e) => setCodes((c) => ({ ...c, [b.id]: e.target.value }))} aria-label={`${t('admin.branches.contract_code.col')} ${b.name}`} />,
     },
   ];
 
@@ -88,9 +91,9 @@ export function BranchesPage() {
           {branches.isLoading ? <Skeleton active /> : <Table<AdminBranchDto> rowKey="id" size="small" aria-label={t('admin.branches.list.title')} pagination={false} columns={listCols} dataSource={branches.data ?? []} scroll={{ x: 640 }} />}
         </Flex>
       </Card>
-      <Card title={t('admin.branches.codes.title')} extra={<Button type="primary" onClick={onSaveCodes} loading={saveSetting.isPending} disabled={!!codeError || !reasonOk(reason)}>{t('admin.four_eyes.submit')}</Button>}>
+      <Card title={t('admin.branches.contract_code.title')} extra={<Button type="primary" onClick={onSaveCodes} loading={saveSetting.isPending} disabled={!!codeError || !reasonOk(reason)}>{t('admin.four_eyes.submit')}</Button>}>
         <Flex vertical gap={12}>
-          <Typography.Text type="secondary">{t('admin.branches.codes.hint')}</Typography.Text>
+          <Typography.Text type="secondary">{t('admin.branches.contract_code.hint')}</Typography.Text>
           <PendingChangeNotice targetType={SETTING_TARGET_TYPE} targetId={KEY} />
           <Alert type="info" showIcon message={t('admin.four_eyes.notice')} />
           <ReasonField value={reason} onChange={setReason} />
@@ -101,10 +104,10 @@ export function BranchesPage() {
       <Modal open={editing !== null} title={t(editing === 'new' ? 'admin.branches.create.title' : 'admin.branches.edit.title')} okText={t('admin.common.save')} cancelText={t('admin.common.cancel')}
         confirmLoading={create.isPending || update.isPending} onOk={onSubmit} onCancel={() => setEditing(null)} destroyOnClose forceRender>
         <Form form={form} layout="vertical" requiredMark={false}>
-          <Form.Item name="code" label={t('admin.branches.field.code')} extra={t('admin.branches.field.code.help')}>
+          <Form.Item name="code" label={t('admin.branches.field.code')} extra={t('admin.branches.code.help')} validateFirst rules={editing === 'new' ? branchCodeRules() : undefined}>
             <Input maxLength={12} disabled={editing !== 'new'} autoComplete="off" />
           </Form.Item>
-          <Form.Item name="name" label={t('admin.branches.field.name')}><Input maxLength={120} autoComplete="off" /></Form.Item>
+          <Form.Item name="name" label={t('admin.branches.field.name')} validateFirst rules={branchNameRules()}><Input maxLength={120} autoComplete="off" /></Form.Item>
         </Form>
       </Modal>
     </Flex>
