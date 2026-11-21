@@ -7,10 +7,17 @@ import { t } from '../../lib/i18n';
 import { useAuth } from '../../lib/auth/auth-context';
 import { errorText, needsBranch, SUPPORTED_ROLES_ORDER } from './admin.utils';
 import { useBranches, useCreateUser, useResetUserPassword, useSetUserActive, useUpdateUser, useUsers } from './admin.hooks';
+import { addedPrivilegedRoles, isRoleGuardError, roleDisabledReason, type RoleDisabledReason } from './user-role-guards';
 import { BackLink } from './SettingsHome';
 
 type FormValues = { username?: string; fullName: string; email?: string; phone?: string; roles: string[]; branchId: string | null };
 type Filter = 'all' | 'active' | 'inactive';
+/** F9-19: эрх өсгөх дүр олгохоос өмнө баталгаажуулах хүсэлт; `run` нь баталгаажуулсны дараа л хүсэлт илгээнэ. */
+type GrantRequest = { name: string; username: string; added: string[]; run: () => void };
+
+const roleText = (r: string) => `${t(`auth.role.${r}`)} (${r})`;
+const reasonText = (role: string, reason: RoleDisabledReason) =>
+  reason.kind === 'self' ? t('admin.users.guard.self') : t('admin.users.guard.pair', { role: roleText(role), partner: roleText(reason.partner) });
 
 /** FR-13 · Хэрэглэгчийн удирдлага: нэмэх, засах, дүр/салбар оноох, идэвхгүй болгох/сэргээх, нууц үг шинэчлэх. Түр нууц үгийг нэг л удаа үзүүлнэ. */
 export function UsersPage() {
@@ -29,6 +36,14 @@ export function UsersPage() {
   const [form] = Form.useForm<FormValues>();
   const watchedRoles = Form.useWatch('roles', form) ?? [];
   const selfId = me?.user.id;
+  const [guardError, setGuardError] = useState<string | null>(null);
+  const [grant, setGrant] = useState<GrantRequest | null>(null);
+
+  // F9-19: дүрийн сонголтын хамгаалалт. Дүрмийг `@los/contracts`-аас авна (gateway-тэй ижил), хуучин (засагдаж буй) дүрүүдийг эх болгоно.
+  const editingUser = editing && editing !== 'new' ? editing : null;
+  const roleReasons = SUPPORTED_ROLES_ORDER.map((r) => ({ role: r, reason: roleDisabledReason(r, { selected: watchedRoles, original: editingUser?.roles ?? [], isSelf: editingUser !== null && editingUser.id === selfId }) }));
+  const roleOptions = roleReasons.map(({ role, reason }) => ({ value: role, label: role, disabled: reason !== null, title: reason ? reasonText(role, reason) : role }));
+  const roleNotes = [...new Set(roleReasons.flatMap(({ role, reason }) => (reason ? [reasonText(role, reason)] : [])))];
 
   const rows = useMemo(() => {
     const needle = q.trim().toLocaleLowerCase('mn');
@@ -40,20 +55,36 @@ export function UsersPage() {
   const open = (u: AdminUserDto | 'new') => {
     form.resetFields();
     form.setFieldsValue(u === 'new' ? { roles: ['OFFICER'], branchId: null } : { username: u.username, fullName: u.fullName, email: u.email ?? '', phone: u.phone ?? '', roles: u.roles, branchId: u.branchId });
+    setGuardError(null);
     setEditing(u);
   };
   const fail = (e: unknown) => void message.error(errorText(e));
+  /** F9-19: дүрийн хамгаалалтын 422 — маягт нээлттэй үлдэж, серверийн мессеж маягт дотор харагдана; бусад алдаа өмнөх шигээ мэдэгдэл. */
+  const failSave = (e: unknown) => (isRoleGuardError(e) ? setGuardError(errorText(e)) : fail(e));
+  /** Эрх өсгөх дүр нэмэгдэж байвал баталгаажуулах цонх, үгүй бол шууд илгээнэ. */
+  const sendOrConfirm = (who: { name: string; username: string }, added: string[], run: () => void) => (added.length ? setGrant({ ...who, added, run }) : run());
   const onSubmit = () => {
+    setGuardError(null);
     const v = form.getFieldsValue();
     if (editing === 'new') {
       const p = CreateUserBody.safeParse(v);
       if (!p.success) return void message.error(p.error.issues[0]?.message ?? t('admin.common.load_error'));
-      create.mutate(p.data, { onSuccess: (r) => { setEditing(null); setCredential({ username: r.user.username, password: r.temporaryPassword }); void message.success(t('admin.users.created')); }, onError: fail });
+      const body = p.data;
+      sendOrConfirm({ name: body.fullName, username: body.username }, addedPrivilegedRoles([], body.roles), () =>
+        create.mutate(body, { onSuccess: (r) => { setEditing(null); setCredential({ username: r.user.username, password: r.temporaryPassword }); void message.success(t('admin.users.created')); }, onError: failSave }));
     } else if (editing) {
       const p = UpdateUserBody.safeParse(v);
       if (!p.success) return void message.error(p.error.issues[0]?.message ?? t('admin.common.load_error'));
-      update.mutate({ id: editing.id, body: p.data }, { onSuccess: () => { setEditing(null); void message.success(t('admin.users.updated')); }, onError: fail });
+      const body = p.data;
+      const target = editing;
+      sendOrConfirm({ name: body.fullName, username: target.username }, addedPrivilegedRoles(target.roles, body.roles), () =>
+        update.mutate({ id: target.id, body }, { onSuccess: () => { setEditing(null); void message.success(t('admin.users.updated')); }, onError: failSave }));
     }
+  };
+  const confirmGrant = () => {
+    const run = grant?.run;
+    setGrant(null);
+    run?.();
   };
   const toggle = (u: AdminUserDto) =>
     setActive.mutate({ id: u.id, active: !u.isActive }, { onSuccess: () => void message.success(t(u.isActive ? 'admin.users.deactivated' : 'admin.users.reactivated')), onError: fail });
@@ -118,8 +149,9 @@ export function UsersPage() {
       </Card>
 
       <Modal open={editing !== null} title={t(editing === 'new' ? 'admin.users.create.title' : 'admin.users.edit.title')} okText={t('admin.common.save')} cancelText={t('admin.common.cancel')}
-        confirmLoading={create.isPending || update.isPending} onOk={onSubmit} onCancel={() => setEditing(null)} destroyOnClose forceRender>
-        <Form form={form} layout="vertical" requiredMark={false}>
+        confirmLoading={create.isPending || update.isPending} onOk={onSubmit} onCancel={() => setEditing(null)} destroyOnHidden forceRender>
+        {guardError ? <Alert type="error" showIcon message={guardError} style={{ marginBottom: 16 }} /> : null}
+        <Form form={form} layout="vertical" requiredMark={false} onValuesChange={(changed) => { if ('roles' in changed) setGuardError(null); }}>
           <Form.Item name="username" label={t('admin.users.field.username')} extra={editing === 'new' ? t('admin.users.field.username.help') : undefined}>
             <Input maxLength={40} disabled={editing !== 'new'} autoComplete="off" />
           </Form.Item>
@@ -128,8 +160,9 @@ export function UsersPage() {
             <Form.Item name="email" label={t('admin.users.field.email')} style={{ flex: 1 }}><Input maxLength={160} type="email" autoComplete="off" /></Form.Item>
             <Form.Item name="phone" label={t('admin.users.field.phone')} style={{ flex: 1 }}><Input maxLength={40} autoComplete="off" /></Form.Item>
           </Flex>
-          <Form.Item name="roles" label={t('admin.users.field.roles')} extra={t('admin.users.field.roles.help')}>
-            <Select mode="multiple" options={SUPPORTED_ROLES_ORDER.map((r) => ({ value: r, label: r }))} />
+          <Form.Item name="roles" label={t('admin.users.field.roles')}
+            extra={<>{t('admin.users.field.roles.help')}<div aria-live="polite">{roleNotes.map((n) => <Typography.Text key={n} type="warning" style={{ display: 'block' }}>{n}</Typography.Text>)}</div></>}>
+            <Select mode="multiple" options={roleOptions} />
           </Form.Item>
           <Form.Item name="branchId" label={t('admin.users.field.branch')} extra={needsBranch(watchedRoles) ? t('admin.users.page.hint') : undefined}>
             <Select allowClear={!needsBranch(watchedRoles)} placeholder={t('admin.users.no_branch')} options={branchOptions} />
@@ -137,7 +170,15 @@ export function UsersPage() {
         </Form>
       </Modal>
 
-      <Modal open={credential !== null} title={t('admin.users.credential.title')} closable={false} maskClosable={false} keyboard={false} destroyOnClose
+      <Modal open={grant !== null} title={t('admin.users.guard.confirm.title')} okText={t('admin.users.guard.confirm.ok')} cancelText={t('admin.common.cancel')} onOk={confirmGrant} onCancel={() => setGrant(null)} destroyOnHidden>
+        <Flex vertical gap={8}>
+          <Typography.Text>{t('admin.users.guard.confirm.body', { name: grant?.name ?? '', username: grant?.username ?? '' })}</Typography.Text>
+          <ul style={{ margin: 0, paddingInlineStart: 20 }}>{(grant?.added ?? []).map((r) => <li key={r}><Typography.Text strong>{roleText(r)}</Typography.Text></li>)}</ul>
+          <Typography.Text type="secondary">{t('admin.users.guard.confirm.note')}</Typography.Text>
+        </Flex>
+      </Modal>
+
+      <Modal open={credential !== null} title={t('admin.users.credential.title')} closable={false} maskClosable={false} keyboard={false} destroyOnHidden
         footer={<Button type="primary" onClick={() => setCredential(null)}>{t('admin.users.credential.close')}</Button>}>
         <Flex vertical gap={12}>
           <Alert type="warning" showIcon message={t('admin.users.credential.body')} />
