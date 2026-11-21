@@ -5,7 +5,7 @@ import { hashRegisterNo } from '@los/database';
 import { adminCtx, entryInput, FixedClock, fakeCipher, gateReads, makeService, REGISTER, SequentialIds } from './test-support';
 import { BlacklistCreateBody, BlacklistListQuery, BlacklistPatchBody, MAX_IMPORT_ROWS } from './blacklist.schemas';
 import { BlacklistService, type ImportItem } from './blacklist.service';
-import { DuplicateBlacklistEntryError, type BlacklistRepository } from './blacklist.repository';
+import { DuplicateBlacklistEntryError, StaleBlacklistEntryError, type BlacklistRepository } from './blacklist.repository';
 import { InMemoryBlacklistRepository } from './in-memory-blacklist.repository';
 
 const HOUR = 3_600_000;
@@ -180,6 +180,104 @@ describe('BlacklistService', () => {
       await expect(service.update(adminCtx(), 'missing', patch({ name: 'x' }))).rejects.toBeInstanceOf(NotFoundException);
       await expect(service.update(adminCtx({ orgId: 'org-2' }), id, patch({ name: 'x' }))).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    // F8-9: 2 tab. A нэр засав → B (хуучин form) шалтгаан засахад A-гийн нэрийг чимээгүй дарж байсан (200). expectedUpdatedAt нь зөвхөн сонголттой.
+    describe('optimistic concurrency via expectedUpdatedAt (F8-9)', () => {
+      const staleError = async (p: Promise<unknown>) => p.then(() => null, (e: unknown) => e);
+
+      it('exposes updatedAt on every returned entry (create, get, update) and it advances on each write', async () => {
+        const created = await service.create(adminCtx(), input());
+        expect(created.updatedAt).toBe('2026-10-28T09:00:00.000Z');
+        expect((await service.get(adminCtx(), created.id)).updatedAt).toBe(created.updatedAt);
+        clock.advance(HOUR);
+        const updated = await service.update(adminCtx(), created.id, patch({ name: 'Шинэ нэр' }));
+        expect(updated.updatedAt).toBe('2026-10-28T10:00:00.000Z');
+        expect(BlacklistEntry.parse(updated).updatedAt).toBe(updated.updatedAt);
+      });
+
+      it('applies the edit (200) when expectedUpdatedAt equals the stored updatedAt', async () => {
+        const created = await service.create(adminCtx(), input());
+        clock.advance(HOUR);
+        const updated = await service.update(adminCtx(), created.id, patch({ name: 'Шинэ нэр', expectedUpdatedAt: created.updatedAt }));
+        expect(updated.name).toBe('Шинэ нэр');
+        expect(repo.events).toHaveLength(2);
+      });
+
+      it('answers 409 BLACKLIST_STALE with the Mongolian message when expectedUpdatedAt differs, and writes nothing', async () => {
+        const created = await service.create(adminCtx(), input());
+        clock.advance(HOUR);
+        await service.update(adminCtx({ userId: 'user-2' }), created.id, patch({ name: 'A-гийн нэр' })); // tab A
+        const eventsBefore = repo.events.length;
+
+        const err = await staleError(service.update(adminCtx(), created.id, patch({ reasonText: 'B-гийн шалтгаан', expectedUpdatedAt: created.updatedAt }))); // tab B (хуучин form)
+
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as ConflictException).getResponse()).toEqual({
+          code: 'BLACKLIST_STALE', message: 'Бичлэг өөр хэрэглэгчээр өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу',
+        });
+        expect(repo.events).toHaveLength(eventsBefore);
+        expect(await service.get(adminCtx(), created.id)).toMatchObject({ name: 'A-гийн нэр', reasonText: 'Delinquent over 90 days' });
+      });
+
+      it('keeps today\'s behaviour when the field is absent: a second edit from an old form still applies (200)', async () => {
+        const created = await service.create(adminCtx(), input());
+        clock.advance(HOUR);
+        await service.update(adminCtx(), created.id, patch({ name: 'A-гийн нэр' }));
+        clock.advance(HOUR);
+        const second = await service.update(adminCtx(), created.id, patch({ reasonText: 'B-гийн шалтгаан' }));
+        expect(second).toMatchObject({ name: 'A-гийн нэр', reasonText: 'B-гийн шалтгаан' });
+      });
+
+      it('compares instants, not strings: an equivalent timestamp in another ISO form (+00:00 offset) is accepted', async () => {
+        const created = await service.create(adminCtx(), input());
+        const sameInstant = created.updatedAt!.replace('Z', '+00:00');
+        expect((await service.update(adminCtx(), created.id, patch({ name: 'X', expectedUpdatedAt: sameInstant }))).name).toBe('X');
+      });
+
+      it('is checked even when the edit would be a no-op, so a stale form is never told "saved"', async () => {
+        const created = await service.create(adminCtx(), input());
+        clock.advance(HOUR);
+        await service.update(adminCtx(), created.id, patch({ name: 'A-гийн нэр' }));
+        const err = await staleError(service.update(adminCtx(), created.id, patch({ name: 'A-гийн нэр', expectedUpdatedAt: created.updatedAt })));
+        expect((err as ConflictException).getResponse()).toMatchObject({ code: 'BLACKLIST_STALE' });
+      });
+
+      it('a successful edit returns the NEW updatedAt, which a follow-up edit can echo; the old one is then stale', async () => {
+        const created = await service.create(adminCtx(), input());
+        clock.advance(HOUR);
+        const first = await service.update(adminCtx(), created.id, patch({ name: 'Нэг', expectedUpdatedAt: created.updatedAt }));
+        clock.advance(HOUR);
+        const second = await service.update(adminCtx(), created.id, patch({ name: 'Хоёр', expectedUpdatedAt: first.updatedAt }));
+        expect(second.name).toBe('Хоёр');
+        const replay = await staleError(service.update(adminCtx(), created.id, patch({ name: 'Гурав', expectedUpdatedAt: first.updatedAt })));
+        expect((replay as ConflictException).getResponse()).toMatchObject({ code: 'BLACKLIST_STALE' });
+      });
+
+      it('a change by another path (deactivate) also makes the form stale', async () => {
+        const created = await service.create(adminCtx(), input());
+        clock.advance(HOUR);
+        await service.deactivate(adminCtx({ userId: 'user-2' }), created.id, 'closed by compliance');
+        const err = await staleError(service.update(adminCtx(), created.id, patch({ name: 'X', expectedUpdatedAt: created.updatedAt })));
+        expect((err as ConflictException).getResponse()).toMatchObject({ code: 'BLACKLIST_STALE' });
+      });
+
+      it('the in-flight compare-and-set race (repository says stale) gives the SAME coded Mongolian 409, so the UI action works for it too', async () => {
+        const created = await service.create(adminCtx(), input());
+        const racing: BlacklistRepository = {
+          list: (...a) => repo.list(...a), findById: (...a) => repo.findById(...a), findByKey: (...a) => repo.findByKey(...a), findExpired: (...a) => repo.findExpired(...a),
+          saveWithEvent: async () => { throw new StaleBlacklistEntryError(); },
+        };
+        const err = await staleError(make(racing).update(adminCtx(), created.id, patch({ name: 'X', expectedUpdatedAt: created.updatedAt })));
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as ConflictException).getResponse()).toEqual({
+          code: 'BLACKLIST_STALE', message: 'Бичлэг өөр хэрэглэгчээр өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу',
+        });
+      });
+
+      it('404 for an unknown entry wins over the version check', async () => {
+        await expect(service.update(adminCtx(), 'missing', patch({ name: 'x', expectedUpdatedAt: '2026-10-28T09:00:00.000Z' }))).rejects.toBeInstanceOf(NotFoundException);
+      });
+    });
   });
 
   describe('deactivate', () => {
@@ -326,7 +424,8 @@ describe('BlacklistService', () => {
       expect(fulfilled).toHaveLength(1);
       expect(rejected).toHaveLength(1);
       expect(rejected[0].reason).toBeInstanceOf(ConflictException);
-      expect((rejected[0].reason as ConflictException).message).toContain('modified concurrently');
+      // F8-9: зэрэг засварын 409 нь хуучирсан маягттай ИЖИЛ `{ code, message }` хэлбэртэй
+      expect((rejected[0].reason as ConflictException).getResponse()).toEqual({ code: 'BLACKLIST_STALE', message: expect.stringContaining('өөр хэрэглэгчээр өөрчлөгдсөн') });
 
       // 3 event: create, deactivate, ялагчийн ганц event. Ялагдагчийн event/мөр бичигдээгүй.
       expect(repo.events).toHaveLength(3);
@@ -538,7 +637,7 @@ describe('BlacklistService', () => {
       const result = await make(racing).importRows(adminCtx(), rows(entryInput({ registerNo: 'УБ11111111', name: 'Import name' }), entryInput({ registerNo: 'УБ22222222' })));
 
       expect(result).toMatchObject({ created: 1, updated: 0, skipped: 0 });
-      expect(result.errors).toEqual([{ row: 1, message: expect.stringContaining('modified concurrently') }]);
+      expect(result.errors).toEqual([{ row: 1, message: expect.stringContaining('өөр хэрэглэгчээр өөрчлөгдсөн') }]);
       expect(await service.get(adminCtx(), first.id)).toMatchObject({ name: 'Бат Болд', reasonText: 'concurrent edit' });
     });
 

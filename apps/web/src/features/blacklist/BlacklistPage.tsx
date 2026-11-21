@@ -6,9 +6,9 @@ import { AmlSubjectType, BlacklistSeverity, type BlacklistEntry, type BlacklistE
 import { t } from '../../lib/i18n';
 import { useAuth } from '../../lib/auth/auth-context';
 import { describeCustomerError } from '../customers/customer-error';
-import { useBlacklistHistory, useBlacklistList, useCreateBlacklist, useDeactivateBlacklist, useUpdateBlacklist } from './useBlacklist';
+import { useBlacklistHistory, useBlacklistList, useCreateBlacklist, useDeactivateBlacklist, useRefreshBlacklistEntry, useUpdateBlacklist } from './useBlacklist';
 import { LIST_TYPES, REASON_CODES, SOURCES, auditActionLabel, cleanRegisterInput, listTypeLabel, maskRegister, reasonLabel, savedMessage, severityStyle } from './blacklist.utils';
-import { describeBlacklistError, type BlacklistErrorContext } from './blacklist.errors';
+import { describeBlacklistError, isStaleBlacklistError, type BlacklistErrorContext } from './blacklist.errors';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -42,6 +42,7 @@ export function BlacklistPage() {
 
   const list = useBlacklistList({ q: q || undefined, severity, isActive: status === 'all' ? undefined : status === 'active', limit: pageSize, offset: (page - 1) * pageSize });
   const [deactivating, setDeactivating] = useState<BlacklistEntry | null>(null);
+  const refreshEntry = useRefreshBlacklistEntry();
 
   const columns: ColumnsType<BlacklistEntry> = [
     { title: t('blacklist.col.severity'), key: 'severity', width: 110, render: (_, r) => <SeverityTag value={r.severity} /> },
@@ -103,7 +104,7 @@ export function BlacklistPage() {
         pagination={{ current: page, pageSize, total: list.data?.total ?? 0, showSizeChanger: true, onChange: (p, s) => { setPage(p); setPageSize(s); } }}
       />
 
-      {editing ? <EntryModal entry={editing === 'new' ? null : editing} onClose={() => setEditing(null)} /> : null}
+      {editing ? <EntryModal key={entryKey(editing)} entry={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onReload={async (id) => setEditing(await refreshEntry(id))} /> : null}
       {deactivating ? <DeactivateModal entry={deactivating} onClose={() => setDeactivating(null)} /> : null}
       <HistoryDrawer id={historyId} onClose={() => setHistoryId(null)} />
     </div>
@@ -134,16 +135,45 @@ function DeactivateModal({ entry, onClose }: { entry: BlacklistEntry; onClose: (
   );
 }
 
-function EntryModal({ entry, onClose }: { entry: BlacklistEntry | null; onClose: () => void }) {
+/** F8-9: шинэчилсэн бичлэг ирэхэд маягтыг шинэ утгаар дахин ачаалахын тулд (initialValues нэг л удаа уншигддаг) түлхүүр нь updatedAt-тай хамт өөрчлөгдөнө. */
+const entryKey = (e: BlacklistEntry | 'new'): string => (e === 'new' ? 'new' : `${e.id}@${e.updatedAt ?? ''}`);
+
+/** Маягтын дээд алдаа. `onRefresh` өгөгдсөн (хуучирсан маягт, F8-9) бол «Шинэчлэх» үйлдэлтэй. */
+function FormError({ error, onRefresh, refreshing }: { error: string | null; onRefresh: (() => void) | null; refreshing: boolean }) {
+  if (!error) return null;
+  const action = onRefresh ? <Button size="small" data-testid="blacklist-stale-refresh" loading={refreshing} onClick={onRefresh}>{t('blacklist.action.refresh')}</Button> : undefined;
+  return <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} action={action} />;
+}
+
+function EntryModal({ entry, onClose, onReload }: { entry: BlacklistEntry | null; onClose: () => void; onReload: (id: string) => Promise<void> }) {
   const { message } = App.useApp();
   const [form] = Form.useForm<FormValues>();
   const create = useCreateBlacklist();
   const update = useUpdateBlacklist();
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+  const [reloading, setReloading] = useState(false);
   const busy = create.isPending || update.isPending;
+
+  /** F8-9: «Шинэчлэх» — хамгийн сүүлийн бичлэгийг татна; амжилттай бол түлхүүр солигдож маягт шинэ утгаар дахин ачаалагдана. */
+  const reload = async () => {
+    if (!entry) return;
+    setReloading(true);
+    try {
+      await onReload(entry.id);
+      setError(null);
+      setStale(false);
+    } catch (e) {
+      setStale(false);
+      setError(describeCustomerError(e).message);
+    } finally {
+      setReloading(false);
+    }
+  };
 
   const onFinish = (v: FormValues) => {
     setError(null);
+    setStale(false);
     const body = { ...v, registerNo: cleanRegisterInput(v.registerNo), reasonText: v.reasonText?.trim() || undefined, validUntil: v.validUntil ? new Date(`${v.validUntil}T23:59:59`).toISOString() : undefined };
     const done = {
       onSuccess: (saved: BlacklistEntry) => {
@@ -151,9 +181,13 @@ function EntryModal({ entry, onClose }: { entry: BlacklistEntry | null; onClose:
         void message.success({ content: text, duration: text === t('blacklist.saved') ? undefined : PENDING_TOAST_SECONDS });
         onClose();
       },
-      onError: (e: unknown) => setError(applyApiError(form, e, { listType: form.getFieldValue('listType') as string | undefined })),
+      onError: (e: unknown) => {
+        setStale(isStaleBlacklistError(e));
+        setError(applyApiError(form, e, { listType: form.getFieldValue('listType') as string | undefined }));
+      },
     };
-    if (entry) update.mutate({ id: entry.id, body: { ...body, reasonText: v.reasonText?.trim() || null } }, done);
+    // F8-9: ачаалсан updatedAt-аа буцаана — өөр tab засчихсан бол сервер 409 өгч чимээгүй дарахгүй (хуучин серверт updatedAt байхгүй ⇒ илгээхгүй).
+    if (entry) update.mutate({ id: entry.id, body: { ...body, reasonText: v.reasonText?.trim() || null, expectedUpdatedAt: entry.updatedAt } }, done);
     else create.mutate(body, done);
   };
 
@@ -161,7 +195,7 @@ function EntryModal({ entry, onClose }: { entry: BlacklistEntry | null; onClose:
     <Modal open title={t(entry ? 'blacklist.edit.title' : 'blacklist.add.title')} onCancel={onClose} okText={t('blacklist.save')} cancelText={t('blacklist.cancel')} confirmLoading={busy} onOk={() => form.submit()} destroyOnHidden>
       <Form<FormValues> form={form} layout="vertical" onFinish={onFinish}
         initialValues={entry ? { registerNo: entry.registerNo, customerType: entry.customerType, name: entry.name, severity: entry.severity, listType: entry.listType, reasonCode: entry.reasonCode, reasonText: entry.reasonText ?? undefined, source: entry.source, validUntil: entry.validUntil?.slice(0, 10) } : { source: 'INTERNAL', customerType: 'INDIVIDUAL', severity: 'BLACK' }}>
-        {error ? <Alert type="error" showIcon style={{ marginBottom: 12 }} message={error} /> : null}
+        <FormError error={error} onRefresh={stale ? () => void reload() : null} refreshing={reloading} />
         <Form.Item name="severity" label={t('blacklist.field.severity')} rules={[{ required: true }]} extra={t('blacklist.field.severity.hint')}>
           <Radio.Group optionType="button" buttonStyle="solid" options={BlacklistSeverity.map((v) => ({ value: v, label: t(`blacklist.severity.${v}`) }))} />
         </Form.Item>

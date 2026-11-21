@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../../lib/http';
-import { describeBlacklistError } from './blacklist.errors';
+import { describeBlacklistError, isStaleBlacklistError } from './blacklist.errors';
 
 // F8-4: серверийн (англи) алдааг хар жагсаалтын маягтад монгол, талбар заасан мессеж болгоно.
 const validation = (issues: unknown[]) => new ApiError(400, null, 'Validation failed', issues as never);
@@ -84,6 +84,23 @@ describe('describeBlacklistError: 4xx business errors', () => {
     const d = only(new ApiError(409, null, 'Blacklist entry was modified concurrently, retry'));
     expect(d.message).toBe('Бүртгэлийг өөр хэрэглэгч саяхан өөрчилсөн байна. Хүснэгтийг шинэчлээд дахин оролдоно уу.');
     expect(d.fields).toEqual([]);
+  });
+
+  // F8-9: хуучирсан маягт — сервер 409 { code: 'BLACKLIST_STALE' } өгнө; UI өөрийн монгол мессеж + "Шинэчлэх" үйлдэл
+  it('F8-9: BLACKLIST_STALE gets the dedicated refresh-the-page message (not the generic conflict text) and no field errors', () => {
+    const d = only(new ApiError(409, 'BLACKLIST_STALE', 'Бичлэг өөр хэрэглэгчээр өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу'));
+    expect(d.message).toBe('Бичлэг өөр хэрэглэгчээр өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу');
+    expect(d.fields).toEqual([]);
+  });
+
+  it('F8-9: isStaleBlacklistError is true only for a 409 carrying the BLACKLIST_STALE code', () => {
+    expect(isStaleBlacklistError(new ApiError(409, 'BLACKLIST_STALE', 'x'))).toBe(true);
+    expect(isStaleBlacklistError(new ApiError(409, null, 'Blacklist entry was modified concurrently, retry'))).toBe(false);
+    expect(isStaleBlacklistError(new ApiError(409, 'CONFLICT', 'An entry with the same register number and list type already exists'))).toBe(false);
+    expect(isStaleBlacklistError(new ApiError(400, 'BLACKLIST_STALE', 'x'))).toBe(false);
+    expect(isStaleBlacklistError(new Error('BLACKLIST_STALE'))).toBe(false);
+    expect(isStaleBlacklistError(null)).toBe(false);
+    expect(isStaleBlacklistError(undefined)).toBe(false);
   });
 
   it('puts the past-date error on the validUntil field', () => {

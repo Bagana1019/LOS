@@ -1,3 +1,4 @@
+import { BLACKLIST_STALE } from '@los/contracts';
 import { t } from '../../lib/i18n';
 import { describeCustomerError } from '../customers/customer-error';
 import { listTypeLabel } from './blacklist.utils';
@@ -91,6 +92,11 @@ function fromConflict(p: Parts, ctx: BlacklistErrorContext): DescribedBlacklistE
   return { message: t('blacklist.error.duplicate', { listType }), fields: [{ name: 'registerNo', message: t('blacklist.error.duplicate.field', { listType }) }] };
 }
 
+const isStale = (p: Parts): boolean => p.status === 409 && p.code === BLACKLIST_STALE;
+/** F8-9: маягтын ачаалсан updatedAt хуучирсан (өөр tab/хэрэглэгч засчихсан) — сервер 409 + `BLACKLIST_STALE`. UI энэ үед «Шинэчлэх» үйлдэл харуулна. */
+export const isStaleBlacklistError = (error: unknown): boolean => isStale(partsOf(error));
+const fromStale = (p: Parts): DescribedBlacklistError | null => (isStale(p) ? { message: t('blacklist.error.stale'), fields: [] } : null);
+
 /** customer-error-ийн 403 текст "харилцагч бүртгэх эрх" тул энд тохирохгүй; хар жагсаалтын эрхийн тайлбарыг ашиглана. */
 const fromForbidden = (p: Parts): DescribedBlacklistError | null => (p.status === 403 ? { message: t('blacklist.readOnly'), fields: [] } : null);
 
@@ -103,5 +109,5 @@ function fromUnmapped4xx(p: Parts): DescribedBlacklistError | null {
 /** `ctx.listType` — давхардлын мессежэд жагсаалтын нэрийг оруулах (маягтын утга). */
 export function describeBlacklistError(error: unknown, ctx: BlacklistErrorContext = {}): DescribedBlacklistError {
   const p = partsOf(error);
-  return fromIssues(p) ?? fromRegisterCode(p) ?? fromConflict(p, ctx) ?? fromPastDate(p) ?? fromForbidden(p) ?? fromUnmapped4xx(p) ?? { message: describeCustomerError(error).message, fields: [] };
+  return fromIssues(p) ?? fromRegisterCode(p) ?? fromStale(p) ?? fromConflict(p, ctx) ?? fromPastDate(p) ?? fromForbidden(p) ?? fromUnmapped4xx(p) ?? { message: describeCustomerError(error).message, fields: [] };
 }

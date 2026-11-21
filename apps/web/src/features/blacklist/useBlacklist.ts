@@ -9,6 +9,16 @@ export const useBlacklistList = (p: api.BlacklistListParams) =>
 export const useBlacklistHistory = (id: string | null) =>
   useQuery({ queryKey: [...blacklistKey, 'history', id], queryFn: () => api.fetchBlacklistHistory(id as string), enabled: id !== null });
 
+/** F8-9: нэг бичлэгийг шинээр татаж (хуучирсан маягтыг «Шинэчлэх»), жагсаалтын кэшийг мөн хуучруулна. */
+export function useRefreshBlacklistEntry() {
+  const qc = useQueryClient();
+  return async (id: string) => {
+    const fresh = await api.fetchBlacklistEntry(id);
+    void qc.invalidateQueries({ queryKey: blacklistKey });
+    return fresh;
+  };
+}
+
 function useInvalidating<V, R>(fn: (v: V) => Promise<R>) {
   const qc = useQueryClient();
   return useMutation({ mutationFn: fn, onSuccess: () => qc.invalidateQueries({ queryKey: blacklistKey }) });
