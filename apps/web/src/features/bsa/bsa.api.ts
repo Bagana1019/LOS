@@ -1,4 +1,4 @@
-import { BsaLosOverview, BsaLosPushResponse, BsaSuspicionListResponse, BsaCombinedSummary, BsaUploadResponse, type BankCode, type BsaAnalysisDetails, type BsaLosCreateAnalysisBody, type BsaResolveSuspicionsRequest, type ReviewStatus, type SuspicionFlag } from '@los/contracts';
+import { BsaLosOverview, BsaLosPushResponse, BsaResolveSuspicionsResponse, BsaSuspicionListResponse, BsaCombinedSummary, BsaUploadResponse, type BankCode, type BsaAnalysisDetails, type BsaLosCreateAnalysisBody, type BsaResolveSuspicionsRequest, type ReviewStatus, type SuspicionFlag } from '@los/contracts';
 import { API, apiDownload, apiFetch, authFetch, originationFetch, qs } from '../../lib/api';
 import { parseUploadFailure } from './bsa.feedback';
 import { banksField, type BsaCategory } from './bsa.helpers';
@@ -41,7 +41,8 @@ export const fetchJobs = (id: string): Promise<{ items: BsaJobBrief[] }> => apiF
 export const recalculate = (id: string): Promise<unknown> => apiFetch(`${sc(id)}/recalculate`, { method: 'POST', json: {} });
 export const fetchSuspicions = (id: string, q: { status?: ReviewStatus; flag?: SuspicionFlag; offset?: number; limit?: number }): Promise<BsaSuspicionListResponse> =>
   apiFetch(`${sc(id)}/suspicions${qs(q)}`, { schema: BsaSuspicionListResponse });
-export const resolveSuspicions = (id: string, body: BsaResolveSuspicionsRequest): Promise<unknown> => apiFetch(`${sc(id)}/suspicions/resolve`, { method: 'POST', json: body });
+export const resolveSuspicions = (id: string, body: BsaResolveSuspicionsRequest): Promise<BsaResolveSuspicionsResponse> =>
+  apiFetch(`${sc(id)}/suspicions/resolve`, { method: 'POST', json: body, schema: BsaResolveSuspicionsResponse });
 export const fetchCombined = (appId: string): Promise<BsaCombinedSummary> => apiFetch(`/scoring/bsa/applications/${encodeURIComponent(appId)}/combined`, { schema: BsaCombinedSummary });
 export const downloadReport = (id: string): Promise<void> => apiDownload(`${sc(id)}/report.pdf`, 'bsa-report.pdf');
 export const downloadIncomeSample = (id: string): Promise<void> => apiDownload(`${sc(id)}/income-sample.xlsx`, 'income-sample.xlsx');

@@ -522,6 +522,25 @@ export const BsaResolveSuspicionsRequest = z
   });
 export type BsaResolveSuspicionsRequest = z.infer<typeof BsaResolveSuspicionsRequest>;
 
+const Count = z.number().int().nonnegative();
+
+/**
+ * BSA-FR-5.2 хариу. `changedTransactions` = серверийн ангилал солих кодоор ҮНЭХЭЭР шинэчлэгдсэн гүйлгээ; `unchangedTransactions` = RECLASSIFY-д сонгосон
+ * ангиллын чиглэлтэй таарахгүй тул хэвээр үлдсэн гүйлгээ. Өөрийн дансны шилжүүлэг (BSA-BR-5) аль нэгэнд ч тоологдохгүй; APPROVE хоёуланд нь 0.
+ */
+export const BsaResolveSuspicionsResponse = z.object({
+  resolved: Count,
+  /** Олдоогүй эсвэл аль хэдийн шийдвэрлэгдсэн дохио */
+  skipped: Count,
+  pending: Count,
+  changedTransactions: Count,
+  unchangedTransactions: Count,
+  summary: BsaSummary.nullable(),
+  /** ANALYZED шинжилгээ өөрчлөгдсөн ⇒ LOS-д дахин «Системрүү татах» хэрэгтэй */
+  repushRequired: z.boolean(),
+});
+export type BsaResolveSuspicionsResponse = z.infer<typeof BsaResolveSuspicionsResponse>;
+
 /** Нэг дохио (хос/бүлэг гүйлгээ). Гүйлгээнүүд нь далдалсан хэлбэрээр (дансны сүүл л харагдана) */
 export const BsaSuspicionView = z.object({
   id: Id,

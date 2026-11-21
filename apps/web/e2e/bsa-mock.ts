@@ -1,5 +1,5 @@
 import {
-  BsaAnalysisDetails, BsaLosOverview, BsaLosPushResponse, BsaResolveSuspicionsRequest, BsaSuspicionListResponse, BsaSummary, SuspicionFlag,
+  BsaAnalysisDetails, BsaLosOverview, BsaLosPushResponse, BsaResolveSuspicionsRequest, BsaResolveSuspicionsResponse, BsaSuspicionListResponse, BsaSummary, SuspicionFlag,
   type BsaSuspicionView, type ReviewStatus,
 } from '@los/contracts';
 import type { MockApi } from './mock-api';
@@ -160,8 +160,11 @@ export function installBsa(api: MockApi, world: BsaWorld): void {
   api.post(`${SC}/suspicions/resolve`, ({ body }) => {
     const req = BsaResolveSuspicionsRequest.parse(body);
     world.resolves.push(req);
+    const resolved = world.suspicions.filter((s) => req.ids.includes(s.id) && s.status === 'PENDING').length;
     world.suspicions = world.suspicions.map((s) => (req.ids.includes(s.id) ? { ...s, status: 'RESOLVED', action: req.action } : s));
-    return { json: { updated: req.ids.length } };
+    // Гүйлгээний тоо 0: үүнийг шалгадаг spec (bsa-nav-clarity) серверийн тоог өөрөө заадаг.
+    const reply = { resolved, skipped: req.ids.length - resolved, pending: world.suspicions.filter((s) => s.status === 'PENDING').length, changedTransactions: 0, unchangedTransactions: 0, summary: null, repushRequired: false };
+    return { json: BsaResolveSuspicionsResponse.parse(reply) };
   });
   api.get('/scoring/bsa/categories', () => ({ json: CATEGORIES }));
 }
