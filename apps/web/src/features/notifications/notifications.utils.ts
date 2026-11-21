@@ -13,6 +13,7 @@ import type {
   UpsertTemplateRequest,
 } from '@los/contracts';
 import type { NotificationBellItem } from '@los/ui';
+import { displayNotificationBody } from './notification-text';
 
 // Цэвэр логик (React, antd, i18n-ээс хамааралгүй) — vitest-ээр тестлэнэ.
 // Текст шаардлагатай газар `Translate` дамжуулна (components нь `t`-ийг өгнө).
@@ -97,7 +98,7 @@ export function notificationHref(n: Pick<NotificationView, 'applicationId' | 'ty
 
 /** Хонхны жагсаалтын мөр. Гарчиг хоосон бол (загвар байхгүй) төрлийн нэрийг ашиглана. */
 export function toBellItem(n: NotificationView, nowMs: number, tr: Translate): NotificationBellItem {
-  return { id: n.id, title: n.title.trim() || tr(typeKey(n.type)), body: n.body, timeLabel: relativeTime(n.createdAt, nowMs, tr), read: n.readAt !== null };
+  return { id: n.id, title: n.title.trim() || tr(typeKey(n.type)), body: displayNotificationBody(n.body), timeLabel: relativeTime(n.createdAt, nowMs, tr), read: n.readAt !== null };
 }
 
 export interface NotificationListParams { unreadOnly?: boolean; page?: number; pageSize?: number }
