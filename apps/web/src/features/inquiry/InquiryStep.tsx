@@ -23,7 +23,10 @@ export function InquiryStep({ applicationId, onChanged }: Props) {
   const q = useInquiries(applicationId);
   const fetchNow = useFetchInquiries(applicationId, onChanged);
   const recheck = useRecheckInquiries(applicationId, onChanged);
-  const data = fetchNow.data ?? q.data;
+  // Жагсаалтын эх сурвалж нь кэш: мутаци бүрийн дараа invalidate хийгдэнэ. Татах хариуг ("fetchNow.data") эх сурвалж болговол дараагийн нэмэлт/устгал/шалгалт харагдахгүй (F2-9).
+  const data = q.data ?? fetchNow.data;
+  // `failures` нь зөвхөн татах (POST) хариунд байдаг, жагсаалтын GET хоосон буцаадаг.
+  const failures = fetchNow.data?.failures ?? [];
 
   const run = (customerId?: string) =>
     fetchNow.mutate({ customerId }, { onSuccess: (res) => { if (!res.failures.length) void message.success(t('inquiry.toast.fetched')); } });
@@ -47,8 +50,8 @@ export function InquiryStep({ applicationId, onChanged }: Props) {
       </Flex>
       {data.step.reason && data.step.status !== 'COMPLETED' ? <Alert type="warning" showIcon message={t(`inquiry.step.reason.${data.step.reason}`)} description={t('inquiry.staleHint', { days: data.staleDays })} /> : null}
       {fetchNow.error ? <ApiErrorAlert error={fetchNow.error} /> : null}
-      {data.failures.length ? (
-        <Alert type="error" showIcon message={t('inquiry.fetch.failures')} description={<ul style={{ margin: 0, paddingLeft: 18 }}>{data.failures.map((f) => <li key={`${f.customerId}-${f.source}-${f.code}`}>{f.source ? `${t(`inquiry.source.${f.source}`)}: ` : ''}{f.message}</li>)}</ul>} />
+      {failures.length ? (
+        <Alert type="error" showIcon message={t('inquiry.fetch.failures')} description={<ul style={{ margin: 0, paddingLeft: 18 }}>{failures.map((f) => <li key={`${f.customerId}-${f.source}-${f.code}`}>{f.source ? `${t(`inquiry.source.${f.source}`)}: ` : ''}{f.message}</li>)}</ul>} />
       ) : null}
       {!data.borrowers.length ? (
         <Empty description={t('inquiry.empty.noBorrower')} />
