@@ -1,4 +1,4 @@
-import type { PricingTierInput } from '@los/contracts';
+import { PricingTierInput } from '@los/contracts';
 import { percentProblem } from '../../components/form';
 import { percentToRate, rateToPercent } from '../../lib/format';
 import { t } from '../../lib/i18n';
@@ -13,7 +13,7 @@ export interface TierRow extends Omit<PricingTierInput, 'minScore' | 'interestRa
   interestRate?: number;
   feePercent?: number;
 }
-export type TierField = 'minScore' | 'interestRate' | 'feePercent';
+export type TierField = 'code' | 'name' | 'minScore' | 'interestRate' | 'feePercent';
 export type TierProblems = Partial<Record<TierField, string>>;
 
 export const tierToRow = (tier: PricingTierInput): TierRow => ({
@@ -28,12 +28,21 @@ function fieldProblem(label: string, value: number | undefined, check: (v: numbe
   return check(value) ?? undefined;
 }
 
+// Код: гэрээний (`PricingTierInput`) дүрмээр шалгана — давхар дүрэм хадгалахгүй. Хоосон нэр серверт очвол зөвхөн "Оруулсан өгөгдөл буруу" болдог (F9-7).
+const codeProblem = (code: string): string | undefined => {
+  if (code === '') return t('admin.num.required', { field: t('admin.pricing.f.code') });
+  return PricingTierInput.shape.code.safeParse(code).success ? undefined : t('admin.pricing.error.code_format');
+};
+const nameProblem = (name: string): string | undefined => (name.trim() === '' ? t('admin.num.required', { field: t('admin.pricing.f.name') }) : undefined);
+
 /** Талбар бүрийн алдаа (мессеж). Хоосон объект = мөр зөв. */
 export function tierProblems(row: TierRow): TierProblems {
   const minScoreLabel = t('admin.pricing.f.min_score');
   const rateLabel = t('admin.pricing.f.rate');
   const feeLabel = t('admin.pricing.f.fee');
   const found: TierProblems = {
+    code: codeProblem(row.code),
+    name: nameProblem(row.name),
     minScore: fieldProblem(minScoreLabel, row.minScore, (v) => plainNumberProblem(v, { label: minScoreLabel, min: 0, max: MAX_SCORE, integer: true })),
     interestRate: fieldProblem(rateLabel, row.interestRate, (v) => percentProblem(v, { label: rateLabel, maxDecimals: 4 })),
     feePercent: fieldProblem(feeLabel, row.feePercent, (v) => percentProblem(v, { label: feeLabel, maxDecimals: 2 })),
@@ -45,7 +54,7 @@ export function tierProblems(row: TierRow): TierProblems {
 export function firstTierProblem(rows: readonly TierRow[]): string | null {
   for (const row of rows) {
     const message = Object.values(tierProblems(row))[0];
-    if (message) return `${row.code}: ${message}`;
+    if (message) return `${row.code || '—'}: ${message}`;
   }
   return null;
 }

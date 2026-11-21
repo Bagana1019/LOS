@@ -9,6 +9,7 @@ import { ApiError } from '../../lib/api';
 import { errorText } from './admin.utils';
 import { usePricingTiers, useProducts, useSavePricingTiers } from './admin.hooks';
 import { PlainNumberInput } from './PlainNumberInput';
+import { describeTierIssues } from './pricing-issues';
 import { firstTierProblem, rowsToTiers, tierProblems, tierToRow, type TierField, type TierRow } from './pricing-form';
 import { BackLink } from './SettingsHome';
 
@@ -32,19 +33,32 @@ export function PricingTiersPage() {
   const tiers = usePricingTiers(scope || null);
   const save = useSavePricingTiers();
   const [rows, setRows] = useState<TierRow[]>([]);
-  useEffect(() => { setRows(tiers.data?.tiers.map(tierToRow) ?? []); }, [tiers.data]);
+  // Серверийн INVALID_TIER_SET-ийн issue бүрийн өгүүлбэр (F9-7): формын дэргэд жагсаалтаар.
+  const [serverIssues, setServerIssues] = useState<string[]>([]);
+  useEffect(() => { setRows(tiers.data?.tiers.map(tierToRow) ?? []); setServerIssues([]); }, [tiers.data]);
   const notConfigured = tiers.isError && tiers.error instanceof ApiError && tiers.error.status === 404;
 
   const patch = (i: number, p: Partial<TierRow>) => setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...p } : r)));
   // Тоон талбар: бичсэн текст хэвээр (чимээгүй clamp/0 байхгүй), буруу бол талбарын доор мессеж (F9-2).
-  const numberCell = (field: TierField, key: 'score' | 'rate' | 'fee', i: number, r: TierRow, input: (bad: boolean) => ReactNode) => {
+  const numberCell = (field: TierField, key: 'code' | 'name' | 'score' | 'rate' | 'fee', i: number, r: TierRow, input: (bad: boolean) => ReactNode) => {
     const problem = tierProblems(r)[field];
     return <NumberCell id={`tier-${i}-${key}`} problem={problem}>{input(problem !== undefined)}</NumberCell>;
   };
   const columns: TableColumnsType<TierRow> = [
-    { title: t('admin.pricing.col.code'), width: 110, render: (_, r, i) => <Input value={r.code} maxLength={16} onChange={(e) => patch(i, { code: e.target.value.toUpperCase() })} /> },
-    { title: t('admin.pricing.col.name'), width: 180, render: (_, r, i) => <Input value={r.name} maxLength={64} onChange={(e) => patch(i, { name: e.target.value })} /> },
-    { title: t('admin.pricing.col.band'), width: 130, render: (_, r, i) => <Select value={r.band} style={{ width: '100%' }} options={RiskBand.map((b) => ({ value: b, label: b }))} onChange={(band) => patch(i, { band })} /> },
+    {
+      title: t('admin.pricing.col.code'), width: 110,
+      render: (_, r, i) => numberCell('code', 'code', i, r, (bad) => (
+        <Input data-testid={`tier-${i}-code`} aria-label={t('admin.pricing.col.code')} status={bad ? 'error' : undefined} value={r.code} maxLength={16} onChange={(e) => patch(i, { code: e.target.value.toUpperCase() })} />
+      )),
+    },
+    {
+      title: t('admin.pricing.col.name'), width: 180,
+      render: (_, r, i) => numberCell('name', 'name', i, r, (bad) => (
+        <Input data-testid={`tier-${i}-name`} aria-label={t('admin.pricing.col.name')} status={bad ? 'error' : undefined} value={r.name} maxLength={64} onChange={(e) => patch(i, { name: e.target.value })} />
+      )),
+    },
+    // F9-6: RED/YELLOW/GREEN англи код биш Улаан/Шар/Ногоон; API-д код хэвээр явна.
+    { title: t('admin.pricing.col.band'), width: 130, render: (_, r, i) => <Select data-testid={`tier-${i}-band`} aria-label={t('admin.pricing.col.band')} value={r.band} style={{ width: '100%' }} options={RiskBand.map((b) => ({ value: b, label: t(`admin.pricing.band.${b}`) }))} onChange={(band) => patch(i, { band })} /> },
     {
       title: t('admin.pricing.col.min_score'), width: 130,
       render: (_, r, i) => numberCell('minScore', 'score', i, r, (bad) => (
@@ -71,9 +85,15 @@ export function PricingTiersPage() {
     // Алдаатай мөр байвал юу ч явуулахгүй: мессеж нь талбар бүрийн доор харагдана.
     const problem = firstTierProblem(rows);
     if (problem) { void message.error(`${t('admin.pricing.fix_errors')} (${problem})`); return; }
+    setServerIssues([]);
     save.mutate({ productId: scope || null, tiers: rowsToTiers(rows) }, {
       onSuccess: () => void message.success(t('admin.common.saved')),
-      onError: (e) => void message.error(errorText(e)),
+      onError: (e) => {
+        // INVALID_TIER_SET: issue бүр шатлалын кодыг нэрлэсэн өгүүлбэр болж формын дэргэд гарна; задрахгүй бол серверийн мессеж.
+        const issues = e instanceof ApiError && e.code === 'INVALID_TIER_SET' ? describeTierIssues(e.details) : [];
+        if (issues.length > 0) setServerIssues(issues);
+        else void message.error(errorText(e));
+      },
     });
   };
 
@@ -92,10 +112,15 @@ export function PricingTiersPage() {
         : (
           <>
             {notConfigured ? <Alert type="warning" showIcon message={t('admin.pricing.not_configured')} /> : null}
-            <Table<TierRow> rowKey={(r) => r.code} size="small" pagination={false} columns={columns} dataSource={rows} scroll={{ x: 960 }} />
+            {/* Мөрийн түлхүүр = дараалал (код биш): код бичихэд мөр дахин үүсч фокус алдахгүй, давхардсан код (A, A) key давхардуулахгүй. */}
+            <Table<TierRow> rowKey="rowId" size="small" pagination={false} columns={columns} dataSource={rows.map((r, rowId) => ({ ...r, rowId }))} scroll={{ x: 960 }} />
+            {serverIssues.length > 0 ? (
+              <Alert type="error" showIcon data-testid="tier-issues" message={t('admin.pricing.issues.title')}
+                description={<ul style={{ margin: 0, paddingInlineStart: 20 }}>{serverIssues.map((text) => <li key={text}>{text}</li>)}</ul>} />
+            ) : null}
             <Flex gap={8} wrap>
               <Button onClick={() => setRows((rs) => [...rs, NEW_TIER(rs.length + 1)])} disabled={rows.length >= 10}>{t('admin.pricing.add')}</Button>
-              <Button onClick={() => setRows(tiers.data?.tiers.map(tierToRow) ?? [])}>{t('admin.levels.reset')}</Button>
+              <Button onClick={() => { setRows(tiers.data?.tiers.map(tierToRow) ?? []); setServerIssues([]); }}>{t('admin.levels.reset')}</Button>
               <Button type="primary" loading={save.isPending} disabled={rows.length === 0} onClick={onSave}>{t('admin.common.save')}</Button>
             </Flex>
           </>

@@ -19,6 +19,8 @@ export class ApiError extends Error {
     readonly correlationId: string | null = null,
     /** Сүлжээний алдаа (status 0) үед fetch-ийн анхны `TypeError`. */
     readonly cause?: unknown,
+    /** Серверийн алдааны `details` хэвээрээ (жишээ INVALID_TIER_SET → [{ code, tiers }]); хэлбэрийг feature өөрөө шалгана. */
+    readonly details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -38,6 +40,7 @@ export async function readError(res: Response, correlationId: string): Promise<A
   let code: string | null = null;
   let message = res.statusText || `HTTP ${res.status}`;
   let issues: ApiIssue[] | undefined;
+  let details: unknown;
   try {
     const body: unknown = await res.json();
     if (body && typeof body === 'object') {
@@ -48,11 +51,12 @@ export async function readError(res: Response, correlationId: string): Promise<A
       // Module 0 AllExceptionsFilter: zod алдаа = { code: 'VALIDATION_FAILED', details: [{ path, message }] }
       const raw = code === 'VALIDATION_FAILED' && Array.isArray(b.details) ? b.details : b.issues;
       if (Array.isArray(raw)) issues = raw as ApiIssue[];
+      details = b.details;
     }
   } catch {
     // JSON биш хариу: statusText хэвээр
   }
-  return new ApiError(res.status, code, message, issues, res.headers?.get?.('x-correlation-id') ?? correlationId);
+  return new ApiError(res.status, code, message, issues, res.headers?.get?.('x-correlation-id') ?? correlationId, undefined, details);
 }
 
 export interface SendOptions {
