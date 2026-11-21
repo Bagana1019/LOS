@@ -75,6 +75,35 @@ describe('BSA REST API e2e: full flow (in-memory)', () => {
   });
 });
 
+// F6-3: хурдан давхар POST /bsa/analyses — 201 (үүссэн), дараагийнх 200 (байгаа DRAFT-ыг буцаасан), нэг л мөр
+describe('BSA REST API e2e: creating an analysis twice (F6-3)', () => {
+  it('answers 201 for the first POST and 200 with the SAME body for the repeat; the list holds one analysis', async () => {
+    const e = await boot();
+    const first = await e.api.post('/bsa/analyses', analysisBody());
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    const again = await e.api.post('/bsa/analyses', analysisBody());
+    expect(again.status, JSON.stringify(again.body)).toBe(200);
+    expect(again.body.id).toBe(first.body.id);
+    expect(again.body).toMatchObject({ status: 'DRAFT', version: 1 });
+    const list = await e.api.get('/bsa/analyses');
+    expect(list.body.total).toBe(1);
+  });
+
+  it('two concurrent POSTs create exactly one analysis', async () => {
+    const e = await boot();
+    const [a, b] = await Promise.all([e.api.post('/bsa/analyses', analysisBody()), e.api.post('/bsa/analyses', analysisBody())]);
+    expect([a.status, b.status].sort()).toEqual([200, 201]);
+    expect(a.body.id).toBe(b.body.id);
+    expect((await e.api.get('/bsa/analyses')).body.total).toBe(1);
+  });
+
+  it('a failed validation does not answer 200 and creates nothing', async () => {
+    const e = await boot();
+    expectError(await e.api.post('/bsa/analyses', analysisBody({ periodMonths: 5 })), 400, 'PERIOD_NOT_ALLOWED');
+    expect((await e.api.get('/bsa/analyses')).body.total).toBe(0);
+  });
+});
+
 describe('BSA REST API e2e: request validation and error envelope', () => {
   it('rejects malformed bodies with VALIDATION_FAILED and never echoes the submitted values', async () => {
     const e = await boot();

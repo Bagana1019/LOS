@@ -89,6 +89,28 @@ export function describeRepositoryContract(name: string, factory: () => Promise<
         expect(new Set(created.map((a) => a.id)).size).toBe(8);
       });
 
+      // F6-3 / BSA-FR-1.2: «хамгийн сүүлийн нь DRAFT бол дахин үүсгэхгүй» шалгалтыг create()-тэй ижил түлхүүрээр түгжиж хийх примитив
+      it('lockAndFindLatest returns the newest version of the key (or null) scoped by org, application and customer', async () => {
+        expect(await repo().analyses.lockAndFindLatest(ORG, 'app-1', 'cust-1')).toBeNull();
+        await seedAnalysis();
+        const v2 = await seedAnalysis();
+        await seedAnalysis({ customerId: 'cust-2' });
+        const latest = await repo().analyses.lockAndFindLatest(ORG, 'app-1', 'cust-1');
+        expect(latest).toMatchObject({ id: v2.id, version: 2, status: 'DRAFT' });
+        expect(await repo().analyses.lockAndFindLatest('org-2', 'app-1', 'cust-1')).toBeNull();
+        expect(await repo().analyses.lockAndFindLatest(ORG, 'app-2', 'cust-1')).toBeNull();
+      });
+
+      it('lockAndFindLatest + create inside one transaction is find-or-create: concurrent callers share ONE row', async () => {
+        const results = await Promise.all(
+          Array.from({ length: 6 }, () =>
+            repo().runInTransaction(async (tx) => (await tx.analyses.lockAndFindLatest(ORG, 'app-1', 'cust-1')) ?? (await tx.analyses.create(newAnalysis()))),
+          ),
+        );
+        expect(new Set(results.map((a) => a.id)).size).toBe(1);
+        expect((await repo().analyses.list({ orgId: ORG, applicationId: 'app-1', customerId: 'cust-1' })).total).toBe(1);
+      });
+
       it('round-trips periods, decimals, customer snapshot and own accounts', async () => {
         const created = await seedAnalysis({
           borrowerId: 'b-1', periodFrom: '2026-03-10', periodTo: '2026-09-10', periodMonths: 6, proposedMonthlyPayment: 1234567.89, costOfGoodsRate: 0.1,

@@ -177,6 +177,12 @@ export interface BsaAnalysisRepo {
   getById(id: string, scope?: TenantScope): Promise<BsaAnalysisRecord | null>;
   /** Хамгийн өндөр хувилбар (идэвхтэй шинжилгээ) */
   findLatest(orgId: string, applicationId: string, customerId: string): Promise<BsaAnalysisRecord | null>;
+  /**
+   * F6-3 / BSA-FR-1.2: create()-тэй ИЖИЛ түлхүүрээр (org, application, customer) advisory lock авч, хамгийн өндөр хувилбарыг буцаана (байхгүй бол null).
+   * Lock нь гадаад транзакц дуустал баригдана ⇒ runInTransaction дотор дуудаж, дараа нь create() хийвэл «шалгаад үүсгэх» зэрэгцээ дуудлагад атомар.
+   * Транзакцгүй дуудвал lock шууд суллагдана (find-ийн утгатай адил).
+   */
+  lockAndFindLatest(orgId: string, applicationId: string, customerId: string): Promise<BsaAnalysisRecord | null>;
   /** Хүсэлтийн зээлдэгч бүрийн хамгийн сүүлийн хувилбар (BSA-BR-9 нэгтгэл, INT-6), customerId өсөхөөр */
   listLatestByApplication(orgId: string, applicationId: string): Promise<BsaAnalysisRecord[]>;
   /** Эрэмбэ: createdAt ↓, version ↓, id ↓ */

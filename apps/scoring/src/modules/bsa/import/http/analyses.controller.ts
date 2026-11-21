@@ -48,12 +48,18 @@ export class BsaAnalysesController {
 
   // ───────────────────────── Шинжилгээ: үүсгэх / жагсаалт / тойм / устгах ─────────────────────────
 
-  /** INT-1, BSA-FR-1: LOS хүсэлт + зээлдэгчээс шинэ шинжилгээ (хувилбар) */
+  /** INT-1, BSA-FR-1: LOS хүсэлт + зээлдэгчээс шинэ шинжилгээ (хувилбар). F6-3: 201 = үүссэн; 200 = хамгийн сүүлийн хувилбар DRAFT хэвээр тул түүнийг буцаасан */
   @Post()
   @HttpCode(201)
   @Roles(...WRITE_ONLY_ROLES)
-  create(@Ctx() ctx: RequestContext, @Body(new ZodValidationPipe(BsaCreateAnalysisRequest)) body: BsaCreateAnalysisRequest): Promise<AnalysisView> {
-    return this.analysis.create(ctx, body);
+  async create(
+    @Ctx() ctx: RequestContext,
+    @Body(new ZodValidationPipe(BsaCreateAnalysisRequest)) body: BsaCreateAnalysisRequest,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AnalysisView> {
+    const { analysis, created } = await this.analysis.createOrGetDraft(ctx, body);
+    if (!created) res.status(200);
+    return analysis;
   }
 
   /** BSA-FR-6.1: жагсаалт. Хүрээ нь үүргээр (ADMIN/APPROVER — байгууллага; BRANCH_MANAGER — салбар; OFFICER — өөрийн) */

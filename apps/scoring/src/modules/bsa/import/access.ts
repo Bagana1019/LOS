@@ -2,7 +2,7 @@
 // `assertCanAccessAnalysis` гаргана (өөр байгууллага ⇒ NotFound, бусад ⇒ Forbidden); энд зөвхөн унших/бичих ялгаа, үүргийн шалгалт.
 import { ForbiddenException } from '@nestjs/common';
 import type { UserRole } from '@los/contracts';
-import { analysisNotFound, assertCanAccessAnalysis, REQUEST_CONTEXT_MESSAGES } from '../common/request-context';
+import { analysisNotFound, assertCanAccessAnalysis, decideAnalysisAccess, REQUEST_CONTEXT_MESSAGES } from '../common/request-context';
 import type { RequestContext } from '../common/infra.ports';
 import type { BsaAnalysisRecord, BsaRepository } from '../common/persistence';
 
@@ -20,10 +20,15 @@ export function assertRole(ctx: RequestContext, roles: readonly UserRole[]): voi
   if (!hasAnyRole(ctx, roles)) throw forbidden();
 }
 
+const writeScope = (ctx: RequestContext): RequestContext => ({ ...ctx, roles: ctx.roles.filter((r) => WRITE_ROLES.includes(r)) });
+
 /** Бичих эрх: APPROVER-ийн үүргийг хасаж шалгана (APPROVER + OFFICER хоёр үүрэгтэй бол OFFICER-ийн хүрээнд) */
 export function assertCanWriteAnalysis(ctx: RequestContext, target: BsaAnalysisRecord): void {
-  assertCanAccessAnalysis({ ...ctx, roles: ctx.roles.filter((r) => WRITE_ROLES.includes(r)) }, target);
+  assertCanAccessAnalysis(writeScope(ctx), target);
 }
+
+/** assertCanWriteAnalysis-ийн шидэхгүй хувилбар (F6-3: байгаа DRAFT-ыг зөвхөн бичих эрхтэй хүнд буцаана) */
+export const canWriteAnalysis = (ctx: RequestContext, target: BsaAnalysisRecord): boolean => decideAnalysisAccess(writeScope(ctx), target) === 'ALLOW';
 
 /**
  * Шинжилгээг тенантын хүрээнд ачаалж, хандалтыг шалгана. Байхгүй / өөр байгууллагынх ⇒ ИЖИЛ NotFound (оршихыг задруулахгүй).
