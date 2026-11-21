@@ -6,6 +6,7 @@ import { Roles } from '@los/nest-common';
 import { ZodValidationPipe } from '@los/nest-common';
 import { DashboardService } from './dashboard.service';
 import { XLSX_MIME } from './excel.exporter';
+import { contentDisposition } from './report-filename';
 import { ReportService } from './report.service';
 
 /**
@@ -29,6 +30,6 @@ export class ReportController {
   @Get('reports/:key/export')
   async export(@Ctx() ctx: RequestContext, @Param('key') key: string, @Query(new ZodValidationPipe(ReportExportQuery)) query: ReportExportQuery): Promise<StreamableFile> {
     const file = await this.reports.export(ctx, key, query);
-    return new StreamableFile(file.buffer, { type: XLSX_MIME, disposition: `attachment; filename="${file.filename}"; filename*=UTF-8''${encodeURIComponent(file.filename)}`, length: file.buffer.length });
+    return new StreamableFile(file.buffer, { type: XLSX_MIME, disposition: contentDisposition(file.filename, file.displayName), length: file.buffer.length });
   }
 }

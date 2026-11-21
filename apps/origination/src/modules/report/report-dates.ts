@@ -9,6 +9,18 @@ export function ubDayStartUtc(day: string): string {
   return new Date(`${day}T00:00:00+08:00`).toISOString().slice(0, 23);
 }
 
+const UB_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/**
+ * ISO агшин → Улаанбаатарын цагаар 'YYYY-MM-DD HH:mm' (UTC+8, DST-гүй). Жишээ: '2026-11-20T06:19:04.927Z' → '2026-11-20 14:19'.
+ * Хүчинтэй бус агшин → оролтыг хэвээр буцаана (тайлан/экспорт нэг гарчгийн мөрөөс болж унахгүй).
+ */
+export function formatUbDateTime(iso: string): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return iso;
+  return new Date(ms + UB_OFFSET_MS).toISOString().slice(0, 16).replace('T', ' ');
+}
+
 /** 'YYYY-MM-DD' → 'YYYY-MM-01'. */
 export const monthStart = (day: string): string => `${day.slice(0, 7)}-01`;
 
