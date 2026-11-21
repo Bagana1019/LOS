@@ -6,6 +6,7 @@ import { t } from '../../lib/i18n';
 import { errorText, previewContractNo } from './admin.utils';
 import { useSaveTemplate, useTemplate } from './admin.hooks';
 import { BackLink } from './SettingsHome';
+import { ContractNumberTokenHelp } from './ContractNumberTokenHelp';
 
 type Scope = 'DAY' | 'BRANCH' | 'GLOBAL';
 
@@ -32,6 +33,7 @@ export function ContractNumberPage() {
         <Card style={{ maxWidth: 640 }}>
           <Flex vertical gap={12}>
             <label>{t('admin.template.pattern')}<Input value={pattern} onChange={(e) => setPattern(e.target.value)} maxLength={80} /></label>
+            <ContractNumberTokenHelp />
             <label>{t('admin.template.prefix')}<Input value={prefix} onChange={(e) => setPrefix(e.target.value)} maxLength={12} /></label>
             <div>
               <div>{t('admin.template.scope')}</div>

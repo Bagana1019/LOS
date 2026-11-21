@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UserRole } from './enums';
-import { ADMIN_ASSIGNABLE_ROLES, ChangePasswordBody, CreateBranchBody, CreateUserBody, ContractNumberTemplateBody, ReplaceApprovalLevelsBody, validateApprovalLevels } from './admin';
+import { ADMIN_ASSIGNABLE_ROLES, ChangePasswordBody, CONTRACT_NUMBER_TOKENS, CreateBranchBody, CreateUserBody, ContractNumberTemplateBody, ReplaceApprovalLevelsBody, validateApprovalLevels } from './admin';
 
 const L = (levelNo: number, amountFrom: number, amountTo: number | null) => ({ levelNo, amountFrom, amountTo });
 
@@ -115,6 +115,170 @@ describe('ContractNumberTemplateBody · seq scope needs a distinguishing token (
   it('the parsed output keeps the { pattern, prefix, seqScope } shape', () => {
     const r = parse(' {PREFIX}{YYMMDD}{SEQ:2} ', 'DAY');
     expect(r.success && r.data).toEqual({ pattern: '{PREFIX}{YYMMDD}{SEQ:2}', prefix: 'B', seqScope: 'DAY' });
+  });
+});
+
+// F9-21 · Загварын хэсэг (токен) бүр `formatContractNo`-д (origination/approval.rules.ts) орлуулагддаг байх ёстой, эс бөгөөс `{...}` дугаарт шууд орно ("LN-{YYYY}-1").
+describe('ContractNumberTemplateBody · token validation (F9-21)', () => {
+  const parse = (pattern: unknown, seqScope: 'DAY' | 'BRANCH' | 'GLOBAL' = 'GLOBAL', prefix = 'B') => ContractNumberTemplateBody.safeParse({ pattern, prefix, seqScope });
+  const messages = (r: ReturnType<typeof parse>) => (r.success ? [] : r.error.issues.map((i) => i.message));
+  const first = (pattern: string, seqScope: 'DAY' | 'BRANCH' | 'GLOBAL' = 'GLOBAL') => messages(parse(pattern, seqScope))[0] ?? '';
+  const TOKENS = ['{PREFIX}', '{BRANCH}', '{YYMMDD}', '{SEQ}', '{SEQ:n}'];
+
+  it('exports the supported token list (the only place the UI and the validator read it from)', () => {
+    expect(CONTRACT_NUMBER_TOKENS.map((x) => x.token)).toEqual(TOKENS);
+  });
+
+  describe('unsupported {...} parts', () => {
+    it('the exact finding input {PREFIX}-{YYYY}-{SEQ} is rejected: the message names {YYYY} and lists every supported token', () => {
+      const r = parse('{PREFIX}-{YYYY}-{SEQ}');
+      expect(r.success).toBe(false);
+      const m = first('{PREFIX}-{YYYY}-{SEQ}');
+      expect(m).toContain('{YYYY}');
+      for (const token of TOKENS) expect(m).toContain(token);
+      expect(r.success ? [] : r.error.issues[0]!.path).toEqual(['pattern']);
+    });
+    it('{FOO}{SEQ} is rejected naming {FOO}', () => {
+      expect(parse('{FOO}{SEQ}').success).toBe(false);
+      expect(first('{FOO}{SEQ}')).toContain('{FOO}');
+    });
+    it('every distinct unsupported part is named, a repeated one only once', () => {
+      const m = first('{AAA}{SEQ}{BBB}{AAA}');
+      expect(m).toContain('{AAA}');
+      expect(m).toContain('{BBB}');
+      expect(m.split('{AAA}')).toHaveLength(2);
+    });
+    it('tokens are case-sensitive, like the generator: {seq} and {Prefix} are unsupported', () => {
+      expect(first('{seq}{SEQ}')).toContain('{seq}');
+      expect(first('{Prefix}{SEQ}')).toContain('{Prefix}');
+      expect(parse('{prefix}{SEQ}').success).toBe(false);
+    });
+    it('an empty {} and a part with inner spaces are unsupported', () => {
+      expect(first('{}{SEQ}')).toContain('{}');
+      expect(first('{ SEQ }')).toContain('{ SEQ }');
+      expect(parse('{SEQ}{ PREFIX }').success).toBe(false);
+    });
+    it('malformed {SEQ:n} variants are unsupported (no digits, non-digits, negative, decimal)', () => {
+      for (const bad of ['{SEQ:}', '{SEQ:x}', '{SEQ:-1}', '{SEQ:2.5}', '{SEQ:+3}', '{SEQ:2:3}']) {
+        expect(parse(`{PREFIX}${bad}`).success, bad).toBe(false);
+        expect(first(`{PREFIX}${bad}`), bad).toContain(bad);
+      }
+    });
+  });
+
+  describe('stray braces', () => {
+    it('an unmatched { or } cannot end up in the number', () => {
+      for (const bad of ['{SEQ}{', '{SEQ}}', '{{SEQ}', 'A{B{SEQ}', '{SEQ}}{']) expect(parse(bad).success, bad).toBe(false);
+    });
+    it('the message says braces must wrap a whole part and still lists the supported tokens', () => {
+      const m = first('{PREFIX}{SEQ}}');
+      expect(m).toMatch(/хаалт/);
+      for (const token of TOKENS) expect(m).toContain(token);
+    });
+  });
+
+  describe('exactly one {SEQ}', () => {
+    it('a missing {SEQ} keeps the existing message', () => {
+      expect(first('{PREFIX}')).toBe('{SEQ} хэсэг заавал байх ёстой');
+    });
+    it('{PREFIX}{SEQ}{SEQ} is rejected (two sequence parts), also mixed {SEQ}+{SEQ:3}', () => {
+      expect(parse('{PREFIX}{SEQ}{SEQ}').success).toBe(false);
+      expect(first('{PREFIX}{SEQ}{SEQ}')).toContain('{SEQ}');
+      expect(first('{PREFIX}{SEQ}{SEQ}')).toMatch(/нэг л удаа/);
+      expect(parse('{SEQ}-{SEQ:3}').success).toBe(false);
+      expect(parse('{SEQ:2}{SEQ:2}{SEQ:2}').success).toBe(false);
+    });
+    it('exactly one {SEQ} or one {SEQ:n} anywhere in the pattern is accepted', () => {
+      expect(parse('{SEQ}').success).toBe(true);
+      expect(parse('{PREFIX}{SEQ:4}').success).toBe(true);
+      expect(parse('{PREFIX}-{SEQ}-{PREFIX}').success).toBe(true);
+    });
+  });
+
+  describe('{SEQ:n} width boundary', () => {
+    it('n up to 10 digits (the counter is an int32) is accepted, including 0 which means no padding', () => {
+      expect(parse('{SEQ:0}').success).toBe(true);
+      expect(parse('{SEQ:1}').success).toBe(true);
+      expect(parse('{SEQ:10}').success).toBe(true);
+    });
+    it('n above 10 is rejected (padStart with a huge n throws RangeError at approval time)', () => {
+      expect(parse('{SEQ:11}').success).toBe(false);
+      expect(first('{SEQ:11}')).toContain('{SEQ:11}');
+      expect(parse('{SEQ:99999999999999}').success).toBe(false);
+      expect(parse(`{SEQ:${'9'.repeat(70)}}`).success).toBe(false);
+    });
+  });
+
+  describe('characters that break file names', () => {
+    it('"/" is rejected naming the character (the number is the DMS/web file name stem: LN/100/001 would be rewritten to LN_100_001)', () => {
+      expect(parse('{PREFIX}/{SEQ}').success).toBe(false);
+      expect(first('{PREFIX}/{SEQ}')).toContain('/');
+    });
+    it('each of \\ : * ? " < > | and a control character is rejected', () => {
+      for (const c of ['\\', ':', '*', '?', '"', '<', '>', '|', '\n', '\t', '\u0000']) {
+        expect(parse(`{PREFIX}${c}{SEQ}`).success, JSON.stringify(c)).toBe(false);
+      }
+    });
+    it('the ":" inside {SEQ:n} is part of the token and is not flagged', () => {
+      expect(parse('{PREFIX}{SEQ:3}').success).toBe(true);
+    });
+    it('common separators - _ . are accepted', () => {
+      expect(parse('{PREFIX}-{SEQ:4}').success).toBe(true);
+      expect(parse('{PREFIX}_{SEQ:4}').success).toBe(true);
+      expect(parse('{PREFIX}.{SEQ:4}').success).toBe(true);
+    });
+  });
+
+  describe('empty, oversized and non-string input', () => {
+    it('an empty or blank pattern gets a Mongolian message, not the English zod default', () => {
+      for (const p of ['', '   ']) {
+        const r = parse(p);
+        expect(r.success).toBe(false);
+        expect(messages(r).join(' | ')).not.toMatch(/String must contain/);
+        expect(messages(r)[0]).toMatch(/[А-Яа-яӨөҮү]/);
+      }
+    });
+    it('boundary: 80 characters is accepted, 81 is rejected with a Mongolian message', () => {
+      const pad = (n: number) => `{SEQ}${'A'.repeat(n - 5)}`;
+      expect(parse(pad(80)).success).toBe(true);
+      const r = parse(pad(81));
+      expect(r.success).toBe(false);
+      expect(messages(r).join(' | ')).not.toMatch(/String must contain/);
+    });
+    it('null, a number or a missing pattern are rejected without throwing', () => {
+      expect(parse(null).success).toBe(false);
+      expect(parse(42).success).toBe(false);
+      expect(ContractNumberTemplateBody.safeParse({ prefix: 'B', seqScope: 'GLOBAL' }).success).toBe(false);
+    });
+    it('unicode and emoji literals do not break the validator', () => {
+      expect(() => parse('Г-{SEQ}😀')).not.toThrow();
+      expect(parse('{SEQ}😀').success).toBe(true);
+    });
+  });
+
+  describe('interplay with the existing rules', () => {
+    it('for the finding input under the default DAY scope the token message comes first (the page shows issues[0]); the scope message is still reported', () => {
+      const r = parse('{PREFIX}-{YYYY}-{SEQ}', 'DAY');
+      const m = messages(r);
+      expect(m[0]).toContain('{YYYY}');
+      expect(m.some((x) => x.includes('{YYMMDD}') && x.includes('өдөр бүр'))).toBe(true);
+    });
+    it('the supported tokens still pass together, for every scope that needs them', () => {
+      expect(parse('{PREFIX}{BRANCH}{YYMMDD}{SEQ:2}', 'DAY').success).toBe(true); // seeded default
+      expect(parse('{PREFIX}-{BRANCH}-{SEQ:4}', 'BRANCH').success).toBe(true);
+      expect(parse('{PREFIX}-{SEQ:4}', 'GLOBAL').success).toBe(true);
+    });
+    it('every token the list advertises is accepted (the {SEQ:n} sample uses n = 3)', () => {
+      for (const { token } of CONTRACT_NUMBER_TOKENS) {
+        const used = token.replace(':n', ':3');
+        const withSeq = used.startsWith('{SEQ') ? used : `${used}{SEQ}`;
+        expect(parse(withSeq).success, token).toBe(true);
+      }
+    });
+    it('the prefix rule and its message are unchanged', () => {
+      const r = ContractNumberTemplateBody.safeParse({ pattern: '{SEQ}', prefix: 'B-1', seqScope: 'GLOBAL' });
+      expect(r.success ? [] : r.error.issues.map((i) => i.message)).toEqual(['Угтвар зөвхөн үсэг, тоо']);
+    });
   });
 });
 
