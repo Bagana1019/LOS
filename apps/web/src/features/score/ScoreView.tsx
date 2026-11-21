@@ -15,6 +15,7 @@ import { StressCard } from './StressCard';
 import { TermSliders } from './TermSliders';
 import { calculateBlock, formatDateTime, formatTermsSummary, methodKey, selectionBlock, sourceResult, type ViewSource } from './score.utils';
 
+const STALE_OPACITY = 0.55; // F3-8: хуучирсан тооцооллын тоо — `dim`-тэй (preview хүлээж буй) ижил саарал
 const srOnly: CSSProperties = { position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 };
 
 export interface ScoreViewModel {
@@ -163,6 +164,7 @@ export function ScoreView({ model, actions }: { model: ScoreViewModel; actions: 
         result={result}
         selected={selectedMethod}
         pending={previewPending}
+        stale={stale}
         previewError={previewError}
         disabled={hasBlockers}
         onChange={actions.onTermsChange}
@@ -172,6 +174,8 @@ export function ScoreView({ model, actions }: { model: ScoreViewModel; actions: 
 
       {result ? (
         <>
+          {stale ? <div><Tag color="warning" data-testid="score-results-stale-tag">{t('score.status.stale')}</Tag></div> : null}
+          <Flex vertical gap={16} data-testid="score-results" data-stale={stale} style={{ opacity: stale ? STALE_OPACITY : 1, transition: 'opacity .15s' }}>
           <Card title={t('score.compare.title')} size="small" role="region" aria-label={t('score.compare.title')}>
             <MethodComparison
               applicationId={applicationId}
@@ -188,6 +192,7 @@ export function ScoreView({ model, actions }: { model: ScoreViewModel; actions: 
             <Col xs={24} lg={12}><CollateralCard applicationId={applicationId} collateral={result.collateral} dim={previewPending} /></Col>
             <Col xs={24} lg={12}><StressCard stress={result.stress} dim={previewPending} /></Col>
           </Row>
+          </Flex>
         </>
       ) : (
         <Card size="small" role="region" aria-label={t('score.compare.title')}>

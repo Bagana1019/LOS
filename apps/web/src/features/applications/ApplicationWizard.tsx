@@ -1,12 +1,13 @@
 'use client';
 import type { ReactNode } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Alert, Button, Flex, Modal, Skeleton, Tag, Typography, App as AntApp } from 'antd';
+import { Alert, Button, Flex, Skeleton, Tag, Typography, App as AntApp } from 'antd';
 import { WizardLayout, type WizardStage } from '@los/ui';
 import { STAGE1_STEPS, STAGE2_STEPS, type ApplicationDetail } from '@los/contracts';
 import { ApiError } from '../../lib/api';
 import { t } from '../../lib/i18n';
 import { describeApplicationError, stepHref } from './applications.utils';
+import { blockedSubmitHint, blockedSubmitSteps } from './submit-guard';
 import { useApplication, useTransition } from './useApplications';
 
 /** Серверийн дэлгэрэнгүй → WizardLayout-ийн үе шатууд (6/9 тоолуур, цоож). */
@@ -25,7 +26,7 @@ export function toStages(app: ApplicationDetail): WizardStage[] {
 export function ApplicationWizard({ children }: { children: ReactNode }) {
   const { id, step } = useParams<{ id: string; step?: string }>();
   const router = useRouter();
-  const { message } = AntApp.useApp();
+  const { message, modal } = AntApp.useApp();
   const query = useApplication(id);
   const transition = useTransition(id);
   const app = query.data;
@@ -37,8 +38,9 @@ export function ApplicationWizard({ children }: { children: ReactNode }) {
   }
 
   const submitTransition = app.transitions.find((x) => x.to === 'SUBMITTED' && x.allowed);
+  const blockedHint = blockedSubmitHint(blockedSubmitSteps(app)); // F2-3/F3-6: сервер G1-ээр хаасан алхмууд (дутуу + хуучирсан)
   const submit = () => {
-    Modal.confirm({
+    modal.confirm({
       title: t('application.submit.confirmTitle'), content: t('application.submit.confirmBody'), okText: t('application.submit.ok'), cancelText: t('application.submit.cancel'),
       onOk: () => transition.mutateAsync({ to: 'SUBMITTED' }).then(() => void message.success(t('application.submit.success'))).catch((e: unknown) => void message.error(describeApplicationError(e, 'application.submit.failed'))),
     });
@@ -52,7 +54,12 @@ export function ApplicationWizard({ children }: { children: ReactNode }) {
         <Tag data-testid="app-status">{t(`status.${app.status}`)}</Tag>
       </Flex>
       <Button block style={{ marginTop: 8 }} data-testid="wizard-bsa" onClick={() => router.push(`/los/bsa/${encodeURIComponent(app.id)}`)}>{t('application.wizard.bsa')}</Button>
-      {submitTransition ? <Button type="primary" block style={{ marginTop: 12 }} loading={transition.isPending} data-testid="submit-application" onClick={submit}>{t('application.submit.button')}</Button> : null}
+      {submitTransition ? (
+        <>
+          <Button type="primary" block style={{ marginTop: 12 }} loading={transition.isPending} disabled={blockedHint !== null} aria-describedby={blockedHint ? 'submit-blocked-hint' : undefined} data-testid="submit-application" onClick={submit}>{t('application.submit.button')}</Button>
+          {blockedHint ? <Typography.Text id="submit-blocked-hint" type="secondary" style={{ display: 'block', marginTop: 8, fontSize: 12 }} data-testid="submit-blocked-hint">{blockedHint}</Typography.Text> : null}
+        </>
+      ) : null}
     </div>
   );
 

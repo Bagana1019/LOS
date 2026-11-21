@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AttachDocumentRequest } from '@los/contracts';
+import { applicationDetailKey } from '../applications/useApplications';
 import { isStaleStateError, retryTransient } from './shared/api-error';
 import * as api from './documents.api';
 
@@ -9,10 +10,17 @@ export function useDocumentList(applicationId: string) {
   return useQuery({ queryKey: documentsKey(applicationId), queryFn: () => api.fetchDocuments(applicationId), retry: retryTransient });
 }
 
-/** Амжилттай бол жагсаалтыг дахин татаж дуустал хүлээнэ; 404/409 (төлөв зөрсөн) үед мөн дахин татна. */
+/**
+ * Амжилттай бол жагсаалтыг дахин татаж дуустал хүлээнэ; 404/409 (төлөв зөрсөн) үед мөн дахин татна.
+ * F2-27: «Баримт бичиг» алхмын төлөв, зүүн самбарын тоолуур, Илгээх хаалт нь хүсэлтийн дэлгэрэнгүйгээс ирдэг тул тэр query-г хамт шинэчилнэ
+ * (хуудас `onChanged`-ийг дамжуулаагүй байсан ч зүүн самбар хоцрохгүй).
+ */
 function useDocumentMutation<TVars, TData>(applicationId: string, mutationFn: (vars: TVars) => Promise<TData>, onChanged?: () => void) {
   const queryClient = useQueryClient();
-  const refresh = () => queryClient.invalidateQueries({ queryKey: documentsKey(applicationId) });
+  const refresh = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: documentsKey(applicationId) }),
+    queryClient.invalidateQueries({ queryKey: applicationDetailKey(applicationId) }),
+  ]);
   return useMutation({
     mutationFn,
     onSuccess: async () => {
