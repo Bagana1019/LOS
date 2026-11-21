@@ -20,6 +20,13 @@ export function maskRegister(r: string): string {
   return `${r.slice(0, 2)}${'•'.repeat(r.length - 6)}${r.slice(-4)}`;
 }
 
+type PendingInfo = { pendingSeverity: BlacklistSeverity | null };
+/** F8-6: хадгалсны дараах toast. Энэ хадгалалт шинээр Хар болгох (4 нүдний) хүсэлт үүсгэсэн үед л "хүсэлт илгээгдлээ"; өмнө нь хүлээгдэж байсан мөрийн засварт биш. */
+export function savedMessage(saved: PendingInfo, previous: PendingInfo | null): string {
+  const newlyPending = saved.pendingSeverity !== null && previous?.pendingSeverity == null;
+  return newlyPending ? t('blacklist.savedPendingApproval', { menu: t('nav.maker_checker') }) : t('blacklist.saved');
+}
+
 export const SOURCES = ['COURT', 'CIB', 'INTERNAL', 'OTHER_NBFI'] as const;
 const AUDIT_ACTIONS = ['CREATE', 'UPDATE', 'DEACTIVATE', 'REACTIVATE', 'ESCALATE_REQUESTED', 'ESCALATE_APPLIED'];
 export const auditActionLabel = (a: string): string => (AUDIT_ACTIONS.includes(a) ? t(`blacklist.audit.${a}`) : a);
