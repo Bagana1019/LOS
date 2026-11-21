@@ -2,11 +2,12 @@
 import { Alert, Button, Card, Descriptions, Flex, Skeleton, Tag, Typography, App as AntApp } from 'antd';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { ContractSigningPanel } from '../contract-signing';
-import { FileUploadButton } from '../documents/shared/FileUploadButton';
 import { downloadApplicationFile, uploadDmsFile } from '../documents/shared/files';
 import { formatDateTime } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import { useAttachSigned, useContractDocs, useGenerateContract } from './contract.api';
+import { SignedScanUpload } from './SignedScanUpload';
+import { isSignedScanTypeError } from './signed-scan';
 
 interface Props { applicationId: string; onChanged?: () => void }
 
@@ -20,7 +21,9 @@ export function ContractStep({ applicationId, onChanged }: Props) {
   if (q.error || !q.data) return <ApiErrorAlert error={q.error} onRetry={() => void q.refetch()} />;
   const c = q.data.contract;
   const signed = Boolean(c?.signedFileId);
-  const fail = (e: unknown) => void message.error(e instanceof Error ? e.message : t('cstep.failed'));
+  const fail = (e: unknown) => void message.error(isSignedScanTypeError(e) ? t('cstep.scanTypeError') : e instanceof Error ? e.message : t('cstep.failed'));
+  // F4-13: баталгаажуулсны дараа л DMS-д байршуулж, гэрээнд хавсаргана (алдааг энд харуулна → reject хийхгүй)
+  const attachScan = (f: File): Promise<void> => uploadDmsFile(f).then((file) => attach.mutateAsync(file.id)).then(() => void message.success(t('cstep.attached'))).catch(fail);
   return (
     <Flex vertical gap={16}>
       <Typography.Title level={4} style={{ margin: 0 }}>{t('cstep.title')}</Typography.Title>
@@ -42,8 +45,7 @@ export function ContractStep({ applicationId, onChanged }: Props) {
         <>
           <Card size="small" title={t('cstep.paper')}>
             <Typography.Paragraph type="secondary">{t('cstep.paperHint')}</Typography.Paragraph>
-            <FileUploadButton label={t('cstep.upload')} loading={attach.isPending} onFile={(f) => void uploadDmsFile(f).then((file) => attach.mutateAsync(file.id)).then(() => void message.success(t('cstep.attached'))).catch(fail)} />
-            {attach.error ? <div style={{ marginTop: 12 }}><ApiErrorAlert error={attach.error} /></div> : null}
+            <SignedScanUpload loading={attach.isPending} error={attach.error} onConfirmed={attachScan} />
           </Card>
           <Card size="small" title={t('cstep.esign')}><ContractSigningPanel applicationId={applicationId} /></Card>
         </>
