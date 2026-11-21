@@ -48,11 +48,13 @@ describe.skipIf(!hasTestDb)('report: Excel экспорт (HTTP)', () => {
       const res = await download(admin, 'outstanding-balance');
       expect(res.status).toBe(200);
       expect(res.headers['content-type']).toContain(XLSX_MIME);
-      expect(res.headers['content-disposition']).toBe(`attachment; filename="LOS_outstanding-balance_20261028.xlsx"; filename*=UTF-8''LOS_outstanding-balance_20261028.xlsx`);
+      // F11-4(b): `filename*` (RFC 5987) нь монгол тайлангийн нэртэй, эхэнд (web-ийн regex хамгийн зүүн утгыг авна); ASCII `filename` нөөц
+      expect(res.headers['content-disposition']).toBe(`attachment; filename*=UTF-8''${encodeURIComponent('Зээлийн үлдэгдлийн дэлгэрэнгүй_20261028.xlsx')}; filename="LOS_outstanding-balance_20261028.xlsx"`);
       expect(Number(res.headers['content-length'])).toBe(res.body.length);
       expect(res.body.subarray(0, 2).toString()).toBe('PK'); // zip (xlsx)
       const hist = await download(admin, 'overdue-loans', { asOf: '2026-09-20' });
-      expect(hist.headers['content-disposition']).toContain(`filename*=UTF-8''LOS_overdue-loans_20260920.xlsx`);
+      expect(hist.headers['content-disposition']).toContain(`filename*=UTF-8''${encodeURIComponent('Хугацаа хэтэрсэн зээл_20260920.xlsx')}`);
+      expect(hist.headers['content-disposition']).toContain('filename="LOS_overdue-loans_20260920.xlsx"');
     });
 
     it('эрх: 401 / 403 / 404 / 400 нь xlsx биш, аудит бичигдэхгүй', async () => {
@@ -81,7 +83,7 @@ describe.skipIf(!hasTestDb)('report: Excel экспорт (HTTP)', () => {
       expect(ws.getCell(1, 1).font?.bold).toBe(true);
       expect(String(ws.getCell(2, 1).value)).toContain('2026-10-28');
       expect(String(ws.getCell(3, 1).value)).toMatch(/^Шүүлт: /);
-      expect(String(ws.getCell(4, 1).value)).toMatch(/^Үүсгэсэн: 2026-10-28T02:00:00/);
+      expect(String(ws.getCell(4, 1).value)).toMatch(/^Үүсгэсэн: 2026-10-28 10:00(;|$)/); // F11-4(a): UB цаг (02:00Z = 10:00 UB), ISO UTC биш
 
       // толгойн мөр
       def.columns.forEach((c, i) => {

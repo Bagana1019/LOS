@@ -13,10 +13,11 @@ NFR-9 (Excel), docs/01 §2.1, docs/04 Модуль 13.
 | `GET reports` | `ReportDefinitionView[]` — 9 тайлангийн нэр, багана (`sortable`, `options`), шүүлт, `dataSource`, `defaultSort`. `productId` шүүлтийн сонголтыг бүтээгдэхүүний каталогоос нөхнө |
 | `GET reports/dashboard/summary` | `DashboardSummary` (`DashboardQuery`: `currency`=MNT, `branchId`, `asOf`) |
 | `GET reports/:key` | `ReportResult` (`ReportQuery`); үл мэдэгдэх түлхүүр → 404 `REPORT_NOT_FOUND` |
-| `GET reports/:key/export` | `.xlsx` (`ReportExportQuery` = `ReportQuery` − хуудаслалт); `Content-Disposition: attachment; filename="LOS_<key>_<asOf YYYYMMDD>.xlsx"; filename*=UTF-8''…` |
+| `GET reports/:key/export` | `.xlsx` (`ReportExportQuery` = `ReportQuery` − хуудаслалт); `Content-Disposition: attachment; filename*=UTF-8''<монгол тайлангийн нэр>_<asOf YYYYMMDD>.xlsx; filename="LOS_<key>_<asOf YYYYMMDD>.xlsx"` (RFC 5987; `filename*` эхэнд, ASCII нөөц хойно — `report-filename.ts`). "Үүсгэсэн" мөр = Улаанбаатарын цаг `YYYY-MM-DD HH:mm` |
 
 `reports/dashboard/summary` нь `reports/:key`-ээс **өмнө** зарлагдсан (замын мөргөлдөөнгүй); `reports/dashboard` нь тайлан биш тул 404.
 Алдааны код: 400 `VALIDATION_FAILED` · `INVALID_FILTER` · `INVALID_SORT` · `INVALID_DATE_RANGE`; 403 `FORBIDDEN` · `BRANCH_REQUIRED`;
+`INVALID_FILTER` (`report-id-filters.ts`, F11-7) = `status`/`provider`/`assetType`/`currency` нь `options`-д байхгүй; `productId` өөрийн байгууллагын каталогт байхгүй; `branchId`/`officerId` нь UUID биш **ба** origination-д хэрэглэгдээгүй. UUID хэлбэртэй боловч зээлгүй (шинэ) салбар/ЗЭЗ = 200 ба 0 мөр (origination-д салбарын жагсаалт байхгүй — iam gateway-д). Хоосон/хоосон зайтай шүүлт = шүүлтгүй; id trim хийгдэнэ;
 422 `EXPORT_TOO_LARGE`; 429 `EXPORT_BUSY` (олон экспорт зэрэг) · `REPORT_BUSY` (dashboard дараалал дүүрсэн); 504 `REPORT_TIMEOUT` (DB `statement_timeout`);
 503 `INTEGRATION_NOT_CONFIGURED` (Core тохируулаагүй); 501 `INTEGRATION_NOT_IMPLEMENTED` (deposit-balances: real горим, мөн **production + mock** үед экспорт).
 
@@ -46,7 +47,7 @@ NFR-9 (Excel), docs/01 §2.1, docs/04 Модуль 13.
 - **Төлсөн дүн** = `payment_allocation`-ийн Σ (хүү/үндсэн тус тусад), мөр бүрт `LEAST(paid, төлөх)`. Үлдэгдэл = `GREATEST(төлөх − төлсөн, 0)` (`@los/calc outstandingOf`-той ижил).
 - **Валют холихгүй (FR-5.4)** — нийлбэр (`totals`) нь бүх шүүлттэй мөрөөр (хуудсаар биш). Мөрүүд >1 валюттай бол `totals` өгөхгүй, `mixedCurrency: true`.
 - **Мөнгө** = 2 орон `number`; **хувь** = харьцаа (0.25 = 25%, 6 орон); **огноо** = `YYYY-MM-DD`; **status** = код (`column.options`-оос шошго).
-- **PII** — регистр DB-д шифрлэгдсэн: JS-д тайлж `maskRegisterNo` (`УБ****0012`); хайлт `blindIndex`-ээр **яг** таарна; лог/аудитад бичихгүй. Депозит дансны дугаар нуугдмал.
+- **PII** — регистр DB-д шифрлэгдсэн: JS-д тайлж `maskRegisterNo` (`УБ****0012`); хайлт `blindIndex`-ээр **яг** таарна (зай/тусгаарлагчийг хасаж, бүтэн хэллэгээр); нэр/дугаарын хайлт үг тус бүрээр AND (`report-search.ts`: гэрээ, хүсэлт, овог, нэрийн аль нэгэнд, ILIKE) — "Овог Нэр" ямар ч дараалалтай олдоно; лог/аудитад бичихгүй. Депозит дансны дугаар нуугдмал.
 - **SQL аюулгүй байдал** — бүх утга `Prisma.sql` параметр ($n); `Prisma.raw` зөвхөн манай тогтмол илэрхийлэлд; эрэмбэлэх багана `sortable` whitelist-ээс `ident()`-ээр; `LIKE` escape.
 
 ## SQL бүтэц ба гүйцэтгэл (NFR-1)

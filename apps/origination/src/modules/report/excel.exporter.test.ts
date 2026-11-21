@@ -21,6 +21,16 @@ const rows: ReportRow[] = [
 const load = async (buf: Buffer) => { const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf as unknown as ArrayBuffer); return wb.worksheets[0]; };
 
 describe('buildReportWorkbook', () => {
+  it('F11-4(a): "Үүсгэсэн" нь Улаанбаатарын цагаар "YYYY-MM-DD HH:mm" (UTC ISO биш); өдөр шилжихийг зөв тооцно; файлын шинж чанар бодит агшинг хэвээр хадгална', async () => {
+    const at = async (generatedAt: string) => load(await buildReportWorkbook(columns, [], undefined, meta({ generatedAt })));
+    expect((await at('2026-11-20T06:19:04.927Z')).getCell(4, 1).value).toBe('Үүсгэсэн: 2026-11-20 14:19'); // finding: 14:19 UB, ISO UTC биш
+    expect((await at('2026-11-20T17:30:00.000Z')).getCell(4, 1).value).toBe('Үүсгэсэн: 2026-11-21 01:30'); // UTC 17:30 = маргааш 01:30 UB
+    expect((await at('2026-12-31T16:00:00.000Z')).getCell(4, 1).value).toBe('Үүсгэсэн: 2027-01-01 00:00'); // жилийн заагт
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildReportWorkbook(columns, [], undefined, meta({ generatedAt: '2026-11-20T06:19:04.927Z' }))) as unknown as ArrayBuffer);
+    expect(wb.created.toISOString()).toBe('2026-11-20T06:19:04.000Z'); // xlsx нь секундын нарийвчлалтай; цагийн бүс өөрчлөгдөөгүй
+  });
+
   it('гарчгийн мөрүүд, толгой (bold), өргөн, freeze, autofilter', async () => {
     const ws = await load(await buildReportWorkbook(columns, rows, { amount: 1234.5, count: 3 }, meta()));
     expect(ws.name).toBe('Туршилтын тайлан');
@@ -28,7 +38,7 @@ describe('buildReportWorkbook', () => {
     expect(ws.getCell(1, 1).font?.bold).toBe(true);
     expect(ws.getCell(2, 1).value).toBe('Огноо (байдлаар): 2026-10-28');
     expect(ws.getCell(3, 1).value).toBe('Шүүлт: Салбар = branch-1; Валют = MNT (₮)');
-    expect(ws.getCell(4, 1).value).toBe('Үүсгэсэн: 2026-10-28T02:00:00.000Z');
+    expect(ws.getCell(4, 1).value).toBe('Үүсгэсэн: 2026-10-28 10:00');
     columns.forEach((c, i) => {
       const cell = ws.getCell(EXPORT_HEADER_ROW, i + 1);
       expect(cell.value).toBe(c.label);
@@ -119,10 +129,10 @@ describe('buildReportWorkbook', () => {
         const ws = await load(await buildReportWorkbook(columns, rows, undefined, meta({ dataSource })));
         expect(ws.name).toBe('Туршилтын тайлан');
         expect(ws.getCell(1, 1).value).toBe('Туршилтын тайлан');
-        expect(ws.getCell(4, 1).value).toBe('Үүсгэсэн: 2026-10-28T02:00:00.000Z');
+        expect(ws.getCell(4, 1).value).toBe('Үүсгэсэн: 2026-10-28 10:00');
       }
       const core = await load(await buildReportWorkbook(columns, rows, undefined, meta({ dataSource: 'core' })));
-      expect(core.getCell(4, 1).value).toBe('Үүсгэсэн: 2026-10-28T02:00:00.000Z; Эх сурвалж: Core');
+      expect(core.getCell(4, 1).value).toBe('Үүсгэсэн: 2026-10-28 10:00; Эх сурвалж: Core');
       expect(String(core.getCell(1, 1).value)).not.toContain('MOCK');
     });
   });

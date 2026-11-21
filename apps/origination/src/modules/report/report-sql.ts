@@ -5,6 +5,7 @@ import { blindIndex } from '@los/database';
 import type { AgingBucket } from '@los/contracts';
 import { Prisma } from '.prisma/client-origination';
 import { ubDayStartUtc } from './report-dates';
+import { searchWords } from './report-search';
 import type { ReportInput } from './report-types';
 
 export type Sql = Prisma.Sql;
@@ -65,12 +66,18 @@ export function selectionOf(input: ReportInput, statuses: readonly string[] | nu
   };
 }
 
-/** `la` (loan_application) ба `c` (харилцагч) нэрээр ажиллах хайлтын нөхцөл: гэрээ/хүсэлтийн дугаар, нэр (ILIKE), регистр (blind index, яг таарах). */
+/**
+ * `la` (loan_application) ба `c` (харилцагч) нэрээр ажиллах хайлтын нөхцөл (F11-3).
+ * Үг тус бүр (хоосон зайгаар салгасан) гэрээ/хүсэлтийн дугаар, овог, нэрийн аль нэгэнд (ILIKE) таарах ёстой, бүх үг AND-ээр —
+ * ингэснээр хүснэгтэд харагдсан "Овог Нэр" (дараалал, олон зай, DB-д төгсгөлийн зайтай нэр) олдоно. Үг нэг талбараас хэтрэхгүй тул овог+нэр нийлүүлсэн талбар нэмэлт хэрэггүй.
+ * Регистр: blind index (яг таарах) — normalize нь зай/тусгаарлагчийг хасдаг тул "УБ 90000003"-г үгэнд хуваалгүй бүтнээр нь тааруулна.
+ */
 export function searchCondition(search: string): Sql {
-  const like = `%${escapeLike(search)}%`;
-  return sql`(la.contract_no ILIKE ${like} OR la.app_no ILIKE ${like}
-    OR concat_ws(' ', c.last_name, c.first_name) ILIKE ${like} OR concat_ws(' ', c.first_name, c.last_name) ILIKE ${like}
-    OR c.register_no_hash = ${blindIndex(search)})`;
+  const byWord = searchWords(search).map((word) => {
+    const like = `%${escapeLike(word)}%`;
+    return sql`(la.contract_no ILIKE ${like} OR la.app_no ILIKE ${like} OR c.first_name ILIKE ${like} OR c.last_name ILIKE ${like})`;
+  });
+  return sql`(${and(byWord)} OR c.register_no_hash = ${blindIndex(search.trim())})`;
 }
 
 /** `la` дээрх хүрээ/шүүлтийн нөхцөл (NFR-3: branch/officer нь хүрээгээр аль хэдийн нийлсэн). */
