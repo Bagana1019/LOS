@@ -274,11 +274,14 @@ describe('validateCustomAmount', () => {
     expect(validateCustomAmount(1234.56, max, 'MNT')).toBeNull();
     expect(validateCustomAmount(0.1 + 0.2, max, 'MNT')).toBeNull(); // 0.30000000000000004 — хөвөгч таслалын алдаа
   });
-  it('хоосон / тоо биш', () => {
+  it('хоосон → "оруулна уу"', () => {
     expect(validateCustomAmount(null, max, 'MNT')?.key).toBe('payment.validation.amountRequired');
     expect(validateCustomAmount(undefined, max, 'MNT')?.key).toBe('payment.validation.amountRequired');
-    expect(validateCustomAmount(Number.NaN, max, 'MNT')?.key).toBe('payment.validation.amountRequired');
-    expect(validateCustomAmount(Number.POSITIVE_INFINITY, max, 'MNT')?.key).toBe('payment.validation.amountRequired');
+  });
+  it('тоо биш текст (MoneyInput-ийн NaN) → "зөвхөн тоо", чимээгүй 5₮ болгохгүй (F2-8)', () => {
+    expect(validateCustomAmount(Number.NaN, max, 'MNT')?.key).toBe('payment.validation.amountNotNumber');
+    expect(validateCustomAmount(Number.POSITIVE_INFINITY, max, 'MNT')?.key).toBe('payment.validation.amountNotNumber');
+    expect(tr('payment.validation.amountNotNumber')).toBe('Зөвхөн тоо оруулна уу (жишээ: 1,500,000 эсвэл 5сая)');
   });
   it('0 ба сөрөг', () => {
     expect(validateCustomAmount(0, max, 'MNT')?.key).toBe('payment.validation.amountPositive');

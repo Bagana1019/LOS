@@ -1,10 +1,11 @@
 'use client';
-import { Alert, Button, Flex, Input, InputNumber, Radio, Select, Skeleton, Tag, Typography } from 'antd';
+import { Alert, Button, Flex, Input, Radio, Select, Skeleton, Tag, Typography } from 'antd';
 import type { RepaymentStatusView } from '@los/contracts';
+import { MoneyInput } from '../../components/form';
 import { t } from '../../lib/i18n';
 import { PaymentErrorAlert } from './PaymentErrorAlert';
 import {
-  amountModeKey, buildInvoiceRequest, formatAmount, groupDigits, maxPayable, modeOptions, parseDigits, payableRows, previewAmount, providerHintKey, providerKey,
+  amountModeKey, buildInvoiceRequest, formatAmount, maxPayable, modeOptions, payableRows, previewAmount, providerHintKey, providerKey,
   reasonKey, validateCustomAmount, validatePayForm, type AmountMode, type PayFormValues, type ProviderOption,
 } from './payment.utils';
 import { useCreateInvoice } from './usePayments';
@@ -51,6 +52,8 @@ function ProviderPicker({ options, value, onChange }: { options: readonly Provid
   );
 }
 
+// "Өөр дүн": MoneyInput-д min/max/precision ТАВИХГҮЙ. antd InputNumber "5сая"→5, "-5"→5, max-аас илүүг blur дээр max болгож, 100.555→100.56 болгож чимээгүй засдаг байсан.
+// Бичсэн текст хэвээр үлдэж, `validateCustomAmount` тодорхой мессеж үзүүлнэ (тоо биш = NaN).
 function AmountPicker({ status, values, onChange }: { status: RepaymentStatusView; values: PayFormValues; onChange: (patch: Partial<PayFormValues>) => void }) {
   const { currency } = status;
   const modes = modeOptions(status);
@@ -84,19 +87,13 @@ function AmountPicker({ status, values, onChange }: { status: RepaymentStatusVie
                 ) : null}
                 {m.mode === 'CUSTOM' ? (
                   <Flex vertical gap={4}>
-                    <InputNumber<number>
+                    <MoneyInput
                       style={{ width: '100%', maxWidth: 260 }}
                       value={values.amount}
-                      min={0}
-                      max={max}
-                      precision={2}
-                      controls={false}
                       status={customError ? 'error' : undefined}
                       placeholder={t('payment.pay.custom.placeholder')}
                       suffix={currency === 'MNT' ? '₮' : currency}
-                      formatter={(v) => groupDigits(v)}
-                      parser={(v) => parseDigits(v) as unknown as number}
-                      onChange={(amount) => onChange({ amount: typeof amount === 'number' ? amount : null })}
+                      onChange={(amount) => onChange({ amount: amount ?? null })}
                     />
                     {customError ? (
                       <Typography.Text type="danger">{t(customError.key, customError.params)}</Typography.Text>
