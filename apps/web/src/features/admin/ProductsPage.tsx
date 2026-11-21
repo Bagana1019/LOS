@@ -7,6 +7,7 @@ import { MoneyInput, PercentInput, moneyRules, percentRules } from '../../compon
 import { t, formatMoney } from '../../lib/i18n';
 import { PlainNumberInput } from './PlainNumberInput';
 import { plainNumberRules } from './plain-number-rules';
+import { productCodeRules, productNameRules, productTypeRules } from './product-text-rules';
 import { errorText } from './admin.utils';
 import { useProductMutation, useProducts } from './admin.hooks';
 import { BackLink } from './SettingsHome';
@@ -137,11 +138,12 @@ function ProductDrawer({ editing, pending, onClose, onSubmit }: { editing: Editi
       )}>
       <Form<ProductFormValues> form={form} layout="vertical" initialValues={initial} onFinish={onFinish} onFinishFailed={() => setError(t('admin.products.fix_errors'))} scrollToFirstError>
         <Flex gap={12} wrap>
-          <Form.Item name="code" label={t('admin.products.col.code')} style={{ flex: 1, minWidth: 160 }}><Input disabled={!isNew} maxLength={32} placeholder="SME_PLUS" /></Form.Item>
-          <Form.Item name="productType" label={t('admin.products.col.type')} style={{ flex: 1, minWidth: 160 }}><Input disabled={!isNew} maxLength={32} placeholder="BUSINESS" /></Form.Item>
+          {/* F9-3: код/төрөл зөвхөн үүсгэхэд шалгагдана (үүссэний дараа солигдохгүй); алдаа талбар бүрт Монголоор, нэгэн зэрэг */}
+          <Form.Item name="code" label={t('admin.products.col.code')} style={{ flex: 1, minWidth: 160 }} validateFirst rules={isNew ? productCodeRules() : undefined} extra={isNew ? t('admin.products.code.help') : undefined}><Input disabled={!isNew} maxLength={32} placeholder="SME_PLUS" /></Form.Item>
+          <Form.Item name="productType" label={t('admin.products.col.type')} style={{ flex: 1, minWidth: 160 }} validateFirst rules={isNew ? productTypeRules() : undefined} extra={isNew ? t('admin.products.type.help') : undefined}><Input disabled={!isNew} maxLength={32} placeholder="BUSINESS" /></Form.Item>
           <Form.Item name="currency" label={t('admin.products.currency')} style={{ width: 110 }}><Select disabled={!isNew} options={[{ value: 'MNT' }, { value: 'USD' }]} /></Form.Item>
         </Flex>
-        <Form.Item name="name" label={t('admin.products.col.name')}><Input maxLength={200} /></Form.Item>
+        <Form.Item name="name" label={t('admin.products.col.name')} validateFirst rules={productNameRules()}><Input maxLength={200} /></Form.Item>
         <Flex gap={12} wrap>
           <div style={{ flex: 1, minWidth: 200 }}>{money('minAmount', t('admin.products.min_amount'), t('admin.products.f.min_amount'), { required: true, positive: true })}</div>
           <div style={{ flex: 1, minWidth: 200 }}>{money('maxAmount', t('admin.products.max_amount'), t('admin.products.f.max_amount'), { required: true, positive: true })}</div>
