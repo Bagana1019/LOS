@@ -10,6 +10,8 @@ export interface XypOtpStepProps {
   /** Тестэд цагийг тогтооно; үгүй бол 1 секунд тутам шинэчлэгдэнэ. */
   nowMs?: number;
   errorMessage: string | null;
+  /** F1-7: оролдлого дууссан / код хүчингүй — энэ кодоор баталгаажуулахгүй, шинэ код авна. */
+  exhausted?: boolean;
   submitting: boolean;
   resending: boolean;
   onSubmit: (code: string) => void;
@@ -22,7 +24,7 @@ export interface XypOtpStepProps {
  * FR-2.2 · иргэний зөвшөөрөл: ХУР иргэний БҮРТГЭЛТЭЙ утсанд нэг удаагийн код илгээсний дараах алхам. Ажилтан утас сонгохгүй (код зөвхөн иргэний утсанд очно),
  * иргэнээс кодыг асууж оруулна. Код ирэхгүй / ХУР унасан үед «Гараар бөглөх» гарц үргэлж байна. Код нууц: энд зөвхөн оруулна, хадгалахгүй, логлохгүй.
  */
-export function XypOtpStep({ requestedAt, nowMs, errorMessage, submitting, resending, onSubmit, onResend, onManual, onCancel }: XypOtpStepProps) {
+export function XypOtpStep({ requestedAt, nowMs, errorMessage, exhausted = false, submitting, resending, onSubmit, onResend, onManual, onCancel }: XypOtpStepProps) {
   const [code, setCode] = useState('');
   const [clock, setClock] = useState(() => nowMs ?? Date.now());
   const now = nowMs ?? clock;
@@ -35,7 +37,7 @@ export function XypOtpStep({ requestedAt, nowMs, errorMessage, submitting, resen
     return () => clearInterval(id);
   }, [nowMs, remaining]);
 
-  const submit = () => { if (valid && !submitting) onSubmit(code); };
+  const submit = () => { if (valid && !submitting && !exhausted) onSubmit(code); };
 
   return (
     <Card size="small" style={{ margin: '16px 0' }} title={t('customer.new.otp.title')} data-testid="xyp-otp-step">
@@ -45,9 +47,9 @@ export function XypOtpStep({ requestedAt, nowMs, errorMessage, submitting, resen
         <Flex gap={8} wrap align="center">
           <Input
             data-testid="xyp-otp-input" aria-label={t('customer.new.otp.label')} value={code} inputMode="numeric" autoComplete="one-time-code" maxLength={8}
-            placeholder="123456" style={{ maxWidth: 200 }} autoFocus onChange={(e) => setCode(normalizeOtpInput(e.target.value))} onPressEnter={submit}
+            placeholder="123456" style={{ maxWidth: 200 }} autoFocus disabled={exhausted} onChange={(e) => setCode(normalizeOtpInput(e.target.value))} onPressEnter={submit}
           />
-          <Button type="primary" data-testid="xyp-otp-submit" disabled={!valid} loading={submitting} onClick={submit}>{t('customer.new.otp.submit')}</Button>
+          <Button type="primary" data-testid="xyp-otp-submit" disabled={!valid || exhausted} loading={submitting} onClick={submit}>{t('customer.new.otp.submit')}</Button>
           <Button data-testid="xyp-otp-resend" disabled={remaining > 0} loading={resending} onClick={onResend}>
             {remaining > 0 ? t('customer.new.otp.resendIn', { seconds: remaining }) : t('customer.new.otp.resend')}
           </Button>
