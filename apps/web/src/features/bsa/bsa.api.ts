@@ -1,6 +1,6 @@
-import { BsaLosOverview, BsaLosPushResponse, BsaSuspicionListResponse, BsaCombinedSummary, type BankCode, type BsaAnalysisDetails, type BsaLosCreateAnalysisBody, type BsaResolveSuspicionsRequest, type ReviewStatus, type SuspicionFlag } from '@los/contracts';
+import { BsaLosOverview, BsaLosPushResponse, BsaSuspicionListResponse, BsaCombinedSummary, BsaUploadResponse, type BankCode, type BsaAnalysisDetails, type BsaLosCreateAnalysisBody, type BsaResolveSuspicionsRequest, type ReviewStatus, type SuspicionFlag } from '@los/contracts';
 import { API, apiDownload, apiFetch, authFetch, originationFetch, qs } from '../../lib/api';
-import { ApiError } from '../../lib/http';
+import { parseUploadFailure } from './bsa.feedback';
 import { banksField, type BsaCategory } from './bsa.helpers';
 
 // LOS талын (origination) BSA: `/origination/applications/:id/bsa…`; scoring-ийн шинжилгээ: `/scoring/bsa/analyses/:id…` (gateway-ээр).
@@ -52,12 +52,19 @@ export const retryJob = (jobId: string, bankCode?: BankCode): Promise<unknown> =
 /** Ангиллын жагсаалт (идэвхтэй) — «Ангилал солих» Select ба гүйлгээний ангиллын нэр. */
 export const fetchCategories = (): Promise<BsaCategory[]> => apiFetch('/scoring/bsa/categories');
 
-/** `bank` өгвөл `banks` талбараар файл бүрт тэр банкийг заана (автомат таних дарагдана); өгөхгүй бол сервер таниулна. */
-export async function uploadStatements(id: string, files: File[], bank?: BankCode): Promise<void> {
+/**
+ * `bank` өгвөл `banks` талбараар файл бүрт тэр банкийг заана (автомат таних дарагдана); өгөхгүй бол сервер таниулна.
+ * Хариу = файл бүрийн үр дүн (хүлээн авсан / давхардсан / татгалзсан): 200/202 ч бүх файл орсон гэсэн үг биш. Татгалзсан хүсэлт `UploadError` (код, outcomes).
+ */
+export async function uploadStatements(id: string, files: File[], bank?: BankCode): Promise<BsaUploadResponse> {
   const form = new FormData();
   const banks = banksField(files.length, bank);
   if (banks) form.append('banks', banks);
   for (const f of files) form.append('files', f);
   const res = await authFetch(`${API}${sc(id)}/imports`, { method: 'POST', body: form });
-  if (!res.ok) throw new ApiError(res.status, null, res.statusText);
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw parseUploadFailure(res.status, res.statusText, body, res.headers.get('x-correlation-id'));
+  const parsed = BsaUploadResponse.safeParse(body);
+  // Хүсэлт амжилттай ч бие уншигдахгүй бол файл очсон: тоолуурыг мэдэхгүй тул бүгдийг хүлээн авсан гэж үзнэ.
+  return parsed.success ? parsed.data : { outcomes: [], accepted: files.length, duplicates: 0, rejected: 0 };
 }

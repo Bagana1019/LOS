@@ -1,11 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { Alert, Button, Card, Flex, Skeleton, Statistic, Table, Tag, Typography, message } from 'antd';
 import type { BsaLosBorrowerRow } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
+import { isPaymentMissing, syncPaymentFeedback } from './bsa.feedback';
 import { PushConfirmModal } from './PushConfirmModal';
 import { useBsaOverview, useCombined, useCreateAnalysis, usePush, useSyncPayment } from './useBsa';
 
@@ -19,6 +20,8 @@ export function BsaOverview({ applicationId }: { applicationId: string }) {
   const combined = useCombined(applicationId, multi && Boolean(q.data?.available));
   const [api, holder] = message.useMessage();
   const [confirming, setConfirming] = useState<BsaLosBorrowerRow | null>(null);
+  // F6-3: mutation-ий `isPending` асинхрон шинэчлэгддэг тул нэг task дотор ирсэн 2 дахь click-ийг товчны `loading` барьж чаддаггүй — синхрон хамгаалалт.
+  const creating = useRef(false);
   if (q.isLoading) return <Skeleton active aria-label={t('bsa.loading')} />;
   if (q.error || !q.data) return <ApiErrorAlert error={q.error} onRetry={() => void q.refetch()} />;
   const data = q.data;
@@ -28,10 +31,23 @@ export function BsaOverview({ applicationId }: { applicationId: string }) {
     const analysisId = confirming?.analysisId;
     if (!analysisId) return;
     push.mutate(analysisId, {
-      onSuccess: (r) => void api.success(r.reportAttached ? t('bsa.push.ok') : `${t('bsa.push.ok')} ${t('bsa.push.noReport')}`),
+      onSuccess: (r) => void api.success(r.reportAttached ? t('bsa.fb.push.ok') : `${t('bsa.fb.push.ok')} ${t('bsa.push.noReport')}`),
       onSettled: () => setConfirming(null),
     });
   };
+  const onCreate = (customerId: string) => {
+    if (creating.current) return;
+    creating.current = true;
+    create.mutate({ customerId }, { onSettled: () => { creating.current = false; } });
+  };
+  // F6-2: `sync-payment` зөвхөн `{ updated }` буцаадаг тул үр дүнг (шинэчлэгдсэн / өөрчлөх зүйлгүй / нөхцөл дутуу) тойм дахь төлбөр, шинжилгээнээс тайлбарлана.
+  const paymentMissing = isPaymentMissing(data.proposedMonthlyPayment);
+  const onSync = () => sync.mutate(undefined, {
+    onSuccess: (r) => {
+      const f = syncPaymentFeedback({ updated: r.updated, payment: data.proposedMonthlyPayment, hasAnalysis: data.borrowers.some((b) => b.analysisId !== null) });
+      void api[f.type](f.message);
+    },
+  });
 
   return (
     <Flex vertical gap={16}>
@@ -44,7 +60,10 @@ export function BsaOverview({ applicationId }: { applicationId: string }) {
       {!editable ? <Alert type="info" showIcon message={t('bsa.notEditable')} /> : null}
       <Flex gap={24} wrap align="center">
         <Statistic title={t('bsa.payment')} value={data.proposedMonthlyPayment === null ? '—' : formatMnt(data.proposedMonthlyPayment)} />
-        <Button onClick={() => sync.mutate(undefined)} loading={sync.isPending} disabled={!editable}>{t('bsa.action.syncPayment')}</Button>
+        <Flex vertical gap={4} align="flex-start">
+          <Button onClick={onSync} loading={sync.isPending} disabled={!editable || paymentMissing}>{t('bsa.action.syncPayment')}</Button>
+          <Typography.Text type="secondary">{paymentMissing ? t('bsa.fb.sync.missingHint') : t('bsa.fb.sync.hint')}</Typography.Text>
+        </Flex>
       </Flex>
       <Table<BsaLosBorrowerRow>
         rowKey="customerId"
@@ -67,7 +86,7 @@ export function BsaOverview({ applicationId }: { applicationId: string }) {
                     <Button type="primary" onClick={() => setConfirming(b)} loading={push.isPending} disabled={!editable || !data.available}>{t('bsa.action.push')}</Button>
                   </>
                 ) : (
-                  <Button type="primary" onClick={() => create.mutate({ customerId: b.customerId })} loading={create.isPending} disabled={!editable || !data.available}>{t('bsa.action.create')}</Button>
+                  <Button type="primary" onClick={() => onCreate(b.customerId)} loading={create.isPending} disabled={!editable || !data.available}>{t('bsa.action.create')}</Button>
                 )}
               </Flex>
             ),

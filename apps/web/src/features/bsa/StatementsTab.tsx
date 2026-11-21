@@ -1,12 +1,14 @@
 'use client';
 import { useState } from 'react';
-import { Button, Card, Flex, Select, Statistic, Table, Tag, Tooltip, Typography, Upload, type TableColumnsType } from 'antd';
+import { Button, Card, Flex, Select, Statistic, Table, Tag, Tooltip, Typography, Upload, message, type TableColumnsType } from 'antd';
 import type { BankCode } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
 import type { BsaJobBrief } from './bsa.api';
+import { jobStatusView, uploadErrorFeedback, uploadFeedback, UPLOAD_ACCEPT, UPLOAD_LIMITS, type Feedback } from './bsa.feedback';
 import { bankOptions } from './bsa.helpers';
+import { FeedbackAlert } from './FeedbackAlert';
 import { SummaryInsights } from './SummaryInsights';
 import { useAnalysis, useJobs, useRecalculate, useRetryJob, useUpload } from './useBsa';
 
@@ -22,14 +24,28 @@ export function StatementsTab({ applicationId, analysisId, draft }: Props) {
   const recalc = useRecalculate(applicationId, analysisId);
   const retry = useRetryJob(applicationId, analysisId);
   const [bank, setBank] = useState<BankCode | undefined>();
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [toast, holder] = message.useMessage();
   const a = analysis.data;
   const s = a?.summary ?? null;
+
+  // F6-4/F6-7: файл бүрийн үр дүн (хүлээн авсан / давхардсан / татгалзсан) ба алдааг Монголоор хэлнэ.
+  const onUpload = (files: File[]) => {
+    const names = files.map((f) => f.name);
+    setFeedback(null);
+    upload.mutate(
+      { files, ...(bank ? { bank } : {}) },
+      { onSuccess: (r) => setFeedback(uploadFeedback(r, names)), onError: (e) => setFeedback(uploadErrorFeedback(e, names)) },
+    );
+  };
+  // F6-12: «Дахин тооцоолох» амжилттай болсныг хэлнэ.
+  const onRecalculate = () => recalc.mutate(undefined, { onSuccess: () => void toast.success(t('bsa.fb.recalc.ok')) });
 
   const columns: TableColumnsType<BsaJobBrief> = [
     { title: '#', render: (_: unknown, __: BsaJobBrief, i: number) => i + 1, width: 48 },
     { title: t('bsa.col.file'), dataIndex: 'fileName' },
     { title: t('bsa.col.bank'), dataIndex: 'bankCode', render: (c: string | null | undefined) => (c ? t(`bsa.bank.${c}`) : <Typography.Text type="secondary">{t('bsa.jobs.noBank')}</Typography.Text>) },
-    { title: t('bsa.col.status'), dataIndex: 'status', render: (v: string) => <Tag color={v === 'FAILED' ? 'error' : undefined}>{v}</Tag> },
+    { title: t('bsa.col.status'), dataIndex: 'status', render: (v: string) => { const view = jobStatusView(v); return <Tag color={view.color}>{view.label}</Tag>; } },
     { title: t('bsa.col.error'), render: (_: unknown, j: BsaJobBrief) => j.errors?.[0]?.message ?? '' },
     ...(draft
       ? [{
@@ -43,6 +59,7 @@ export function StatementsTab({ applicationId, analysisId, draft }: Props) {
 
   return (
     <Flex vertical gap={16}>
+      {holder}
       <Card title={t('bsa.upload.title')}>
         <Flex gap={12} align="center" wrap>
           <Select<BankCode>
@@ -56,16 +73,16 @@ export function StatementsTab({ applicationId, analysisId, draft }: Props) {
             disabled={!draft}
             style={{ width: 240 }}
           />
-          <Upload multiple showUploadList={false} fileList={[]} disabled={!draft} beforeUpload={(file, batch) => { if (file === batch[0]) upload.mutate({ files: batch as File[], ...(bank ? { bank } : {}) }); return false; }}>
+          <Upload multiple accept={UPLOAD_ACCEPT} showUploadList={false} fileList={[]} disabled={!draft} beforeUpload={(file, batch) => { if (file === batch[0]) onUpload(batch as File[]); return false; }}>
             <Button type="primary" loading={upload.isPending} disabled={!draft}>{t('bsa.action.upload')}</Button>
           </Upload>
-          <Button onClick={() => recalc.mutate(undefined)} loading={recalc.isPending} disabled={!draft}>{t('bsa.action.recalculate')}</Button>
+          <Button onClick={onRecalculate} loading={recalc.isPending} disabled={!draft}>{t('bsa.action.recalculate')}</Button>
         </Flex>
         <Flex vertical gap={4} style={{ marginTop: 8 }}>
-          <Typography.Text type="secondary">{t('bsa.upload.hint')}</Typography.Text>
+          <Typography.Text type="secondary">{t('bsa.fb.upload.hint', { maxMb: UPLOAD_LIMITS.maxMb, max: UPLOAD_LIMITS.maxFiles })}</Typography.Text>
           <Typography.Text type="secondary">{t('bsa.upload.bankHint')}</Typography.Text>
         </Flex>
-        {upload.error ? <ApiErrorAlert error={upload.error} /> : null}
+        {feedback ? <FeedbackAlert feedback={feedback} onClose={() => setFeedback(null)} /> : null}
         {recalc.error ? <ApiErrorAlert error={recalc.error} /> : null}
       </Card>
       <Card title={t('bsa.summary.title')}>
