@@ -3,8 +3,11 @@ import type { ContractTemplateType, RenderTemplateRequest, RenderTemplateRespons
 // origination → dms sync REST (CLAUDE.md §3.2.2): загвараас гэрээ/ЭТХ/албан бичиг PDF үүсгэх, файл байгаа эсэх. Бодит нь `HttpDmsDocgen`; тест `testing/fake-dms-docgen.ts`.
 export interface DmsDocgenPort {
   render(req: RenderTemplateRequest, ctx: RequestContext): Promise<RenderTemplateResponse>;
-  /** dms файл (өөрийн байгууллагын): олдохгүй бол `null`, олдвол байршуулсан хэрэглэгч — цаасан гарын үсгийн скан хавсаргахад (NFR-3 эзэмшил). */
-  fileInfo(fileId: string, ctx: RequestContext): Promise<{ uploadedBy: string | null } | null>;
+  /**
+   * dms файл (өөрийн байгууллагын): олдохгүй бол `null`, олдвол байршуулсан хэрэглэгч (NFR-3 эзэмшил) ба хадгалсан төрөл — цаасан гарын үсгийн скан хавсаргахад.
+   * `mime` нь dms-ийн upload дээр magic bytes-аар баталгаажсан төрөл (клиентийн зарласан биш); dms хэлээгүй бол `null` (итгэхгүй).
+   */
+  fileInfo(fileId: string, ctx: RequestContext): Promise<{ uploadedBy: string | null; mime: string | null } | null>;
   /** Идэвхтэй загвар байгаа эсэх (productId → нийтлэг). Албан бичиг үүсгэхийн өмнөх сануулга. */
   hasTemplate(type: ContractTemplateType, productId: string | null, ctx: RequestContext): Promise<boolean>;
 }

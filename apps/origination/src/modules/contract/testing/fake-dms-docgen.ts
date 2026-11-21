@@ -9,6 +9,8 @@ export class FakeDmsDocgen implements DmsDocgenPort {
   readonly files = new Set<string>();
   /** Файлын байршуулагч; бүртгээгүй бол дуудагч өөрөө (upload → attach урсгал). */
   readonly uploaders = new Map<string, string | null>();
+  /** dms-ийн хадгалсан (magic bytes-аар баталгаажсан) төрөл; бүртгээгүй бол PDF (render-ийн үр дүн, хуучин тестүүд). `null` = dms төрлөө хэлээгүй. */
+  readonly mimes = new Map<string, string | null>();
   templates = new Set<ContractTemplateType>(['LOAN_CONTRACT', 'OFFICIAL_LETTER']);
   async render(req: RenderTemplateRequest, _ctx: RequestContext) {
     if (!this.templates.has(req.type)) throw new DomainError('TEMPLATE_NOT_CONFIGURED', 'Энэ төрлийн идэвхтэй загвар тохируулаагүй байна', 422);
@@ -19,7 +21,10 @@ export class FakeDmsDocgen implements DmsDocgenPort {
   }
   async fileInfo(fileId: string, ctx: RequestContext) {
     if (!this.files.has(fileId)) return null;
-    return { uploadedBy: this.uploaders.has(fileId) ? (this.uploaders.get(fileId) ?? null) : ctx.userId };
+    return {
+      uploadedBy: this.uploaders.has(fileId) ? (this.uploaders.get(fileId) ?? null) : ctx.userId,
+      mime: this.mimes.has(fileId) ? (this.mimes.get(fileId) ?? null) : 'application/pdf',
+    };
   }
   async hasTemplate(type: ContractTemplateType) { return this.templates.has(type); }
 }
