@@ -1,10 +1,11 @@
 'use client';
 import { useState } from 'react';
-import { Alert, Button, Card, Flex, Input, Select, Skeleton, Table, Tag, Tooltip, Typography, type TableColumnsType } from 'antd';
+import { Alert, Button, Card, Flex, Input, Popconfirm, Select, Skeleton, Table, Tag, Tooltip, Typography, message, type TableColumnsType } from 'antd';
 import { ReviewStatus, SuspicionFlag, type BsaSuspicionView, type TxnDirection } from '@los/contracts';
 import { ApiErrorAlert } from '../borrowers/ApiErrorAlert';
 import { formatMnt } from '../../lib/format';
 import { t } from '../../lib/i18n';
+import { resolveFeedback } from './bsa.feedback';
 import { categoryGroups, categoryName, directionSummary, directionsOf, formatConfidence, type BsaCategory } from './bsa.helpers';
 import { useCategories, useResolve, useSuspicions } from './useBsa';
 
@@ -36,6 +37,7 @@ export function SuspicionsTab({ applicationId, analysisId, draft }: Props) {
   const q = useSuspicions(analysisId, { status, flag });
   const categories = useCategories();
   const resolve = useResolve(applicationId, analysisId);
+  const [toast, holder] = message.useMessage();
   const cats: readonly BsaCategory[] = categories.data ?? [];
   if (q.isLoading) return <Skeleton active />;
   if (q.error || !q.data) return <ApiErrorAlert error={q.error} onRetry={() => void q.refetch()} />;
@@ -44,14 +46,19 @@ export function SuspicionsTab({ applicationId, analysisId, draft }: Props) {
   // Сонгосон дохионы чиглэлд таарах ангиллыг л санал болгоно; чиглэл солигдоход хуучин сонголт хүчингүй болно.
   const groups = categoryGroups(cats, directionsOf(q.data.items.filter((r) => selected.includes(r.id))));
   const chosen = groups.some((g) => g.options.some((o) => o.value === category)) ? category : undefined;
-  const act = (action: 'APPROVE' | 'EXCLUDE' | 'RECLASSIFY') =>
+  // F6-12: үр дүнг (хэдэн дохио, юу хийсэн) хэлнэ; «Хүлээгдэж буй» шүүлтүүртэй үед мөр жагсаалтаас алга болдгийг тайлбарлана.
+  const act = (action: 'APPROVE' | 'EXCLUDE' | 'RECLASSIFY') => {
+    const count = selected.length;
+    const categoryLabel = action === 'RECLASSIFY' ? categoryName(chosen ?? null, cats) : null;
     resolve.mutate(
       { ids: selected, action, ...(action === 'RECLASSIFY' && chosen ? { categoryCode: chosen } : {}), ...(comment.trim() ? { comment: comment.trim() } : {}) },
-      { onSuccess: () => { setSelected([]); setCategory(undefined); } },
+      { onSuccess: () => { setSelected([]); setCategory(undefined); void toast.success(resolveFeedback(action, count, { categoryName: categoryLabel, pendingFilter: status === 'PENDING' })); } },
     );
+  };
 
   return (
     <Flex vertical gap={16}>
+      {holder}
       <Typography.Title level={5} style={{ margin: 0 }}>{t('bsa.susp.title')}</Typography.Title>
       {counts.pending > 0 ? <Alert type="warning" showIcon message={t('bsa.susp.pendingBlock')} /> : null}
       <Flex gap={8} wrap>
@@ -97,7 +104,19 @@ export function SuspicionsTab({ applicationId, analysisId, draft }: Props) {
               <Button onClick={() => act('APPROVE')} loading={resolve.isPending}>{t('bsa.susp.approve')}</Button>
             </Tooltip>
             <Tooltip title={t('bsa.susp.exclude.hint')}>
-              <Button danger onClick={() => act('EXCLUDE')} loading={resolve.isPending}>{t('bsa.susp.exclude')}</Button>
+              <span>
+                <Popconfirm
+                  placement="bottom"
+                  title={t('bsa.fb.exclude.confirm', { count: selected.length })}
+                  description={t('bsa.fb.exclude.confirmBody')}
+                  okText={t('bsa.fb.exclude.ok')}
+                  cancelText={t('bsa.fb.exclude.cancel')}
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => act('EXCLUDE')}
+                >
+                  <Button danger loading={resolve.isPending}>{t('bsa.susp.exclude')}</Button>
+                </Popconfirm>
+              </span>
             </Tooltip>
             <Select<string>
               id="bsa-reclassify-category"
