@@ -49,3 +49,23 @@ describe('tierProblems', () => {
     expect(firstTierProblem([row(), row({ code: 'C', interestRate: 300 })])).toBe('C: Хүү 0–100% хооронд байх ёстой');
   });
 });
+
+// F9-7: хоосон нэр/буруу код нь серверт очиж "Оруулсан өгөгдөл буруу" болохын оронд талбарын доор мессеж өгнө (хүсэлт явахгүй).
+describe('tierProblems: код, нэр', () => {
+  it('хоосон / зөвхөн хоосон зайтай нэр → "Нэр оруулна уу"', () => {
+    expect(tierProblems(row({ name: '' })).name).toBe('Нэр оруулна уу');
+    expect(tierProblems(row({ name: '   ' })).name).toBe('Нэр оруулна уу');
+  });
+
+  it('хоосон код → "Код оруулна уу"; үсэг/тоо/_ -ээс өөр тэмдэгт → хэлбэрийн алдаа', () => {
+    expect(tierProblems(row({ code: '' })).code).toBe('Код оруулна уу');
+    expect(tierProblems(row({ code: 'A B' })).code).toBe('Код зөвхөн A–Z, 0–9, _ тэмдэгттэй, 1–16 урттай байх ёстой');
+    expect(tierProblems(row({ code: 'Сайн' })).code).toBe('Код зөвхөн A–Z, 0–9, _ тэмдэгттэй, 1–16 урттай байх ёстой');
+    expect(tierProblems(row({ code: 'A'.repeat(17) })).code).toBe('Код зөвхөн A–Z, 0–9, _ тэмдэгттэй, 1–16 урттай байх ёстой');
+    expect(tierProblems(row({ code: 'TIER_1' })).code).toBeUndefined();
+  });
+
+  it('firstTierProblem: хоосон нэртэй мөр хамгийн түрүүнд нэрлэгдэнэ', () => {
+    expect(firstTierProblem([row({ code: 'C', name: '' })])).toBe('C: Нэр оруулна уу');
+  });
+});
