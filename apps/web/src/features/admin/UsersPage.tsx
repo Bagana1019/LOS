@@ -9,6 +9,7 @@ import { errorText, needsBranch, SUPPORTED_ROLES_ORDER } from './admin.utils';
 import { useBranches, useCreateUser, useResetUserPassword, useSetUserActive, useUpdateUser, useUsers } from './admin.hooks';
 import { addedPrivilegedRoles, isRoleGuardError, roleDisabledReason, type RoleDisabledReason } from './user-role-guards';
 import { BackLink } from './SettingsHome';
+import { emailRules, fullNameRules, normalizeUserPhone, phoneRules, rolesRules, usernameRules } from './user-form-rules';
 
 type FormValues = { username?: string; fullName: string; email?: string; phone?: string; roles: string[]; branchId: string | null };
 type Filter = 'all' | 'active' | 'inactive';
@@ -63,9 +64,11 @@ export function UsersPage() {
   const failSave = (e: unknown) => (isRoleGuardError(e) ? setGuardError(errorText(e)) : fail(e));
   /** Эрх өсгөх дүр нэмэгдэж байвал баталгаажуулах цонх, үгүй бол шууд илгээнэ. */
   const sendOrConfirm = (who: { name: string; username: string }, added: string[], run: () => void) => (added.length ? setGrant({ ...who, added, run }) : run());
-  const onSubmit = () => {
+  const onSubmit = async () => {
     setGuardError(null);
-    const v = form.getFieldsValue();
+    // F9-13: талбар бүрийн дүрэм (Form rules) — алдаа тухайн талбарт Монголоор, нэгэн зэрэг; toast биш
+    try { await form.validateFields(); } catch { return; }
+    const v = { ...form.getFieldsValue(), phone: normalizeUserPhone(form.getFieldValue('phone')) };
     if (editing === 'new') {
       const p = CreateUserBody.safeParse(v);
       if (!p.success) return void message.error(p.error.issues[0]?.message ?? t('admin.common.load_error'));
@@ -152,15 +155,17 @@ export function UsersPage() {
         confirmLoading={create.isPending || update.isPending} onOk={onSubmit} onCancel={() => setEditing(null)} destroyOnHidden forceRender>
         {guardError ? <Alert type="error" showIcon message={guardError} style={{ marginBottom: 16 }} /> : null}
         <Form form={form} layout="vertical" requiredMark={false} onValuesChange={(changed) => { if ('roles' in changed) setGuardError(null); }}>
-          <Form.Item name="username" label={t('admin.users.field.username')} extra={editing === 'new' ? t('admin.users.field.username.help') : undefined}>
+          <Form.Item name="username" label={t('admin.users.field.username')} extra={editing === 'new' ? t('admin.users.field.username.help') : undefined} rules={editing === 'new' ? usernameRules() : undefined}>
             <Input maxLength={40} disabled={editing !== 'new'} autoComplete="off" />
           </Form.Item>
-          <Form.Item name="fullName" label={t('admin.users.field.fullname')}><Input maxLength={120} autoComplete="off" /></Form.Item>
+          <Form.Item name="fullName" label={t('admin.users.field.fullname')} rules={fullNameRules()}><Input maxLength={120} autoComplete="off" /></Form.Item>
           <Flex gap={12}>
-            <Form.Item name="email" label={t('admin.users.field.email')} style={{ flex: 1 }}><Input maxLength={160} type="email" autoComplete="off" /></Form.Item>
-            <Form.Item name="phone" label={t('admin.users.field.phone')} style={{ flex: 1 }}><Input maxLength={40} autoComplete="off" /></Form.Item>
+            <Form.Item name="email" label={t('admin.users.field.email')} style={{ flex: 1 }} rules={emailRules()}><Input maxLength={160} type="email" autoComplete="off" /></Form.Item>
+            <Form.Item name="phone" label={t('admin.users.field.phone')} style={{ flex: 1 }} extra={t('admin.users.field.phone.help')} rules={phoneRules()}>
+              <Input maxLength={40} inputMode="tel" autoComplete="off" onBlur={() => form.setFieldValue('phone', normalizeUserPhone(form.getFieldValue('phone')))} />
+            </Form.Item>
           </Flex>
-          <Form.Item name="roles" label={t('admin.users.field.roles')}
+          <Form.Item name="roles" label={t('admin.users.field.roles')} rules={rolesRules()}
             extra={<>{t('admin.users.field.roles.help')}<div aria-live="polite">{roleNotes.map((n) => <Typography.Text key={n} type="warning" style={{ display: 'block' }}>{n}</Typography.Text>)}</div></>}>
             <Select mode="multiple" options={roleOptions} />
           </Form.Item>
